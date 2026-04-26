@@ -1,7 +1,7 @@
 {
   "name": "zotero-bridge",
   "description": "Zotero library skill for Claude Code — search, manage, export, OCR, and RAG over your Zotero papers",
-  "version": "1.3.4",
+  "version": "1.4.0",
   "author": { "name": "diamondrill" },
   "keywords": ["zotero", "academic", "citations", "bibliography"]
 }

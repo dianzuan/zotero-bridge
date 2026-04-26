@@ -1,6 +1,6 @@
 {
   "name": "zotero-bridge",
-  "version": "1.3.4",
+  "version": "1.4.0",
   "description": "Typed JSON-RPC 2.0 bridge for Zotero 8 — exposes 77 internal API methods over HTTP for external tools, agents, and CLIs.",
   "license": "AGPL-3.0-or-later",
   "author": "diamondrill",
