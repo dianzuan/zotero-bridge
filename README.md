@@ -19,33 +19,9 @@
 
 ---
 
-## ✨ Highlights
-
-- **1 umbrella Claude Code skill** — covers 5 workflows (search / manage / export / OCR / RAG) via progressive disclosure; AI reads and writes your library on your behalf
-- **77 typed RPC methods** under the hood across 9 namespaces — any client (Python, curl, MCP server, …) can target the same API
-- **Python CLI + SDK** — typer-based, with `--jq` filtering, `--paginate` auto-loop, `--dry-run` preview, shell completion
-- **RAG with citation provenance** — every retrieved chunk carries a `zotero://` URI for one-click traceback
-- **Tested on Zotero 8.0.4** — Zotero 7 not yet verified
-- **AGPL-3.0** — fully open source
-
-## 📑 Contents
-
-- [What is this?](#what-is-this)
-- [Why?](#why)
-- [Quick start](#quick-start)
-- [API surface](#api-surface)
-- [Development](#development)
-- [RAG with Citations](#rag-with-citations-the-ai-reads-pdfs-like-a-human-surface)
-- [API stability](#api-stability)
-- [Roadmap](#roadmap-not-yet-implemented)
-- [Contributing](#contributing)
-- [License](#license)
-
----
-
 ## What is this?
 
-Zotero Bridge is a [bootstrap-extension](https://www.zotero.org/support/dev/zotero_7_for_developers) plugin that turns your running Zotero instance into a JSON-RPC 2.0 server. External tools — research agents, citation pipelines, scrapers, MCP servers, custom CLIs — can read from and write to your library over plain HTTP without poking at SQLite directly.
+Zotero Bridge is a [bootstrap-extension](https://www.zotero.org/support/dev/zotero_7_for_developers) plugin that turns your running Zotero into a JSON-RPC 2.0 server. External tools — research agents, citation pipelines, scrapers, MCP servers, custom CLIs — read and write your library over plain HTTP without touching SQLite.
 
 ```
 ┌──────────────────────────┐         ┌─────────────────────────────┐
@@ -64,71 +40,41 @@ Zotero Bridge is a [bootstrap-extension](https://www.zotero.org/support/dev/zote
 └──────────────────────────┘         └─────────────────────────────┘
 ```
 
+Validated on Zotero 8.0.4 against a 5000+-item / 70+-collection library. Zotero 7 not yet verified.
+
 ## Why?
 
-Zotero ships an HTTP connector at `localhost:23119` that's hardcoded for the browser-extension use case (a handful of endpoints like `/connector/getSelectedCollection`). It is not a general-purpose API. If you want to ask "give me the 5 most recent journal articles tagged X", you have to either:
-
-- Vendor a SQLite reader and parse the `.sqlite` directly (fragile, schema versions, write-locks)
-- Eval arbitrary JS via a debug-server backdoor (insecure, unsupported)
-- Write your own bootstrap plugin from scratch every project (rebuilds wheel, no shared conventions)
-
-Zotero Bridge fills that gap with a **single, stable, typed API surface** that any tool can target.
+Zotero's built-in `localhost:23119` HTTP service is hardcoded for the browser-extension use case (a handful of endpoints like `/connector/getSelectedCollection`) — not a general-purpose API. The workarounds — vendor a SQLite reader (fragile, schema-versioned, write-locked), `eval` JS through a debug-server backdoor (insecure, unsupported), or hand-roll a bootstrap plugin per project (rebuilds the wheel) — are all bad. Zotero Bridge fills that gap with a single stable typed surface any tool can target.
 
 ## Quick start
 
 ### Path A — Claude Code (recommended)
 
-The point of this path: **install the plugin first; the plugin then walks you through the Zotero side via `/setup`.** No manual XPI hunting.
-
-**Prerequisites:** [Claude Code](https://docs.claude.com/en/docs/claude-code/), [`uv`](https://docs.astral.sh/uv/getting-started/installation/) (one-line installer), Zotero 8 desktop.
-
-**Step 1 — install the Claude Code plugin.** In any Claude Code session:
+**Prerequisites:** [Claude Code](https://docs.claude.com/en/docs/claude-code/), [`uv`](https://docs.astral.sh/uv/getting-started/installation/), Zotero 8 desktop.
 
 ```
 /plugin marketplace add dianzuan/zotero-bridge
 /plugin install zotero-bridge@zotero-bridge
-```
-
-This bundles the `zotero` umbrella skill, the `zotero-bridge` / `zotero-rag` / `zotero-ocr` CLIs (auto-resolved via `uv` from the plugin's bundled Python source), and a `/setup` slash command.
-
-**Step 2 — bootstrap the Zotero XPI.**
-
-```
 /setup
 ```
 
-`/setup` pings the bridge, and if it can't reach `localhost:23119/zotero-bridge/rpc`, it fetches the latest `zotero-bridge.xpi` from the GitHub releases API, downloads it, and walks you through **Zotero → Tools → Plugins → ⚙ → Install From File → restart**. After you confirm, it re-pings to verify.
+`/setup` pings the bridge; if Zotero is missing the XPI, it fetches the latest release, downloads it, and walks you through **Tools → Plugins → ⚙ → Install From File → restart**. Then talk to Claude in plain English — *"find papers on transformer attention"*, *"add DOI 10.1038/nature12373 to my ML collection"*, *"export GB/T 7714 references for items 10, 13, 16"*. Claude routes to the right sub-workflow (search / manage / export / OCR / RAG), which calls the RPC.
 
-**Step 3 — try it.** Just talk to Claude:
-
-> *"find papers in my library about transformer attention"*
-> *"add DOI 10.1038/nature12373 to my ML collection"*
-> *"export GB/T 7714 references for items 10, 13, 16"*
-
-Claude auto-routes to the right sub-workflow (search / manage / export / OCR / RAG), which calls the RPC.
-
-> Local-dev variant: clone the repo and `/plugin marketplace add ~/zotero-bridge`. Same `/setup` flow.
-
-### Path B — Python CLI / SDK (no Claude Code)
-
-For scripts, other AI agents, or anything that just wants the typed RPC client. Skip Path A entirely.
+### Path B — Python CLI / SDK
 
 ```bash
-# 1) Install the XPI manually (Tools → Plugins → ⚙ → Install From File)
-#    Download: https://github.com/dianzuan/zotero-bridge/releases/latest
-
-# 2) Install the Python CLI from git (not yet on PyPI)
+# 1) Install the XPI manually from https://github.com/dianzuan/zotero-bridge/releases/latest
+# 2) Install the CLI from git (not yet on PyPI):
 uv tool install "git+https://github.com/dianzuan/zotero-bridge.git#subdirectory=claude-plugin/python"
 
-# 3) Use it
 zotero-bridge ping
 zotero-bridge search quick "transformer attention" --limit 10
 zotero-bridge rpc items.get '{"id":12345}'    # escape hatch — covers all 77 methods
 ```
 
-The `rpc` subcommand is the protocol-level escape hatch: any RPC method that doesn't have a friendly typer subcommand can still be called directly. `--jq` filters output (`gh api --jq` style), `--install-completion {bash|zsh|fish|powershell}` enables shell completion. See [`docs/api-stability.md`](docs/api-stability.md) for the SDK contract.
+`--jq` filters output (`gh api --jq` style); `--install-completion {bash|zsh|fish|powershell}` enables shell completion. SDK contract: [`docs/api-stability.md`](docs/api-stability.md).
 
-### Path C — Raw HTTP (any language)
+### Path C — Raw HTTP
 
 ```bash
 curl -s -X POST http://localhost:23119/zotero-bridge/rpc \
@@ -140,15 +86,15 @@ curl -s -X POST http://localhost:23119/zotero-bridge/rpc \
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `/setup` says `MISSING_UV` | `uv` not on PATH | Install: `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| `/setup` says `MISSING_UV` | `uv` not on PATH | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
 | Skill startup banner: *"Zotero Bridge not detected"* | Zotero not running or XPI not installed | Start Zotero, then re-run `/setup` |
-| `connection refused` on port 23119 | Zotero's built-in HTTP server is off | Zotero → Edit → Settings → Advanced → Config Editor → set `extensions.zotero.httpServer.enabled = true` |
+| `connection refused` on port 23119 | Zotero's built-in HTTP server is off | Edit → Settings → Advanced → Config Editor → `extensions.zotero.httpServer.enabled = true` |
 | Skill doesn't auto-trigger after install | Plugin not loaded into the session | `/reload-plugins`, or restart Claude Code |
 | `zotero-bridge: command not found` from Bash tool | Plugin's `bin/` not on PATH | Plugin must be enabled — check the **Installed** tab in `/plugin` |
 
 ## API surface
 
-77 methods across 9 namespaces. The full conventions doc is at [docs/superpowers/specs/2026-04-23-xpi-api-prd.md](docs/superpowers/specs/2026-04-23-xpi-api-prd.md).
+77 methods across 9 namespaces. Full conventions: [docs/superpowers/specs/2026-04-23-xpi-api-prd.md](docs/superpowers/specs/2026-04-23-xpi-api-prd.md).
 
 | Namespace | Methods | What it does |
 |---|---|---|
@@ -162,21 +108,28 @@ curl -s -X POST http://localhost:23119/zotero-bridge/rpc \
 | `settings.*` | 4 | Plugin-side preferences (e.g. OCR provider, embedding model) |
 | `system.*` | 11 | Ping, version, libraries, switchLibrary, sync, currentCollection, **`system.reload`** (self-reload for dev) |
 
-### Conventions
+**Conventions:** return shapes follow PRD §2 — `serializeItem(item)` for item-bearing returns, `{items, total, offset?, limit?}` envelope for pagination, lowercase `libraryId` on the wire. Errors are JSON-RPC 2.0 `{code, message}` (`-32602` caller error, `-32603` server error). `items.create` auto-splits Chinese full names — `欧阳修` → `{lastName: "欧阳", firstName: "修"}` — covering 70+ compound surnames.
 
-- **All return shapes follow PRD §2** — `serializeItem(item)` for item-bearing returns, paginated `{items, total, offset?, limit?}` envelope where pagination applies, `libraryId` (lowercase) at the wire.
-- **Errors are JSON-RPC 2.0 structured `{code, message}`** — `-32602` for caller error (missing/wrong field), `-32603` for server error (Zotero internal failure).
-- **Chinese name handling** — `items.create` automatically splits Chinese full names like `欧阳修` → `{lastName: "欧阳", firstName: "修"}` for proper Zotero creator records, including 70+ compound surnames.
+## RAG with citations
+
+The RAG layer (`claude-plugin/python/zotero_bridge/rag/`) returns each retrieved chunk as a `Citation` carrying the Zotero item key, attachment id, section heading, chunk index, similarity score, verbatim text, and a `zotero://` URI for one-click verification.
+
+```bash
+zotero-rag index --collection "ML Papers"
+zotero-rag cite "how do transformers attend to long-range context?" --collection "ML Papers" --output json
+```
+
+`--output json` is the AI-facing stable contract:
+
+```json
+{ "itemKey": "ABC123", "attachmentId": 42, "title": "...", "authors": "...",
+  "section": "Section 3 — The Model", "chunkIndex": 7, "text": "...",
+  "score": 0.87, "zoteroUri": "zotero://select/library/items/ABC123" }
+```
 
 ## Development
 
-### Prerequisites
-
-- Node.js 18+
-- Zotero 8 installed locally
-- (Optional but recommended) WSL on Windows for the dev workflow
-
-### Build & test
+Node 18+, Zotero 8 installed locally. (WSL recommended on Windows.)
 
 ```bash
 npm install
@@ -184,17 +137,7 @@ npm test           # 99 mocha unit tests
 npm run build      # type-check + bundle + emit XPI to .scaffold/build/
 ```
 
-### Hot-reload dev workflow
-
-Set `ZOTERO_PLUGIN_ZOTERO_BIN_PATH` to your Zotero binary path, then:
-
-```bash
-ZOTERO_PLUGIN_ZOTERO_BIN_PATH=/path/to/zotero npm start
-```
-
-This launches Zotero with the plugin loaded as a proxy file. Source changes auto-rebuild and reload.
-
-**WSL → Windows note**: `npm start`'s built-in RDP-based reload doesn't work cross-OS (the profile path issue). Use the bundled `system.reload` RPC instead:
+Hot-reload: `ZOTERO_PLUGIN_ZOTERO_BIN_PATH=/path/to/zotero npm start`. On WSL, scaffold's RDP reload is broken across OS boundaries — use the bundled `system.reload` RPC after `rsync`-ing the built addon to your dev profile:
 
 ```bash
 npm run build && \
@@ -204,110 +147,15 @@ npm run build && \
     -d '{"jsonrpc":"2.0","method":"system.reload","id":1}'
 ```
 
-This invalidates Gecko's startup cache and reloads the plugin in-place.
+## Roadmap
 
-## Project structure
-
-```
-src/
-├── handlers/         # 9 handler files, one per namespace
-├── utils/            # Pure helpers: errors, guards, serialize, etc.
-├── server.ts         # JSON-RPC 2.0 dispatcher + endpoint registration
-├── hooks.ts          # Bootstrap-time setup (preference defaults)
-└── index.ts          # Plugin entry point
-test/
-├── handlers/         # Per-handler tests (sinon + mocked Zotero globals)
-├── utils/            # Pure-helper unit tests
-├── fixtures/         # Zotero mock harness (installZotero/resetZotero)
-└── chinese-name.test.ts
-addon/
-└── manifest.json     # Plugin metadata (name, version, target Zotero versions)
-```
-
-## Status
-
-`v1.3.4` — production-ready. Validated against a 5,000+-item / 70+-collection library. 99/99 mocha tests pass.
-
-## RAG with Citations (the "AI reads PDFs like a human" surface)
-
-Zotero Bridge's RAG layer (`claude-plugin/python/zotero_bridge/rag/`) lets AI agents
-retrieve text from a user's Zotero library **with structured provenance**.
-Every chunk comes back as a `Citation` object carrying the Zotero item
-key, attachment id, section heading, chunk index, similarity score, the
-verbatim text, and a `zotero://` URI for one-click verification.
-
-### Python API
-
-```python
-from zotero_bridge import retrieve_with_citations
-from zotero_bridge.rag.embedder import create_embedder
-from pathlib import Path
-
-embedder = create_embedder(
-    provider="ollama", model="nomic-embed-text",
-    api_url="http://localhost:11434",
-)
-citations = retrieve_with_citations(
-    query="how do transformers attend to long-range context?",
-    store_path=Path("~/.local/share/zotero-bridge/rag/ml-papers.json").expanduser(),
-    embedder=embedder,
-    top_k=10,
-)
-for c in citations:
-    print(f"{c.title} [{c.zotero_uri()}] section={c.section} score={c.score:.2f}")
-    print(c.text)
-```
-
-### CLI
-
-```bash
-# 1) Build an index for a Zotero collection (existing command)
-zotero-rag index --collection "ML Papers"
-
-# 2) Retrieve citations for a query
-zotero-rag cite "how do transformers attend to long-range context?" --collection "ML Papers" --output markdown
-zotero-rag cite "how do transformers attend to long-range context?" --collection "ML Papers" --output json --top-k 5
-```
-
-### Stable JSON schema
-
-The `--output json` form returns a list of objects with this stable schema:
-
-```json
-[
-  {
-    "itemKey": "ABC123",
-    "attachmentId": 42,
-    "title": "Attention Is All You Need",
-    "authors": "Vaswani, Ashish; Shazeer, Noam",
-    "section": "Section 3 — The Model",
-    "chunkIndex": 7,
-    "text": "...",
-    "score": 0.87,
-    "zoteroUri": "zotero://select/library/items/ABC123"
-  }
-]
-```
-
-This is the AI-facing contract — any agent consuming citations from zotero-bridge can rely on these field names.
-
-## API stability
-
-Stable contract for SDK / CLI consumers: [docs/api-stability.md](docs/api-stability.md).
-
-## Roadmap (not yet implemented)
-
-Preference keys are reserved in `SETTINGS_KEYS` (callable via `settings.set`), but the consumer RPC methods don't exist yet:
+Preference keys reserved in `SETTINGS_KEYS` (callable via `settings.set`); consumer methods not yet implemented:
 
 - `ocr.*` — for a future `attachments.ocr` method
-- `embedding.*` — for future semantic search / chunking
-- `rag.*` — for a future `search.semantic` method
+- `embedding.*` — semantic search / chunking
+- `rag.*` — for `search.semantic`
 
-PRs welcome.
-
-## Contributing
-
-PRs welcome. Run `npm test` before submitting; new methods need a mocha test using `test/fixtures/zotero-mock.ts`.
+PRs welcome. New RPC methods need a mocha test using `test/fixtures/zotero-mock.ts`.
 
 ## License
 
