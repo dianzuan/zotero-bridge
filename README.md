@@ -58,7 +58,7 @@ Zotero's built-in `localhost:23119` HTTP service is hardcoded for the browser-ex
 /setup
 ```
 
-`/setup` pings the bridge; if Zotero is missing the XPI, it fetches the latest release, downloads it, and walks you through **Tools → Plugins → ⚙ → Install From File → restart**. Then talk to Claude in plain English — *"find papers on transformer attention"*, *"add DOI 10.1038/nature12373 to my ML collection"*, *"export GB/T 7714 references for items 10, 13, 16"*. Claude routes to the right sub-workflow (search / manage / export / OCR / RAG), which calls the RPC.
+`/setup` pings the bridge; if Zotero is missing the XPI, it fetches the latest release, downloads it, and walks you through **Tools → Plugins → ⚙ → Install From File → restart**. Then talk to Claude in plain English — *"find papers on transformer attention"*, *"add DOI 10.1038/nature12373 to my ML collection"*, *"export APA references for items 10, 13, 16"*. Claude routes to the right sub-workflow (search / manage / export / OCR / RAG), which calls the RPC.
 
 ### Path B — Python CLI / SDK
 
