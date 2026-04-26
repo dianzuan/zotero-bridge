@@ -21,9 +21,10 @@
 
 ## ✨ 亮点
 
-- **77 个强类型 RPC 方法**,9 大命名空间 —— items / collections / attachments / notes / search / tags / export / settings / system
-- **Python CLI + SDK** —— 基于 typer,支持 `--jq` 过滤、`--paginate` 自动翻页、`--dry-run` 预演、`--output {json,table}`、shell 补全
-- **带溯源的 RAG** —— 每段引用都带 `zotero://` URI,一键回到 Zotero 原文核对
+- **1 个 umbrella Claude Code skill** —— 5 个工作流（search / manage / export / OCR / RAG），渐进披露，AI 替你读写文献库
+- **77 个强类型 RPC 方法**底层撑场子，9 大命名空间 —— Python / curl / MCP server 等任意客户端都能对接
+- **Python CLI + SDK** —— 基于 typer，`--jq` 过滤、`--paginate` 自动翻页、`--dry-run` 预演、shell 补全
+- **带溯源的 RAG** —— 每段引用都带 `zotero://` URI，一键回到 Zotero 原文核对
 - **在 Zotero 8.0.4 实测** —— Zotero 7 暂未验证
 - **AGPL-3.0** —— 完全开源
 
@@ -75,67 +76,47 @@ Zotero Bridge 填补了这个空白：**一个稳定、强类型、统一的 API
 
 ## 快速上手
 
-### 安装（用户）
+### 1. 装 Zotero 插件（所有人都得做这一步）
 
-1. 从 [Releases](https://github.com/dianzuan/zotero-bridge/releases) 下载最新 XPI（如 `zotero-bridge.xpi`）。
-2. 在 Zotero 里：**工具 → 插件 → ⚙ → 从文件安装插件…** → 选刚下载的 `.xpi`。
-3. 重启 Zotero。HTTP 服务器会跑在 `localhost:23119/zotero-bridge/rpc`。
+1. 从 [Releases](https://github.com/dianzuan/zotero-bridge/releases) 下载最新 `zotero-bridge.xpi`。
+2. Zotero 里：**工具 → 插件 → ⚙ → 从文件安装插件…** → 选 `.xpi`。
+3. 重启 Zotero。HTTP 服务跑在 `localhost:23119/zotero-bridge/rpc`。
 
-### 试试看
+### 2. 选一个客户端
+
+#### A. Claude Code（推荐）
+
+仓库自带 1 个 umbrella skill（5 个工作流，渐进披露），让 Claude 直接帮你搜库、入库、导出引用、OCR、做 RAG。
+
+在 Claude Code 里：
+
+```
+/plugin marketplace add dianzuan/zotero-bridge
+/plugin install zotero-bridge@zotero-bridge
+```
+
+然后直接对 Claude 说："找一下我库里关于注意力机制的论文" 或 "把 DOI 10.1038/nature12373 加到 ML 集合里" —— Claude 自动路由到对应工作流，工作流调 RPC。
+
+（本地开发：clone 仓库后 `/plugin marketplace add ~/zotero-bridge`。）
+
+#### B. Python CLI / SDK（写脚本或别的 AI agent）
 
 ```bash
-# 心跳
+uv tool install zotero-bridge        # 或：pip install zotero-bridge
+
+zotero-bridge ping
+zotero-bridge search quick "数字经济" --limit 10
+zotero-bridge rpc items.get '{"id":12345}'    # escape hatch —— 覆盖全部 77 个方法
+```
+
+`rpc` 子命令是协议层 escape hatch：任何没有友好 typer 子命令的 RPC 方法都能直接调用。`--jq` 过滤输出（仿 `gh api --jq`），`--install-completion {bash|zsh|fish|powershell}` 装 shell 补全。SDK 稳定契约见 [`docs/api-stability.md`](docs/api-stability.md)。
+
+#### C. 裸 HTTP（任何工具、任何语言）
+
+```bash
 curl -s -X POST http://localhost:23119/zotero-bridge/rpc \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","method":"system.ping","id":1}'
-# → {"jsonrpc":"2.0","result":{"status":"ok","timestamp":"..."}, "id":1}
-
-# 文献库统计
-curl -s -X POST http://localhost:23119/zotero-bridge/rpc \
-  -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","method":"system.libraryStats","params":{},"id":1}'
-# → {"libraryId":1, "items":5312, "collections":72}
-
-# 最近添加的 3 条
-curl -s -X POST http://localhost:23119/zotero-bridge/rpc \
-  -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","method":"items.getRecent","params":{"limit":3,"type":"added"},"id":1}'
-```
-
-### 方式二 —— 使用 Python CLI（单一二进制覆盖全部 77 个方法）
-
-```bash
-pip install zotero-bridge   # 或：uv tool install zotero-bridge
-
-# 友好的类型化子命令：
-zotero-bridge ping
-zotero-bridge search quick "数字经济" --limit 10
-zotero-bridge collections tree
-
-# 通用 escape hatch —— 覆盖全部 77 个 RPC 方法：
-zotero-bridge rpc <method> '<json-params>'
-zotero-bridge rpc items.get '{"id":12345}'
-zotero-bridge rpc tags.add '{"itemId":12345,"tags":["读过"]}'
-```
-
-`rpc` 子命令是协议层的 escape hatch：任何还没有友好 typer 子命令的 RPC 方法都能直接调用。
-这样 CLI 表面保持稳定，即使 XPI 方法数量增长也不需要改 CLI。
-
-#### Shell 自动补全
-
-```bash
-zotero-bridge --install-completion bash    # 或 zsh / fish / powershell
-```
-
-重启 shell 后,`zotero-bridge <Tab>` 即可补全子命令和参数。
-
-#### 用 --jq 过滤输出
-
-借鉴自 `gh api --jq`。当你只关心少数字段时，可以大幅减少 AI 的 token 消耗：
-
-```bash
-zotero-bridge rpc items.getRecent '{"limit": 50}' --jq '.[].title'
-zotero-bridge collections list --jq '.[] | select(.parentID == null) | .name'
 ```
 
 ## API 一览
@@ -144,7 +125,7 @@ zotero-bridge collections list --jq '.[] | select(.parentID == null) | .name'
 
 | 命名空间 | 方法数 | 干啥的 |
 |---|---|---|
-| `items.*` | 17 | 条目 CRUD、按 DOI/URL/ISBN/文件添加、最近、回收站、查重、关联 |
+| `items.*` | 19 | 条目 CRUD、按 DOI/URL/ISBN/文件添加、最近、回收站、查重、关联 |
 | `collections.*` | 12 | 集合列表、创建、改名、移动、树形、集合内条目 |
 | `attachments.*` | 6 | 附件列表、获取全文（走 cache 文件）、获取路径、找 PDF |
 | `notes.*` | 6 | 笔记 CRUD、注释、笔记内搜索 |
@@ -152,7 +133,7 @@ zotero-bridge collections list --jq '.[] | select(.parentID == null) | .name'
 | `tags.*` | 6 | 标签列表、添加、移除、改名、删除（支持跨库） |
 | `export.*` | 5 | BibTeX / CSL-JSON / RIS / CSV / 参考文献（CiteProc） |
 | `settings.*` | 4 | 插件侧偏好（如 OCR 提供商、embedding 模型） |
-| `system.*` | 10 | ping、version、libraries、switchLibrary、sync、currentCollection、**`system.reload`**（开发用自重载） |
+| `system.*` | 11 | ping、version、libraries、switchLibrary、sync、currentCollection、**`system.reload`**（开发用自重载） |
 
 ### 设计约定
 
@@ -218,9 +199,7 @@ addon/
 
 ## 状态
 
-`v1.3.4`——上面 77 个方法生产可用。在 5000+ 条目 / 70+ 集合的真实 Zotero 库上验证过。99/99 mocha 测试通过 / TypeScript 严格模式干净。
-
-代码经过一轮 61 个 fix 的审计修复活动，每个方法都对照 Zotero 8 源码核过。审计交付物在 `docs/superpowers/specs/`。
+`v1.3.4` —— 生产可用。在 5000+ 条目 / 70+ 集合的真实库上验证过。99/99 mocha 测试通过。
 
 ## 带引用的 RAG（"让 AI 像人一样读 PDF"接口）
 
@@ -282,8 +261,7 @@ zotero-rag cite "数字经济对就业的影响" --collection 数字经济 --out
 ]
 ```
 
-这是面向 AI 的契约：任何消费 zotero-bridge 引用的 agent 都可以依赖这些字段名。
-`zoteroUri` 字段直接在 Zotero 桌面端打开来源条目，一键验证原文。
+这是面向 AI 的契约 —— 任何消费 zotero-bridge 引用的 agent 都可以依赖这些字段名。
 
 ## API 稳定性
 
@@ -291,25 +269,21 @@ SDK / CLI 消费者的稳定契约见 [docs/api-stability.md](docs/api-stability
 
 ## Roadmap（计划中尚未实现）
 
-下面这些功能在 `SETTINGS_KEYS` 里**已预留偏好键**（所以调用方可以 `settings.set { key: "ocr.provider", value: ... }`），但**对应的 RPC 消费方法还没写**：
+`SETTINGS_KEYS` 里已预留偏好键（可以 `settings.set` 写入），但消费方法还没写：
 
-- **OCR**：`ocr.provider` / `ocr.apiKey` / `ocr.apiUrl` / `ocr.model` —— 计划用于未来的 `attachments.ocr` 方法，把附件 PDF 跑配置好的 OCR 服务（如 GLM、OpenAI Vision）。**未实现**
-- **Embedding**：`embedding.provider` / `embedding.model` / `embedding.apiKey` / `embedding.apiUrl` —— 计划支撑未来的语义搜索 / 文档分块流水线。**未实现**
-- **RAG**：`rag.chunkSize` / `rag.chunkOverlap` / `rag.topK` —— 计划用于未来的 `search.semantic` 方法做向量检索。**未实现**
+- `ocr.*` —— 给未来的 `attachments.ocr` 方法
+- `embedding.*` —— 给未来的语义搜索 / 分块
+- `rag.*` —— 给未来的 `search.semantic` 方法
 
-属于 roadmap 不是 bug。欢迎 PR 来做——参考 [`CONTRIBUTING.md`](CONTRIBUTING.md)（TBD）。
+欢迎 PR。
 
 ## 贡献
 
-欢迎 PR，AGPL-3.0-or-later。提交前跑 `npm test`；新方法至少要带一个 mocha 测试，用现有的 `test/fixtures/zotero-mock.ts` harness。
+欢迎 PR。提交前跑 `npm test`；新方法至少带一个 mocha 测试，用 `test/fixtures/zotero-mock.ts`。
 
 ## 许可证
 
-**[AGPL-3.0-or-later](LICENSE)** —— 跟 Zotero 本身一致。
-
-意思是：任何人可以使用、研究、修改、再分发本插件**包括通过网络服务**，前提是衍生作品（fork、托管服务、修改后的二进制）必须在同一许可下提供完整源码。
-
-如果你想把 Zotero Bridge 的部分代码用在闭源产品里，这个许可证不适合你——开个 issue 我们聊聊商业授权。
+[AGPL-3.0-or-later](LICENSE)。要在闭源产品里用，开 issue 聊商业授权。
 
 ## 鸣谢
 

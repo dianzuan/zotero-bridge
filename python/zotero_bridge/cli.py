@@ -323,7 +323,7 @@ def collections_remove_items(
 
 @app.command(
     "push",
-    epilog="Examples:\n\n    cat item.json | zotero-bridge push - --pdf paper.pdf --collection \"研究生\"\n\n    zotero-bridge push paper.json --on-duplicate update",
+    epilog="Examples:\n\n    cat item.json | zotero-bridge push - --pdf paper.pdf --collection \"Reading List\"\n\n    zotero-bridge push paper.json --on-duplicate update",
 )
 def push(
     json_file: str = typer.Argument(

@@ -21,8 +21,9 @@
 
 ## ✨ Highlights
 
-- **77 typed RPC methods** across 9 namespaces — items, collections, attachments, notes, search, tags, export, settings, system
-- **Python CLI + SDK** — typer-based, with `--jq` filtering, `--paginate` auto-loop, `--dry-run` preview, `--output {json,table}`, shell completion
+- **1 umbrella Claude Code skill** — covers 5 workflows (search / manage / export / OCR / RAG) via progressive disclosure; AI reads and writes your library on your behalf
+- **77 typed RPC methods** under the hood across 9 namespaces — any client (Python, curl, MCP server, …) can target the same API
+- **Python CLI + SDK** — typer-based, with `--jq` filtering, `--paginate` auto-loop, `--dry-run` preview, shell completion
 - **RAG with citation provenance** — every retrieved chunk carries a `zotero://` URI for one-click traceback
 - **Tested on Zotero 8.0.4** — Zotero 7 not yet verified
 - **AGPL-3.0** — fully open source
@@ -75,69 +76,47 @@ Zotero Bridge fills that gap with a **single, stable, typed API surface** that a
 
 ## Quick start
 
-### Install (users)
+### 1. Install the Zotero plugin (everyone does this)
 
-1. Download the latest XPI from [Releases](https://github.com/dianzuan/zotero-bridge/releases) (e.g. `zotero-bridge.xpi`).
+1. Download the latest `zotero-bridge.xpi` from [Releases](https://github.com/dianzuan/zotero-bridge/releases).
 2. In Zotero: **Tools → Plugins → ⚙ → Install Add-on From File…** → pick the `.xpi`.
 3. Restart Zotero. The HTTP server is live on `localhost:23119/zotero-bridge/rpc`.
 
-### Try it
+### 2. Pick a client
+
+#### A. Claude Code (recommended)
+
+The repo ships 1 umbrella skill (5 workflows via progressive disclosure) so Claude can search, add, export, OCR, and RAG over your library directly.
+
+In Claude Code:
+
+```
+/plugin marketplace add dianzuan/zotero-bridge
+/plugin install zotero-bridge@zotero-bridge
+```
+
+Now ask Claude things like *"find papers I have on transformer attention"* or *"add DOI 10.1038/nature12373 to my ML collection"* — it routes to the right workflow, which calls the RPC.
+
+(Or for local dev: clone the repo and `/plugin marketplace add ~/zotero-bridge`.)
+
+#### B. Python CLI / SDK (scripts and other AI agents)
 
 ```bash
-# Health check
+uv tool install zotero-bridge        # or: pip install zotero-bridge
+
+zotero-bridge ping
+zotero-bridge search quick "transformer attention" --limit 10
+zotero-bridge rpc items.get '{"id":12345}'    # escape hatch — covers all 77 methods
+```
+
+The `rpc` subcommand is the protocol-level escape hatch: any RPC method that doesn't have a friendly typer subcommand can still be called directly. `--jq` filters output (`gh api --jq` style), `--install-completion {bash|zsh|fish|powershell}` enables shell completion. See [`docs/api-stability.md`](docs/api-stability.md) for the SDK contract.
+
+#### C. Raw HTTP (any tool, any language)
+
+```bash
 curl -s -X POST http://localhost:23119/zotero-bridge/rpc \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","method":"system.ping","id":1}'
-# → {"jsonrpc":"2.0","result":{"status":"ok","timestamp":"..."}, "id":1}
-
-# Library stats
-curl -s -X POST http://localhost:23119/zotero-bridge/rpc \
-  -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","method":"system.libraryStats","params":{},"id":1}'
-# → {"libraryId":1, "items":5312, "collections":72}
-
-# Most recent 3 items added
-curl -s -X POST http://localhost:23119/zotero-bridge/rpc \
-  -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","method":"items.getRecent","params":{"limit":3,"type":"added"},"id":1}'
-```
-
-### Method 2 — Use the Python CLI (one binary, all 77 methods)
-
-```bash
-pip install zotero-bridge   # or: uv tool install zotero-bridge
-
-# Friendly typed subcommands:
-zotero-bridge ping
-zotero-bridge search quick "transformer attention" --limit 10
-zotero-bridge collections tree
-
-# Generic escape hatch — covers all 77 RPC methods:
-zotero-bridge rpc <method> '<json-params>'
-zotero-bridge rpc items.get '{"id":12345}'
-zotero-bridge rpc tags.add '{"itemId":12345,"tags":["read"]}'
-```
-
-The `rpc` subcommand is the protocol-level escape hatch: any RPC method
-that does not have a friendly typer subcommand can still be called directly.
-This keeps the CLI surface stable as the XPI grows.
-
-#### Shell completion
-
-```bash
-zotero-bridge --install-completion bash    # or zsh / fish / powershell
-```
-
-After restarting your shell, `zotero-bridge <Tab>` completes subcommands and flags.
-
-#### Filter output with --jq
-
-Borrowed from `gh api --jq`. Reduces AI token usage massively when you
-only need a few fields:
-
-```bash
-zotero-bridge rpc items.getRecent '{"limit": 50}' --jq '.[].title'
-zotero-bridge collections list --jq '.[] | select(.parentID == null) | .name'
 ```
 
 ## API surface
@@ -146,7 +125,7 @@ zotero-bridge collections list --jq '.[] | select(.parentID == null) | .name'
 
 | Namespace | Methods | What it does |
 |---|---|---|
-| `items.*` | 17 | CRUD on Zotero items, add by DOI/URL/ISBN/file, recent, trash, duplicates, related |
+| `items.*` | 19 | CRUD on Zotero items, add by DOI/URL/ISBN/file, recent, trash, duplicates, related |
 | `collections.*` | 12 | List, create, rename, move, tree, items in collection |
 | `attachments.*` | 6 | List attachments, get fulltext (cache-file backed), get path, find PDF |
 | `notes.*` | 6 | Notes CRUD, annotations, search inside notes |
@@ -154,7 +133,7 @@ zotero-bridge collections list --jq '.[] | select(.parentID == null) | .name'
 | `tags.*` | 6 | List, add, remove, rename, delete (cross-library) |
 | `export.*` | 5 | BibTeX / CSL-JSON / RIS / CSV / bibliography (CiteProc) |
 | `settings.*` | 4 | Plugin-side preferences (e.g. OCR provider, embedding model) |
-| `system.*` | 10 | Ping, version, libraries, switchLibrary, sync, currentCollection, **`system.reload`** (self-reload for dev) |
+| `system.*` | 11 | Ping, version, libraries, switchLibrary, sync, currentCollection, **`system.reload`** (self-reload for dev) |
 
 ### Conventions
 
@@ -220,9 +199,7 @@ addon/
 
 ## Status
 
-`v1.3.4` — production-ready for the 77 methods documented above. Validated against a real 5,000+-item / 70+-collection Zotero library. 99/99 mocha tests pass, TypeScript strict mode clean.
-
-The codebase has gone through a 61-fix audit-and-fix campaign covering every method against Zotero 8 source code. See `docs/superpowers/specs/` for the audit deliverables.
+`v1.3.4` — production-ready. Validated against a 5,000+-item / 70+-collection library. 99/99 mocha tests pass.
 
 ## RAG with Citations (the "AI reads PDFs like a human" surface)
 
@@ -285,9 +262,7 @@ The `--output json` form returns a list of objects with this stable schema:
 ]
 ```
 
-This is the AI-facing contract: any agent that consumes citations from
-zotero-bridge can rely on these field names. The `zoteroUri` field opens
-the source item in Zotero desktop for one-click verification.
+This is the AI-facing contract — any agent consuming citations from zotero-bridge can rely on these field names.
 
 ## API stability
 
@@ -295,25 +270,21 @@ Stable contract for SDK / CLI consumers: [docs/api-stability.md](docs/api-stabil
 
 ## Roadmap (not yet implemented)
 
-The following features have **preference keys reserved** in `SETTINGS_KEYS` (so callers can already read/write `settings.set { key: "ocr.provider", value: ... }`) but **no consumer RPC methods exist yet**:
+Preference keys are reserved in `SETTINGS_KEYS` (callable via `settings.set`), but the consumer RPC methods don't exist yet:
 
-- **OCR**: `ocr.provider`, `ocr.apiKey`, `ocr.apiUrl`, `ocr.model` — intended for an `attachments.ocr` method that runs an attached PDF through a configurable OCR provider (e.g. GLM, OpenAI Vision). Not implemented.
-- **Embeddings**: `embedding.provider`, `embedding.model`, `embedding.apiKey`, `embedding.apiUrl` — intended to back a future semantic-search or document-chunking pipeline. Not implemented.
-- **RAG**: `rag.chunkSize`, `rag.chunkOverlap`, `rag.topK` — intended for a `search.semantic` method that searches across vector-embedded item content. Not implemented.
+- `ocr.*` — for a future `attachments.ocr` method
+- `embedding.*` — for future semantic search / chunking
+- `rag.*` — for a future `search.semantic` method
 
-These are tracked as roadmap items, not bugs. Contributions welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) (TBD).
+PRs welcome.
 
 ## Contributing
 
-Contributions welcome under AGPL-3.0-or-later. Run `npm test` before submitting; new methods need at minimum one mocha test using the existing `test/fixtures/zotero-mock.ts` harness.
+PRs welcome. Run `npm test` before submitting; new methods need a mocha test using `test/fixtures/zotero-mock.ts`.
 
 ## License
 
-**[AGPL-3.0-or-later](LICENSE)** — same as Zotero itself.
-
-This means: anyone can use, study, modify, and redistribute this plugin **including over a network**, as long as derivative work (forks, hosted services, modified binaries) ships with full source code under the same license.
-
-If you want to use parts of Zotero Bridge in a closed-source product, this license is not for you — open an issue and we'll discuss commercial licensing options.
+[AGPL-3.0-or-later](LICENSE). For closed-source use, open an issue to discuss commercial licensing.
 
 ## Acknowledgments
 
