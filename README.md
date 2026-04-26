@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/logo-256.png" alt="Zotero Bridge logo" width="160" />
+<img src="assets/logo.png" alt="Zotero Bridge logo" width="160" />
 
 # Zotero Bridge
 
