@@ -1,12 +1,6 @@
----
-name: zotero-rag
-description: Semantic search inside Zotero papers to find relevant paragraphs. Use when the user needs literature review support, asks "前人研究怎么说", "找相关段落", "语义搜索", "文献综述", "哪篇论文提到了X", or wants to find specific content across papers without reading them all. This saves ~90% tokens compared to reading full papers. Requires a collection to be OCR'd and indexed first.
-argument-hint: "search --collection 数字经济 \"就业效应的异质性\""
----
+# RAG (semantic search)
 
-# Zotero RAG Search
-
-Find relevant paragraphs across papers in a Zotero collection using semantic search.
+Find relevant paragraphs across papers in a Zotero collection using semantic search. Saves ~90% tokens vs. reading full papers. Requires the collection to be OCR'd and indexed first.
 
 ## Workflow
 

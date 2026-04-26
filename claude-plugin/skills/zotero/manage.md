@@ -1,17 +1,6 @@
----
-name: zotero-manage
-description: Add papers to Zotero, update metadata, organize collections and tags. Use when the user wants to save a paper (by DOI, URL, ISBN, or PDF file), create or organize collections, add/remove tags, or update paper information. Also triggers when user says "save this to Zotero", "add this paper", "organize my library", or "tag these papers".
-argument-hint: "add DOI 10.1016/j.jfineco.2024.01.001"
----
-
-# Zotero Manage
+# Manage
 
 Add, update, and organize papers in the user's Zotero library.
-
-> All commands here invoke the unified `zotero-bridge` CLI's generic `rpc` subcommand.
-> Form: `zotero-bridge rpc <method.name> '<json-params>'`. This covers all 77 XPI methods.
-> For typed/friendly subcommands like `zotero-bridge search quick "X" --limit 10`,
-> see `zotero-bridge --help`.
 
 ## Adding papers
 
@@ -30,7 +19,7 @@ Choose the method based on what the user provides:
 zotero-bridge rpc items.addByDOI '{"doi":"10.1016/j.jfineco.2024.01.001"}'
 
 # Import local PDF
-zotero-bridge rpc items.addFromFile '{"path":"/mnt/f/经济学期刊/paper.pdf","collection":5}'
+zotero-bridge rpc items.addFromFile '{"path":"/path/to/paper.pdf","collection":5}'
 
 # Manual creation
 zotero-bridge rpc items.create '{"itemType":"journalArticle","fields":{"title":"论文标题","date":"2024","publicationTitle":"经济研究"},"creators":[{"firstName":"三","lastName":"张","creatorType":"author"}],"tags":["核心"]}'

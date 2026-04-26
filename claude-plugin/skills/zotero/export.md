@@ -1,17 +1,6 @@
----
-name: zotero-export
-description: Export citations and references from Zotero in GB/T 7714, BibTeX, RIS, or CSL-JSON format. Use when the user needs formatted references, a bibliography, citation text, wants to cite papers in their writing, or asks for "参考文献" or "引用格式". Default to GB/T 7714 for Chinese academic papers.
-argument-hint: "导出这几篇的参考文献"
----
+# Export
 
-# Zotero Export
-
-Generate formatted citations from papers in the user's Zotero library.
-
-> All commands here invoke the unified `zotero-bridge` CLI.
-> For export operations, use the native `zotero-bridge export` subcommands (bibtex, ris, csl-json, bibliography).
-> For operations not yet in typer, use the generic `rpc` form: `zotero-bridge rpc <method.name> '<json-params>'`.
-> See `zotero-bridge --help` for full CLI structure.
+Generate formatted citations from papers in the user's Zotero library. For Chinese academic writing default to GB/T 7714.
 
 ## Workflow
 

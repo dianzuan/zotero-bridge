@@ -1,12 +1,6 @@
----
-name: zotero-ocr
-description: OCR PDFs in Zotero to extract high-quality text. Use when the user mentions OCR, scanning, PDF text extraction, "扫描件", "识别PDF", "PDF转文字", "提取全文", or when preparing a Zotero collection for literature review. Also triggers when the user says "这篇论文没有全文" or "读不了PDF". Always OCR before building a RAG index.
-argument-hint: "--collection 数字经济"
----
+# OCR
 
-# Zotero OCR
-
-Convert PDFs in a Zotero collection to high-quality Markdown via cloud OCR, stored as Zotero Notes.
+Convert PDFs in a Zotero collection to high-quality Markdown via cloud OCR, stored as Zotero Notes. Always run OCR before building a RAG index.
 
 ## Core usage
 

@@ -1,17 +1,6 @@
----
-name: zotero-search
-description: Search and browse the user's Zotero library - find papers by keywords, read PDF fulltext, get annotations, browse collections. Use whenever the user mentions finding papers, looking up references, checking their library, reading a paper's content, or needs information from their Zotero collection. Also use when the user asks "do I have a paper about X" or "what papers do I have on Y".
-argument-hint: "数字经济 就业"
----
+# Search
 
-# Zotero Search
-
-Search the user's local Zotero library via `zotero-bridge`. Requires Zotero desktop running with zotero-bridge plugin.
-
-> All commands here invoke the unified `zotero-bridge` CLI's generic `rpc` subcommand.
-> Form: `zotero-bridge rpc <method.name> '<json-params>'`. This covers all 77 XPI methods.
-> For typed/friendly subcommands like `zotero-bridge search quick "X" --limit 10`,
-> see `zotero-bridge --help`.
+Search and browse the user's Zotero library — find papers by keywords, read PDF fulltext, get annotations, browse collections.
 
 ## Choosing the right search
 
