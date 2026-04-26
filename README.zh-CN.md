@@ -52,7 +52,7 @@ Zotero Bridge 是一个 [bootstrap-extension](https://www.zotero.org/support/dev
 │  你的工具/智能体          │         │  Zotero（装了本插件）        │
 │                          │         │                             │
 │  curl /zotero-bridge/rpc │ ──HTTP─▶│  77 个强类型 RPC 方法        │
-│  cnki-plugin 推送         │         │  • items.* (17)             │
+│  cnki-plugin 推送         │         │  • items.* (19)             │
 │  研究 agent              │         │  • collections.* (12)       │
 │  Better-BibTeX 消费者    │         │  • attachments.* (6)        │
 │  …                       │         │  • notes.* (6)              │
@@ -60,7 +60,7 @@ Zotero Bridge 是一个 [bootstrap-extension](https://www.zotero.org/support/dev
 │                          │         │  • tags.* (6)               │
 │                          │         │  • export.* (5)             │
 │                          │         │  • settings.* (4)           │
-│                          │         │  • system.* (10)            │
+│                          │         │  • system.* (11)            │
 └──────────────────────────┘         └─────────────────────────────┘
 ```
 

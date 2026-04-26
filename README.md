@@ -52,7 +52,7 @@ Zotero Bridge is a [bootstrap-extension](https://www.zotero.org/support/dev/zote
 │  Your tool / agent       │         │  Zotero (with this plugin)  │
 │                          │         │                             │
 │  curl /zotero-bridge/rpc │ ──HTTP─▶│  77 typed RPC methods       │
-│  cnki-plugin push        │         │  • items.* (17)             │
+│  cnki-plugin push        │         │  • items.* (19)             │
 │  research agent          │         │  • collections.* (12)       │
 │  Better-BibTeX consumer  │         │  • attachments.* (6)        │
 │  …                       │         │  • notes.* (6)              │
@@ -60,7 +60,7 @@ Zotero Bridge is a [bootstrap-extension](https://www.zotero.org/support/dev/zote
 │                          │         │  • tags.* (6)               │
 │                          │         │  • export.* (5)             │
 │                          │         │  • settings.* (4)           │
-│                          │         │  • system.* (10)            │
+│                          │         │  • system.* (11)            │
 └──────────────────────────┘         └─────────────────────────────┘
 ```
 
