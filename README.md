@@ -75,7 +75,7 @@ Pre-Zotero-7 alternatives — vendoring a SQLite reader (fragile, write-locked, 
 /zotron:setup
 ```
 
-`/zotron:setup` pings the bridge; if Zotero is missing the XPI, it copies the bundled `claude-plugin/xpi/zotron.xpi` into your real Downloads folder (auto-detected, handles drive relocation like `E:\Downloads` on Windows, OneDrive redirect, and POSIX defaults) and walks you through Zotero's native **Tools → Plugins → ⚙ → Install Add-on From File → restart**. Then talk to Claude in plain English — *"find papers on transformer attention"*, *"add DOI 10.1038/nature12373 to my ML collection"*, *"export APA references for items 10, 13, 16"*. Claude routes to the right sub-workflow (search / manage / export / OCR / RAG), which calls the RPC.
+`/zotron:setup` pings the bridge. If the XPI is missing, it downloads the release `zotron.xpi` to your real Downloads folder (auto-detected, handles drive relocation like `E:\Downloads` on Windows, OneDrive redirect, and POSIX defaults), trying GitHub first and then configured mirror URLs. If the XPI is installed but older than the setup target, it tells you to use Zotero's built-in add-on update flow instead of reinstalling. Then talk to Claude in plain English — *"find papers on transformer attention"*, *"add DOI 10.1038/nature12373 to my ML collection"*, *"export APA references for items 10, 13, 16"*. Claude routes to the right sub-workflow (search / manage / export / OCR / RAG), which calls the RPC.
 
 ### Path B — OpenAI Codex CLI / code-cli
 
@@ -100,7 +100,7 @@ Then install **Zotron** from Codex's plugin UI and invoke the setup skill:
 $zotron-setup
 ```
 
-The setup skill exposes the bundled `zotron`, `zotron-rag`, and `zotron-ocr` shims, copies the bundled `zotron.xpi` to your Downloads folder when needed, and walks you through Zotero's native **Tools → Plugins → ⚙ → Install Add-on From File → restart** flow.
+The setup skill exposes the bundled `zotron`, `zotron-rag`, and `zotron-ocr` shims, downloads release `zotron.xpi` into your Downloads folder when needed, and walks you through Zotero's native **Tools → Plugins → ⚙ → Install Add-on From File → restart** flow. The repository does not track generated XPI files; releases are the install source. Set `ZOTRON_XPI_URLS` to a whitespace/comma/semicolon-separated mirror list when GitHub is not reachable.
 
 After Zotero restarts:
 

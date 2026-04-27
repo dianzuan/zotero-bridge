@@ -20,7 +20,7 @@
   "interface": {
     "displayName": "Zotron",
     "shortDescription": "Search, cite, OCR, and RAG over your Zotero library.",
-    "longDescription": "Zotron connects Codex to a local Zotero desktop library through the bundled Zotero XPI and Python CLI. It supports paper search, collection management, citation export, OCR preparation, and semantic retrieval with span provenance.",
+    "longDescription": "Zotron connects Codex to a local Zotero desktop library through the release Zotero XPI and Python CLI. It supports paper search, collection management, citation export, OCR preparation, and semantic retrieval with span provenance.",
     "developerName": "diamondrill",
     "category": "Productivity",
     "capabilities": [

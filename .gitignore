@@ -1,7 +1,6 @@
 node_modules/
 .scaffold/
 *.xpi
-!claude-plugin/xpi/zotron.xpi
 
 # Python
 __pycache__/

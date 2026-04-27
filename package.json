@@ -24,7 +24,7 @@
   ],
   "scripts": {
     "start": "zotero-plugin serve",
-    "build": "tsc --noEmit && zotero-plugin build && cp .scaffold/build/zotron.xpi claude-plugin/xpi/zotron.xpi",
+    "build": "tsc --noEmit && zotero-plugin build",
     "test": "mocha"
   },
   "dependencies": {
