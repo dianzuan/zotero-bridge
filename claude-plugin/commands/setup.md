@@ -2,7 +2,7 @@
 description: Set up Zotron — verify the XPI plugin is installed and reachable, install it if missing, and confirm the bridge is live on localhost:23119.
 ---
 
-# /setup — Zotron bootstrap
+# /zotron:setup — Zotron bootstrap
 
 Run this when the user has just installed the `zotron` Claude Code plugin and needs to get the Zotero side wired up.
 

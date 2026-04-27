@@ -55,10 +55,10 @@ Zotero's built-in `localhost:23119` HTTP service is hardcoded for the browser-ex
 ```
 /plugin marketplace add dianzuan/zotron
 /plugin install zotron@zotron
-/setup
+/zotron:setup
 ```
 
-`/setup` pings the bridge; if Zotero is missing the XPI, it fetches the latest release, downloads it, and walks you through **Tools → Plugins → ⚙ → Install From File → restart**. Then talk to Claude in plain English — *"find papers on transformer attention"*, *"add DOI 10.1038/nature12373 to my ML collection"*, *"export APA references for items 10, 13, 16"*. Claude routes to the right sub-workflow (search / manage / export / OCR / RAG), which calls the RPC.
+`/zotron:setup` pings the bridge; if Zotero is missing the XPI, it fetches the latest release, downloads it, and walks you through **Tools → Plugins → ⚙ → Install From File → restart**. Then talk to Claude in plain English — *"find papers on transformer attention"*, *"add DOI 10.1038/nature12373 to my ML collection"*, *"export APA references for items 10, 13, 16"*. Claude routes to the right sub-workflow (search / manage / export / OCR / RAG), which calls the RPC.
 
 ### Path B — Python CLI / SDK
 
@@ -86,8 +86,8 @@ curl -s -X POST http://localhost:23119/zotron/rpc \
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `/setup` says `MISSING_UV` | `uv` not on PATH | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
-| Skill startup banner: *"Zotron not detected"* | Zotero not running or XPI not installed | Start Zotero, then re-run `/setup` |
+| `/zotron:setup` says `MISSING_UV` | `uv` not on PATH | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| Skill startup banner: *"Zotron not detected"* | Zotero not running or XPI not installed | Start Zotero, then re-run `/zotron:setup` |
 | `connection refused` on port 23119 | Zotero's built-in HTTP server is off | Edit → Settings → Advanced → Config Editor → `extensions.zotero.httpServer.enabled = true` |
 | Skill doesn't auto-trigger after install | Plugin not loaded into the session | `/reload-plugins`, or restart Claude Code |
 | `zotron: command not found` from Bash tool | Plugin's `bin/` not on PATH | Plugin must be enabled — check the **Installed** tab in `/plugin` |

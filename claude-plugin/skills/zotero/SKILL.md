@@ -7,7 +7,7 @@ description: Manage the user's Zotero library — search papers, add/organize it
 
 Read-write bridge to the user's local Zotero library via the `zotron` CLI. Covers search, add/organize, citation export, PDF OCR, and semantic (RAG) search over OCR'd collections.
 
-**Dependency:** Zotero desktop must be running with the `zotron` XPI plugin installed and listening on `localhost:23119`. If a CLI call fails with a connection error, ask the user to start Zotero — or, if the XPI was never installed, run the bundled `/setup` slash command to bootstrap it.
+**Dependency:** Zotero desktop must be running with the `zotron` XPI plugin installed and listening on `localhost:23119`. If a CLI call fails with a connection error, ask the user to start Zotero — or, if the XPI was never installed, run the bundled `/zotron:setup` slash command to bootstrap it.
 
 ## Pick a workflow
 
