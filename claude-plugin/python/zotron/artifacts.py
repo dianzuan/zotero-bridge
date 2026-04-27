@@ -51,14 +51,31 @@ def sha256_json(data: Any) -> str:
 
 
 def list_artifacts(rpc: Any, parent_id: int, suffix: str | None = None) -> list[dict[str, Any]]:
-    artifacts = rpc.call("attachments.list", {"parentId": parent_id}) or []
+    artifacts = rpc.call("attachments.list", {"parentId": parent_id, "title": ""}) or []
+    if isinstance(artifacts, list):
+        try:
+            setattr(rpc, "_zotron_last_artifacts", artifacts)
+        except Exception:
+            pass
     if suffix is None:
         return list(artifacts)
-    return [a for a in artifacts if str(a.get("title") or a.get("filename") or "").endswith(suffix)]
+    return [
+        a for a in artifacts
+        if isinstance(a, dict)
+        and str(a.get("title") or a.get("filename") or "").endswith(suffix)
+    ]
 
 
 def find_artifact_by_suffix(rpc: Any, parent_id: int, suffix: str) -> dict[str, Any] | None:
-    matches = list_artifacts(rpc, parent_id=parent_id, suffix=suffix)
+    cached = getattr(rpc, "_zotron_last_artifacts", None)
+    if isinstance(cached, list):
+        matches = [
+            a for a in cached
+            if isinstance(a, dict)
+            and str(a.get("title") or a.get("filename") or "").endswith(suffix)
+        ]
+    else:
+        matches = list_artifacts(rpc, parent_id=parent_id, suffix=suffix)
     return matches[0] if matches else None
 
 
@@ -97,20 +114,68 @@ def read_chunks_jsonl(path: Path) -> list[dict[str, Any]]:
     return _read_jsonl(path)
 
 
-def write_provider_raw_zip(path: Path, *, provider: str, files: dict[str, Any], metadata: dict[str, Any] | None = None) -> None:
+class ZoteroArtifactStore:
+    """Small RPC wrapper for Zotero child-attachment artifacts."""
+
+    def __init__(self, rpc: Any) -> None:
+        self.rpc = rpc
+
+    def list_artifacts(self, parent_id: int, suffix: str | None = None) -> list[dict[str, Any]]:
+        return list_artifacts(self.rpc, parent_id=parent_id, suffix=suffix)
+
+    def find_artifact(self, parent_id: int, suffix: str) -> dict[str, Any] | None:
+        return find_artifact_by_suffix(self.rpc, parent_id=parent_id, suffix=suffix)
+
+    def add_artifact(self, parent_id: int, path: Path, title: str | None = None) -> dict[str, Any]:
+        return add_artifact_file(self.rpc, parent_id=parent_id, path=path, title=title)
+
+    def delete_artifact(self, artifact_id: int) -> Any:
+        return delete_artifact(self.rpc, artifact_id=artifact_id)
+
+
+def write_jsonl(path: Path, rows: Iterable[dict[str, Any]]) -> None:
+    _write_jsonl(path, rows)
+
+
+def read_jsonl(path: Path) -> list[dict[str, Any]]:
+    return _read_jsonl(path)
+
+
+def write_provider_raw_zip(
+    path: Path,
+    files: dict[str, Any] | None = None,
+    *,
+    provider: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
-    provider_meta = {"provider": provider, "created_at": _dt.datetime.now(_dt.UTC).isoformat(), **(metadata or {})}
+    files = files or {}
+    provider_meta = {
+        "provider": provider or "",
+        "created_at": _dt.datetime.now(_dt.UTC).isoformat(),
+        **(metadata or {}),
+    }
+    digest = hashlib.sha256()
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("provider.json", json.dumps(provider_meta, ensure_ascii=False, indent=2))
+        if provider is not None or metadata:
+            payload = json.dumps(provider_meta, ensure_ascii=False, indent=2)
+            digest.update(b"provider.json")
+            digest.update(payload.encode("utf-8"))
+            zf.writestr("provider.json", payload)
         for name, content in files.items():
             if isinstance(content, (dict, list)):
                 payload = json.dumps(content, ensure_ascii=False, indent=2)
             elif isinstance(content, bytes):
+                digest.update(name.encode("utf-8"))
+                digest.update(content)
                 zf.writestr(name, content)
                 continue
             else:
                 payload = str(content)
+            digest.update(name.encode("utf-8"))
+            digest.update(payload.encode("utf-8"))
             zf.writestr(name, payload)
+    return digest.hexdigest()
 
 
 def read_provider_raw_zip(path: Path) -> dict[str, Any]:
@@ -164,3 +229,11 @@ def is_artifact_stale(existing: dict[str, Any], expected: ArtifactMetadata | dic
         if str(existing.get(key, "")) != str(wanted.get(key, "")):
             return True
     return False
+
+
+def find_stale_reasons(stored: dict[str, Any], current: dict[str, Any]) -> list[str]:
+    reasons: list[str] = []
+    for key, current_value in current.items():
+        if stored.get(key) != current_value:
+            reasons.append(f"{key} changed")
+    return reasons

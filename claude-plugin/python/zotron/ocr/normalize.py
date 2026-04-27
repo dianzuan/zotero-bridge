@@ -78,14 +78,15 @@ def normalize_provider_raw(*, provider: str, raw: Any, item_key: str, attachment
             if btype == "heading":
                 section = _clean_heading(text)
             page = block.get("page") or block.get("page_number")
+            order = block.get("reading_order", idx)
             normalized.append({
-                "block_id": block.get("block_id") or f"{attachment_key}:p{page or 0}:b{idx}",
+                "block_id": block.get("block_id") or f"{attachment_key}:p{page or 0}:b{int(order):02d}",
                 "attachment_key": attachment_key,
                 "item_key": item_key,
                 "type": btype,
                 "page": page,
                 "bbox": block.get("bbox") or block.get("bounding_box"),
-                "reading_order": block.get("reading_order", idx),
+                "reading_order": order,
                 "section_heading": block.get("section_heading") or section,
                 "text": text,
                 "caption": block.get("caption", ""),
@@ -101,7 +102,7 @@ def normalize_provider_raw(*, provider: str, raw: Any, item_key: str, attachment
         for block in _blocks_from_markdown(text, page=page, source_ref=source_ref):
             page_part = page or 0
             block.update({
-                "block_id": f"{attachment_key}:p{page_part}:b{idx}",
+                "block_id": f"{attachment_key}:p{page_part}:b{idx:02d}",
                 "attachment_key": attachment_key,
                 "item_key": item_key,
                 "source_provider": provider,
@@ -127,7 +128,7 @@ def build_chunks_from_blocks(blocks: list[dict[str, Any]], *, max_chars: int = 2
             return
         pages = [b.get("page") for b in current if b.get("page") is not None]
         chunks.append({
-            "chunk_id": f"{attachment_key}:c{len(chunks)}",
+            "chunk_id": f"{attachment_key}:c{len(chunks) + 1:06d}",
             "item_key": current[0].get("item_key", item_key),
             "attachment_key": current[0].get("attachment_key", attachment_key),
             "block_ids": [b["block_id"] for b in current],
@@ -146,6 +147,9 @@ def build_chunks_from_blocks(blocks: list[dict[str, Any]], *, max_chars: int = 2
         if block.get("type") == "heading":
             flush()
             current_section = block.get("section_heading") or block.get("text", "")
+            block = {**block, "section_heading": current_section}
+            current.append(block)
+            current_len += len(block.get("text", ""))
             continue
         text = block.get("text", "")
         section = block.get("section_heading") or current_section or ""

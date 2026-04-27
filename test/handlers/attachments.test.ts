@@ -165,4 +165,37 @@ describe("attachments handler", () => {
       expect(result).to.deep.equal({ attachment: null });
     });
   });
+
+  describe("delete", () => {
+    it("erases attachment items", async () => {
+      const eraseTx = sinon.stub().resolves();
+      const attachment = fakeItem({ id: 44, isAttachment: true, eraseTx });
+      installZotero({
+        Items: { getAsync: sinon.stub().withArgs(44).resolves(attachment) },
+      });
+
+      delete require.cache[require.resolve("../../src/handlers/attachments")];
+      const { attachmentsHandlers } = await import("../../src/handlers/attachments");
+      const result = await attachmentsHandlers.delete({ id: 44 });
+
+      expect(result).to.deep.equal({ ok: true, id: 44 });
+      expect(eraseTx.calledOnce).to.equal(true);
+    });
+
+    it("rejects non-attachment items", async () => {
+      installZotero({
+        Items: { getAsync: sinon.stub().withArgs(45).resolves(fakeItem({ id: 45 })) },
+      });
+
+      delete require.cache[require.resolve("../../src/handlers/attachments")];
+      const { attachmentsHandlers } = await import("../../src/handlers/attachments");
+
+      try {
+        await attachmentsHandlers.delete({ id: 45 });
+        expect.fail("should have thrown");
+      } catch (err: any) {
+        expect(err.code).to.equal(-32602);
+      }
+    });
+  });
 });

@@ -75,6 +75,15 @@ export const attachmentsHandlers = {
     return { id: params.id, path: path || null };
   },
 
+  async delete(params: { id: number }) {
+    const item = await Zotero.Items.getAsync(params.id);
+    if (!item || !item.isAttachment()) {
+      throw { code: -32602, message: `Attachment ${params.id} not found` };
+    }
+    await item.eraseTx();
+    return { ok: true, id: params.id };
+  },
+
   async findPDF(params: { parentId: number }) {
     const parent = await requireItem(params.parentId);
     const attachment = await Zotero.Attachments.addAvailableFile(parent);

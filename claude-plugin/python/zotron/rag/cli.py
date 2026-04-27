@@ -13,7 +13,7 @@ from zotron.config import load_config
 from zotron.rpc import ZoteroRPC
 from zotron.rag.chunker import chunk_text
 from zotron.rag.embedder import create_embedder
-from zotron.rag.search import VectorStore
+from zotron.rag.search import VectorStore, results_to_hits
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +187,25 @@ def cmd_search(args: argparse.Namespace, cfg: dict[str, Any]) -> None:
     print(json.dumps({"results": results}, ensure_ascii=False, indent=2))
 
 
+def cmd_hits(args: argparse.Namespace, cfg: dict[str, Any]) -> None:
+    store_path = _store_path(args.collection)
+    if not store_path.exists():
+        print(json.dumps({"error": f"Collection not indexed: {args.collection!r}"}), file=sys.stderr)
+        sys.exit(1)
+
+    store = VectorStore.load(store_path)
+    embedder = _build_embedder(cfg)
+    query_vec = embedder.embed(args.query)
+    results = store.search(query_vec, top_k=args.limit)
+    hits = results_to_hits(results, query=args.query)
+
+    if args.output == "jsonl":
+        for hit in hits:
+            print(json.dumps(hit, ensure_ascii=False, separators=(",", ":")))
+    else:
+        print(json.dumps({"hits": hits, "total": len(hits)}, ensure_ascii=False, indent=2))
+
+
 def cmd_status(args: argparse.Namespace, cfg: dict[str, Any]) -> None:
     store_path = _store_path(args.collection)
     if not store_path.exists():
@@ -245,6 +264,22 @@ def main() -> None:
     )
     p_search.add_argument("--collection", required=True, help="Collection name")
     p_search.add_argument("query", help="Query text")
+
+    # hits
+    p_hits = sub.add_parser(
+        "hits",
+        help="Emit academic-zh retrieval hits with span provenance",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_hits.add_argument("query", help="Query text")
+    p_hits.add_argument("--collection", required=True, help="Collection name")
+    p_hits.add_argument("--limit", type=int, default=50, help="Maximum hits to return")
+    p_hits.add_argument(
+        "--output",
+        choices=["json", "jsonl"],
+        default="json",
+        help="Output format (default: json)",
+    )
 
     # status
     p_status = sub.add_parser("status", help="Show index status for a collection")
@@ -306,7 +341,7 @@ def main() -> None:
                 print(format_citation_markdown(c))
         return
 
-    dispatch = {"index": cmd_index, "search": cmd_search, "status": cmd_status}
+    dispatch = {"index": cmd_index, "search": cmd_search, "hits": cmd_hits, "status": cmd_status}
     dispatch[args.command](args, cfg)
 
 
