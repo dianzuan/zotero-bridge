@@ -86,3 +86,38 @@ def test_search_includes_attachment_id_and_chunk_index():
     assert r["attachment_id"] == 99
     assert r["chunk_index"] == 3
     assert r["item_id"] == "ITEM_A"
+
+
+def test_search_results_include_academic_zh_search_hit_contract():
+    store = make_store()
+    store.add_chunk(
+        item_id="ITEM_A",
+        title="产业贸易中心性、贸易外向度与金融风险",
+        authors="王姝黛; 杨子荣",
+        section="三、研究设计",
+        chunk_index=42,
+        text="本文利用世界投入产出表和金融风险指标...",
+        vector=[1.0, 0.0],
+        attachment_id=99,
+        attachment_key="ATT1",
+        chunk_id="ATT1:c42",
+        block_ids=["ATT1:p12:b08", "ATT1:p12:b09"],
+        year=2022,
+        venue="中国工业经济",
+        doi="10/example",
+    )
+
+    hit = store.search([1.0, 0.0], top_k=1, query="贸易中心性 金融风险")[0]
+
+    assert hit["item_key"] == "ITEM_A"
+    assert hit["title"] == "产业贸易中心性、贸易外向度与金融风险"
+    assert hit["text"] == "本文利用世界投入产出表和金融风险指标..."
+    assert hit["chunk_id"] == "ATT1:c42"
+    assert hit["block_ids"] == ["ATT1:p12:b08", "ATT1:p12:b09"]
+    assert hit["section_heading"] == "三、研究设计"
+    assert hit["query"] == "贸易中心性 金融风险"
+    assert hit["year"] == 2022
+    # Existing search/cite compatibility remains intact.
+    assert hit["item_id"] == "ITEM_A"
+    assert hit["section"] == "三、研究设计"
+    assert hit["chunk_index"] == 42

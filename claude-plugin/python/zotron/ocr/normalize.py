@@ -1,121 +1,141 @@
-"""Normalize OCR provider raw payloads into Zotron blocks and chunks."""
-
+"""Normalize provider OCR payloads into Zotron blocks and RAG chunks."""
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Sequence
 from typing import Any
 
-_ALLOWED_TYPES = {
+_BLOCK_TYPES = {
     "heading", "paragraph", "table", "figure", "equation", "caption",
     "footnote", "header", "footer", "reference", "unknown",
 }
-_HEADING_RE = re.compile(r"^(#{1,6}\s+.+|[一二三四五六七八九十]+、.+|\d+[.、]\s*.+)$")
 
 
-def _block_type(value: Any) -> str:
-    value = str(value or "paragraph").lower()
-    return value if value in _ALLOWED_TYPES else "unknown"
+def _coerce_type(value: Any) -> str:
+    text = str(value or "paragraph").lower()
+    aliases = {"text": "paragraph", "title": "heading", "image": "figure"}
+    return aliases.get(text, text if text in _BLOCK_TYPES else "unknown")
 
 
-def _block_id(attachment_key: str, page: int | None, order: int) -> str:
-    page_part = f"p{page}" if page is not None else "p0"
-    return f"{attachment_key}:{page_part}:b{order:02d}"
+def _iter_structured_blocks(payload: Any):
+    if not isinstance(payload, dict):
+        return
+    pages = payload.get("pages")
+    if isinstance(pages, list):
+        for p_idx, page in enumerate(pages):
+            page_no = page.get("page") or page.get("page_number") or p_idx + 1
+            blocks = page.get("blocks") or page.get("elements") or page.get("layout") or []
+            for b_idx, block in enumerate(blocks):
+                if isinstance(block, dict):
+                    yield p_idx, b_idx, int(page_no), block, f"pages[{p_idx}].blocks[{b_idx}]"
+    blocks = payload.get("blocks") or payload.get("elements") or payload.get("layout")
+    if isinstance(blocks, list):
+        for b_idx, block in enumerate(blocks):
+            if isinstance(block, dict):
+                page_no = block.get("page") or block.get("page_number") or 1
+                yield 0, b_idx, int(page_no), block, f"blocks[{b_idx}]"
 
 
-def _markdown_blocks(markdown: str, *, page: int | None, start_order: int) -> list[dict[str, Any]]:
-    parts = [part.strip() for part in re.split(r"\n\s*\n", markdown) if part.strip()]
-    rows: list[dict[str, Any]] = []
+def _markdown_blocks(markdown: str):
     section = ""
-    for offset, part in enumerate(parts, start_order):
-        text = re.sub(r"^#{1,6}\s+", "", part).strip()
-        typ = "heading" if _HEADING_RE.match(part) else "paragraph"
-        if typ == "heading":
-            section = text
-        rows.append({
-            "type": typ,
-            "page": page,
-            "reading_order": offset,
-            "section_heading": section,
-            "text": text,
-            "source_ref": f"markdown:{page or 0}:{offset}",
-        })
-    return rows
+    order = 0
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", markdown) if p.strip()]
+    for idx, para in enumerate(paragraphs):
+        heading = re.match(r"^#{1,6}\s+(.+)$", para)
+        if heading:
+            section = heading.group(1).strip()
+            yield idx, order, "heading", section, section
+        else:
+            yield idx, order, "paragraph", para, section
+        order += 1
 
 
-def _raw_blocks(raw: Mapping[str, Any]) -> list[dict[str, Any]]:
-    if isinstance(raw.get("blocks"), list):
-        return [dict(b) for b in raw["blocks"]]
-    if isinstance(raw.get("pages"), list):
-        rows: list[dict[str, Any]] = []
-        for page in raw["pages"]:
-            if not isinstance(page, Mapping):
-                continue
-            markdown = page.get("markdown") or page.get("text") or ""
-            rows.extend(_markdown_blocks(str(markdown), page=page.get("page"), start_order=len(rows) + 1))
-        return rows
-    markdown = raw.get("markdown") or raw.get("md_results") or raw.get("text") or ""
-    return _markdown_blocks(str(markdown), page=None, start_order=1)
-
-
-def normalize_provider_raw(
+def blocks_from_provider_payload(
+    payload: Any,
     *,
-    provider: str,
-    raw: Mapping[str, Any],
     item_key: str,
     attachment_key: str,
+    provider: str,
 ) -> list[dict[str, Any]]:
-    """Convert provider-specific raw data into schema-versioned Zotron blocks."""
-    normalized: list[dict[str, Any]] = []
-    for index, block in enumerate(_raw_blocks(raw), start=1):
-        text = str(block.get("text") or block.get("markdown") or block.get("content") or "").strip()
+    """Return normalized Zotron block dictionaries from provider raw data.
+
+    Structured provider fields are preferred. Markdown is only a fallback when
+    the provider exposes no block/page structure.
+    """
+    blocks: list[dict[str, Any]] = []
+    structured = list(_iter_structured_blocks(payload) or [])
+    section = ""
+    for _p_idx, b_idx, page_no, block, source_ref in structured:
+        text = str(block.get("text") or block.get("content") or block.get("markdown") or "").strip()
         if not text:
             continue
-        page = block.get("page")
-        order = int(block.get("reading_order") or index)
-        row: dict[str, Any] = {
-            "schema_version": "1",
-            "block_id": block.get("block_id") or _block_id(attachment_key, page, order),
+        block_type = _coerce_type(block.get("type") or block.get("category"))
+        if block_type == "heading":
+            section = text
+        blocks.append({
+            "block_id": f"{attachment_key}:p{page_no}:b{b_idx}",
             "attachment_key": attachment_key,
             "item_key": item_key,
-            "type": _block_type(block.get("type")),
-            "page": page,
-            "bbox": block.get("bbox"),
-            "reading_order": order,
-            "section_heading": block.get("section_heading") or "",
+            "type": block_type,
+            "page": page_no,
+            "bbox": block.get("bbox") or block.get("box"),
+            "reading_order": int(block.get("reading_order", b_idx)),
+            "section_heading": block.get("section_heading") or section,
             "text": text,
-            "caption": block.get("caption") or "",
-            "image_ref": block.get("image_ref") or "",
+            "caption": block.get("caption", ""),
+            "image_ref": block.get("image_ref") or block.get("image", ""),
             "source_provider": provider,
-            "source_ref": block.get("source_ref") or f"{provider}:blocks:{index}",
+            "source_ref": source_ref,
             "confidence": block.get("confidence"),
-        }
-        normalized.append({k: v for k, v in row.items() if v is not None})
-    return normalized
+        })
+    if blocks:
+        return blocks
+
+    markdown = ""
+    if isinstance(payload, dict):
+        markdown = str(payload.get("markdown") or payload.get("md_results") or payload.get("result") or "")
+    elif isinstance(payload, str):
+        markdown = payload
+    for para_idx, order, block_type, text, section in _markdown_blocks(markdown):
+        blocks.append({
+            "block_id": f"{attachment_key}:p0:b{order}",
+            "attachment_key": attachment_key,
+            "item_key": item_key,
+            "type": block_type,
+            "page": None,
+            "bbox": None,
+            "reading_order": order,
+            "section_heading": "" if block_type == "heading" else section,
+            "text": text,
+            "caption": "",
+            "image_ref": "",
+            "source_provider": provider,
+            "source_ref": f"markdown:{para_idx}",
+            "confidence": None,
+        })
+    return blocks
 
 
-def build_chunks_from_blocks(blocks: Sequence[Mapping[str, Any]], *, max_chars: int = 3500) -> list[dict[str, Any]]:
-    """Build section-aware RAG chunks from normalized blocks without crossing sections."""
+def chunks_from_blocks(blocks: list[dict[str, Any]], *, max_chars: int = 1000) -> list[dict[str, Any]]:
+    """Build section-aware RAG chunks from normalized blocks."""
     chunks: list[dict[str, Any]] = []
-    current: list[Mapping[str, Any]] = []
-    current_section: str | None = None
+    current: list[dict[str, Any]] = []
+    current_section = None
     current_len = 0
+    attachment_key = str(blocks[0].get("attachment_key", "att")) if blocks else "att"
 
     def flush() -> None:
-        nonlocal current, current_section, current_len
+        nonlocal current, current_len
         if not current:
             return
-        first = current[0]
-        attachment_key = str(first.get("attachment_key") or "att")
+        text = "\n\n".join(str(b.get("text", "")) for b in current).strip()
         pages = [b.get("page") for b in current if b.get("page") is not None]
-        text = "\n\n".join(str(b.get("text", "")).strip() for b in current if str(b.get("text", "")).strip())
+        chunk_index = len(chunks)
         chunks.append({
-            "schema_version": "1",
-            "chunk_id": f"{attachment_key}:c{len(chunks) + 1:06d}",
-            "item_key": first.get("item_key") or "",
-            "attachment_key": attachment_key,
-            "block_ids": [str(b.get("block_id")) for b in current if b.get("block_id")],
-            "section_heading": current_section or "",
+            "chunk_id": f"{attachment_key}:c{chunk_index}",
+            "item_key": current[0].get("item_key"),
+            "attachment_key": current[0].get("attachment_key"),
+            "block_ids": [b.get("block_id") for b in current],
+            "section_heading": current[0].get("section_heading", ""),
             "page_start": min(pages) if pages else None,
             "page_end": max(pages) if pages else None,
             "text": text,
@@ -124,20 +144,20 @@ def build_chunks_from_blocks(blocks: Sequence[Mapping[str, Any]], *, max_chars: 
             "level": "chunk",
         })
         current = []
-        current_section = None
         current_len = 0
 
     for block in blocks:
-        section = str(block.get("section_heading") or "")
-        text = str(block.get("text") or "")
-        should_flush = bool(
-            current
-            and ((section != current_section) or (current_len + len(text) > max_chars))
-        )
-        if should_flush:
+        if block.get("type") == "heading":
             flush()
-        current.append(block)
+            current_section = block.get("text")
+            continue
+        section = block.get("section_heading") or current_section or ""
+        block = {**block, "section_heading": section}
+        text_len = len(str(block.get("text", "")))
+        if current and (section != current_section or current_len + text_len > max_chars):
+            flush()
         current_section = section
-        current_len += len(text)
+        current.append(block)
+        current_len += text_len
     flush()
-    return [{k: v for k, v in chunk.items() if v is not None} for chunk in chunks]
+    return chunks
