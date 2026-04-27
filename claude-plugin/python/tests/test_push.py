@@ -190,6 +190,38 @@ def test_update_on_duplicate():
     assert result.zotero_item_id == 999
 
 
+def test_update_duplicate_does_not_reattach_if_pdf_exists(tmp_path: Path):
+    existing_pdf = [{"id": 1001, "contentType": "application/pdf",
+                     "title": "Full Text PDF", "path": "/x/paper.pdf"}]
+    rpc = _make_rpc(item_id=502, duplicate=999, dup_attachments=existing_pdf)
+    pdf = _good_pdf(tmp_path)
+    item = {"itemType": "journalArticle", "title": "Dup", "DOI": "10.x/dup"}
+    result = push_item(rpc, item, pdf_path=pdf, collection=0,
+                       on_duplicate="update")
+    assert result.status == "updated"
+    assert result.zotero_item_id == 999
+    assert result.pdf_attached is False
+    methods = [c.args[0] for c in rpc.call.call_args_list]
+    assert "items.update" in methods
+    assert "attachments.list" in methods
+    assert "attachments.add" not in methods
+
+
+def test_update_duplicate_attaches_pdf_if_missing(tmp_path: Path):
+    rpc = _make_rpc(item_id=502, duplicate=999, dup_attachments=[])
+    pdf = _good_pdf(tmp_path)
+    item = {"itemType": "journalArticle", "title": "Dup", "DOI": "10.x/dup"}
+    result = push_item(rpc, item, pdf_path=pdf, collection=0,
+                       on_duplicate="update")
+    assert result.status == "updated"
+    assert result.zotero_item_id == 999
+    assert result.pdf_attached is True
+    add_calls = [c for c in rpc.call.call_args_list
+                 if c.args[0] == "attachments.add"]
+    assert len(add_calls) == 1
+    assert add_calls[0].args[1]["parentId"] == 999
+
+
 def test_update_passes_creators_and_tags():
     """Update path must include creators + tags in the items.update call;
     without them the XPI would only refresh `fields` and silently drop

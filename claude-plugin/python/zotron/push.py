@@ -67,6 +67,28 @@ def check_pdf_magic(path: Path) -> bool:
     return head == b"%PDF-"
 
 
+def _item_has_pdf_attachment(rpc: Any, item_id: int) -> bool:
+    existing = rpc.call("attachments.list", {"parentId": item_id}) or []
+    # Match on MIME type OR .pdf filename suffix. Zotero stores some
+    # attachments with blank/octet-stream/x-pdf contentType depending
+    # on the source (manual import, older plugin builds, browser save
+    # that wrote the wrong header). A MIME-only check false-negatives
+    # on those and would re-attach a duplicate PDF.
+    return any(
+        a.get("contentType") == "application/pdf"
+        or (a.get("path") or "").lower().endswith(".pdf")
+        for a in existing
+    )
+
+
+def _attach_pdf(rpc: Any, item_id: int, pdf_path: Path) -> None:
+    rpc.call("attachments.add", {
+        "parentId": item_id,
+        "path": _zotero_path(pdf_path),
+        "title": "Full Text PDF",
+    })
+
+
 def _normalize(s: str) -> str:
     """Lowercase + collapse whitespace for fuzzy name matching."""
     return " ".join(s.lower().split())
@@ -283,23 +305,8 @@ def push_item(
         # also rewrite metadata).
         skipped_pdf_attached = False
         if pdf_path is not None:
-            existing = rpc.call("attachments.list", {"parentId": dup_id}) or []
-            # Match on MIME type OR .pdf filename suffix. Zotero stores some
-            # attachments with blank/octet-stream/x-pdf contentType depending
-            # on the source (manual import, older plugin builds, browser save
-            # that wrote the wrong header). A MIME-only check false-negatives
-            # on those and would re-attach a duplicate PDF.
-            has_pdf = any(
-                a.get("contentType") == "application/pdf"
-                or (a.get("path") or "").lower().endswith(".pdf")
-                for a in existing
-            )
-            if not has_pdf:
-                rpc.call("attachments.add", {
-                    "parentId": dup_id,
-                    "path": _zotero_path(pdf_path),
-                    "title": "Full Text PDF",
-                })
+            if not _item_has_pdf_attachment(rpc, dup_id):
+                _attach_pdf(rpc, dup_id, pdf_path)
                 skipped_pdf_attached = True
         return PushResult(
             status="skipped_duplicate",
@@ -340,12 +347,13 @@ def push_item(
 
     pdf_attached = False
     if pdf_path is not None:
-        rpc.call("attachments.add", {
-            "parentId": item_id,
-            "path": _zotero_path(pdf_path),
-            "title": "Full Text PDF",
-        })
-        pdf_attached = True
+        if status == "updated":
+            if not _item_has_pdf_attachment(rpc, item_id):
+                _attach_pdf(rpc, item_id, pdf_path)
+                pdf_attached = True
+        else:
+            _attach_pdf(rpc, item_id, pdf_path)
+            pdf_attached = True
 
     # For `update` path, collections weren't applied by items.update; add them now.
     # For `create`, they were embedded in the create payload so re-calling is unnecessary.
