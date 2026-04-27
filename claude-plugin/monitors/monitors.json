@@ -1,7 +1,0 @@
-[
-  {
-    "name": "zotron-ping",
-    "command": "curl -sf http://localhost:23119/zotron/rpc -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"method\":\"system.ping\",\"params\":{},\"id\":1}' > /dev/null 2>&1 || echo 'Zotron not detected. Start Zotero (XPI required) — or run /setup to install the XPI.'",
-    "description": "Zotron XPI reachability check"
-  }
-]
