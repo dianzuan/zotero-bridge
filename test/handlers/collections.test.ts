@@ -101,17 +101,20 @@ describe("collections handler", () => {
   });
 
   describe("addItems batch helper (fix #53)", () => {
-    it("calls col.addItems(itemIDs) instead of N+1 loop", async () => {
+    it("calls col.addItems(itemIDs) inside a transaction instead of N+1 loop", async () => {
       const colAddItemsStub = sinon.stub().resolves();
+      const executeTransactionStub = sinon.stub().callsFake(async (cb: () => Promise<void>) => cb());
       const collection: any = {
         id: 1, key: "K", name: "Test",
         addItems: colAddItemsStub,
       };
       installZotero({
         Collections: { getAsync: sinon.stub().resolves(collection) },
+        DB: { executeTransaction: executeTransactionStub },
       });
       const { collectionsHandlers } = await import("../../src/handlers/collections");
       const result = await collectionsHandlers.addItems({ id: 1, itemIds: [10, 20, 30] });
+      expect(executeTransactionStub.calledOnce).to.equal(true);
       expect(colAddItemsStub.calledOnceWith([10, 20, 30])).to.equal(true);
       expect(result).to.have.property("added");
       expect(result).to.have.property("collectionId", 1);
@@ -119,17 +122,20 @@ describe("collections handler", () => {
   });
 
   describe("removeItems batch helper (fix #54)", () => {
-    it("calls col.removeItems(itemIDs) instead of N+1 loop", async () => {
+    it("calls col.removeItems(itemIDs) inside a transaction instead of N+1 loop", async () => {
       const colRemoveItemsStub = sinon.stub().resolves();
+      const executeTransactionStub = sinon.stub().callsFake(async (cb: () => Promise<void>) => cb());
       const collection: any = {
         id: 1, key: "K", name: "Test",
         removeItems: colRemoveItemsStub,
       };
       installZotero({
         Collections: { getAsync: sinon.stub().resolves(collection) },
+        DB: { executeTransaction: executeTransactionStub },
       });
       const { collectionsHandlers } = await import("../../src/handlers/collections");
       const result = await collectionsHandlers.removeItems({ id: 1, itemIds: [10, 20, 30] });
+      expect(executeTransactionStub.calledOnce).to.equal(true);
       expect(colRemoveItemsStub.calledOnceWith([10, 20, 30])).to.equal(true);
       expect(result).to.have.property("removed");
       expect(result).to.have.property("collectionId", 1);

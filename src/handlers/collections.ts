@@ -93,13 +93,17 @@ export const collectionsHandlers = {
 
   async addItems(params: { id: number; itemIds: number[] }) {
     const col = await requireCollection(params.id);
-    await col.addItems(params.itemIds);
+    await Zotero.DB.executeTransaction(async () => {
+      await col.addItems(params.itemIds);
+    });
     return { added: params.itemIds.length, collectionId: params.id };
   },
 
   async removeItems(params: { id: number; itemIds: number[] }) {
     const col = await requireCollection(params.id);
-    await col.removeItems(params.itemIds);
+    await Zotero.DB.executeTransaction(async () => {
+      await col.removeItems(params.itemIds);
+    });
     return { collectionId: params.id, removed: params.itemIds.length };
   },
 
