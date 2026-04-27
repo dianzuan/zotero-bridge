@@ -13,7 +13,7 @@ from zotron.config import load_config
 from zotron.rpc import ZoteroRPC
 from zotron.rag.chunker import chunk_text
 from zotron.rag.embedder import create_embedder
-from zotron.rag.search import VectorStore, results_to_hits
+from zotron.rag.search import VectorStore, format_retrieval_hit
 
 
 # ---------------------------------------------------------------------------
@@ -226,6 +226,22 @@ def cmd_status(args: argparse.Namespace, cfg: dict[str, Any]) -> None:
     }))
 
 
+
+def _run_hits(query: str, collection: str, output: str, top_k: int, cfg: dict[str, Any]) -> None:
+    store_path = _store_path(collection)
+    if not store_path.exists():
+        print(json.dumps({"error": f"Collection not indexed: {collection!r}"}), file=sys.stderr)
+        sys.exit(2)
+    store = VectorStore.load(store_path)
+    embedder = _build_embedder(cfg)
+    rows = store.search(embedder.embed(query), top_k=top_k)
+    hits = [format_retrieval_hit(row, query=query) for row in rows]
+    if output == "jsonl":
+        for hit in hits:
+            print(json.dumps(hit, ensure_ascii=False, separators=(",", ":")))
+    else:
+        print(json.dumps({"hits": hits, "total": len(hits)}, ensure_ascii=False, indent=2))
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -266,20 +282,11 @@ def main() -> None:
     p_search.add_argument("query", help="Query text")
 
     # hits
-    p_hits = sub.add_parser(
-        "hits",
-        help="Emit academic-zh retrieval hits with span provenance",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
+    p_hits = sub.add_parser("hits", help="Output academic-zh retrieval hits.")
     p_hits.add_argument("query", help="Query text")
     p_hits.add_argument("--collection", required=True, help="Collection name")
-    p_hits.add_argument("--limit", type=int, default=50, help="Maximum hits to return")
-    p_hits.add_argument(
-        "--output",
-        choices=["json", "jsonl"],
-        default="json",
-        help="Output format (default: json)",
-    )
+    p_hits.add_argument("--top-k", type=int, default=10, help="Number of hits to return")
+    p_hits.add_argument("--output", choices=["json", "jsonl"], default="json", help="Output format")
 
     # status
     p_status = sub.add_parser("status", help="Show index status for a collection")
@@ -308,6 +315,10 @@ def main() -> None:
 
     args = parser.parse_args()
     cfg = load_config()
+
+    if args.command == "hits":
+        _run_hits(args.query, args.collection, args.output, args.top_k, cfg)
+        return
 
     if args.command == "cite":
         embedder = _build_embedder(cfg)

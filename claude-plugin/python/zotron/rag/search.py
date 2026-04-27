@@ -17,26 +17,34 @@ class VectorStore:
         self,
         item_id: str,
         title: str,
-        authors: str,
+        authors: str | list[str],
         section: str,
         chunk_index: int,
         text: str,
         vector: list[float],
         attachment_id: int | None = None,
-        **metadata,
+        **provenance: object,
     ) -> None:
-        row = {
-            "item_id": item_id,
-            "title": title,
-            "authors": authors,
-            "section": section,
-            "chunk_index": chunk_index,
-            "text": text,
-            "vector": vector,
-            "attachment_id": attachment_id,
-        }
-        row.update(metadata)
-        self.chunks.append(row)
+        item_key = str(provenance.pop("item_key", item_id))
+        chunk_id = str(provenance.pop("chunk_id", f"{item_key}:c{chunk_index}"))
+        block_ids = provenance.pop("block_ids", [])
+        self.chunks.append(
+            {
+                "item_id": item_id,
+                "item_key": item_key,
+                "title": title,
+                "authors": authors,
+                "section": section,
+                "section_heading": provenance.pop("section_heading", section),
+                "chunk_index": chunk_index,
+                "chunk_id": chunk_id,
+                "block_ids": list(block_ids) if isinstance(block_ids, list) else [],
+                "text": text,
+                "vector": vector,
+                "attachment_id": attachment_id,
+                **provenance,
+            }
+        )
 
     def clear_item(self, item_id: str) -> None:
         self.chunks = [c for c in self.chunks if c["item_id"] != item_id]
@@ -58,21 +66,8 @@ class VectorStore:
 
         results = [
             {
-                "item_id": self.chunks[i]["item_id"],
-                "item_key": self.chunks[i].get("item_key") or self.chunks[i]["item_id"],
-                "title": self.chunks[i]["title"],
-                "authors": self.chunks[i]["authors"],
-                "year": self.chunks[i].get("year"),
-                "venue": self.chunks[i].get("venue"),
-                "doi": self.chunks[i].get("doi", ""),
-                "section": self.chunks[i]["section"],
-                "section_heading": self.chunks[i].get("section_heading") or self.chunks[i]["section"],
-                "chunk_index": self.chunks[i]["chunk_index"],
-                "chunk_id": self.chunks[i].get("chunk_id"),
-                "block_ids": self.chunks[i].get("block_ids", []),
-                "text": self.chunks[i]["text"],
+                **{k: v for k, v in self.chunks[i].items() if k != "vector"},
                 "score": float(scores[i]),
-                "attachment_id": self.chunks[i].get("attachment_id"),
             }
             for i in top_indices
         ]
@@ -106,45 +101,32 @@ class VectorStore:
         return store
 
 
-def _authors_list(value) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return [str(v) for v in value if str(v)]
-    if isinstance(value, str):
-        return [part.strip() for part in value.split(";") if part.strip()]
-    return [str(value)]
-
-
-def results_to_hits(results: list[dict], query: str) -> list[dict]:
-    hits: list[dict] = []
-    for row in results:
-        item_key = row.get("item_key") or row.get("item_id") or ""
-        hit = {
-            "item_key": item_key,
-            "title": row.get("title", ""),
-            "text": row.get("text", ""),
-            "authors": _authors_list(row.get("authors")),
-            "year": row.get("year"),
-            "venue": row.get("venue", ""),
-            "doi": row.get("doi", ""),
-            "zotero_uri": f"zotero://select/library/items/{item_key}",
-            "section_heading": row.get("section_heading") or row.get("section", ""),
-            "chunk_id": row.get("chunk_id") or (
-                f"{row.get('attachment_id')}:c{row.get('chunk_index')}"
-                if row.get("attachment_id") is not None
-                else str(row.get("chunk_index", ""))
-            ),
-            "block_ids": row.get("block_ids", []),
-            "query": query,
-            "score": row.get("score", 0.0),
-        }
-        hits.append(hit)
-    return hits
-
-
 def format_retrieval_hit(row: dict, *, query: str = "") -> dict:
-    return results_to_hits([row], query=query)[0]
+    """Format an internal search row as the academic-zh retrieval hit contract."""
+    item_key = str(row.get("item_key") or row.get("item_id") or "")
+    hit = {
+        "item_key": item_key,
+        "title": row.get("title", ""),
+        "text": row.get("text", ""),
+    }
+    optional_map = {
+        "authors": row.get("authors"),
+        "year": row.get("year"),
+        "venue": row.get("venue"),
+        "doi": row.get("doi"),
+        "section_heading": row.get("section_heading") or row.get("section"),
+        "chunk_id": row.get("chunk_id"),
+        "block_ids": row.get("block_ids"),
+        "score": row.get("score"),
+    }
+    if query:
+        optional_map["query"] = query
+    if item_key:
+        optional_map["zotero_uri"] = row.get("zotero_uri") or f"zotero://select/library/items/{item_key}"
+    for key, value in optional_map.items():
+        if value not in (None, "", []):
+            hit[key] = value
+    return hit
 
 
 def write_hits_jsonl(path: Path, hits: list[dict]) -> None:
