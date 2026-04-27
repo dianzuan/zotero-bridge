@@ -3,6 +3,7 @@ import pytest
 import httpx
 
 from zotron.rag.embedder import (
+    BUILTIN_EMBEDDING_SPECS,
     OllamaEmbedder,
     CloudEmbedder,
     create_embedder,
@@ -42,6 +43,14 @@ def test_create_cloud_embedder():
     assert emb.model == "embedding-3"
 
 
+def test_create_jina_embedder_from_builtin_registry():
+    emb = create_embedder("jina", "jina-embeddings-v3", api_key="key123")
+    assert isinstance(emb, CloudEmbedder)
+    assert emb.model == "jina-embeddings-v3"
+    assert BUILTIN_EMBEDDING_SPECS["jina"].query_task == "retrieval.query"
+    assert BUILTIN_EMBEDDING_SPECS["jina"].document_task == "retrieval.passage"
+
+
 def test_create_unknown_embedder():
     with pytest.raises(ValueError, match="Unknown provider"):
         create_embedder("nonexistent", "some-model")
@@ -78,3 +87,58 @@ def test_cloud_embed():
     )
     result = emb.embed("test text")
     assert result == [0.5, 0.6, 0.7]
+
+
+def test_role_aware_jina_query_and_document_payloads():
+    requests: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(json_request(request))
+        return httpx.Response(200, json={"data": [{"embedding": [0.1, 0.2]}]})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    emb = CloudEmbedder(
+        provider="jina",
+        model="jina-embeddings-v3",
+        api_key="key123",
+        client=client,
+    )
+
+    assert emb.embed("query text") == [0.1, 0.2]
+    assert emb.embed_batch(["document text"]) == [[0.1, 0.2]]
+
+    assert requests[0] == {
+        "model": "jina-embeddings-v3",
+        "input": "query text",
+        "task": "retrieval.query",
+    }
+    assert requests[1] == {
+        "model": "jina-embeddings-v3",
+        "input": ["document text"],
+        "task": "retrieval.passage",
+    }
+
+
+def test_openai_compatible_payload_remains_legacy_without_task_field():
+    requests: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(json_request(request))
+        return httpx.Response(200, json={"data": [{"embedding": [0.1, 0.2]}]})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    emb = CloudEmbedder(
+        provider="openai",
+        model="text-embedding-3-small",
+        api_key="key123",
+        client=client,
+    )
+
+    assert emb.embed("query text") == [0.1, 0.2]
+    assert requests == [{"model": "text-embedding-3-small", "input": "query text"}]
+
+
+def json_request(request: httpx.Request) -> dict:
+    import json
+
+    return json.loads(request.content.decode("utf-8"))

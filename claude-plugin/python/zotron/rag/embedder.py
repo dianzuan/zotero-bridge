@@ -3,14 +3,61 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+from typing import Literal
 
 import httpx
 
+EmbeddingRole = Literal["query", "document"]
+RequestStyle = Literal["openai-compatible", "jina"]
+
+
+@dataclass(frozen=True)
+class EmbeddingProviderSpec:
+    """Declarative embedding provider behavior.
+
+    ``embed`` is query-time by convention and ``embed_batch`` is document-time
+    indexing. Most OpenAI-compatible providers use identical payloads for both
+    roles; role-aware providers such as Jina require explicit task markers so
+    query/document vectors remain compatible.
+    """
+
+    provider: str
+    default_url: str
+    request_style: RequestStyle = "openai-compatible"
+    query_task: str | None = None
+    document_task: str | None = None
+
+
+BUILTIN_EMBEDDING_SPECS: dict[str, EmbeddingProviderSpec] = {
+    "openai": EmbeddingProviderSpec(
+        provider="openai",
+        default_url="https://api.openai.com/v1/embeddings",
+    ),
+    "zhipu": EmbeddingProviderSpec(
+        provider="zhipu",
+        default_url="https://open.bigmodel.cn/api/paas/v4/embeddings",
+    ),
+    "dashscope": EmbeddingProviderSpec(
+        provider="dashscope",
+        default_url="https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings",
+    ),
+    "jina": EmbeddingProviderSpec(
+        provider="jina",
+        default_url="https://api.jina.ai/v1/embeddings",
+        request_style="jina",
+        query_task="retrieval.query",
+        document_task="retrieval.passage",
+    ),
+    "doubao": EmbeddingProviderSpec(
+        provider="doubao",
+        default_url="https://ark.cn-beijing.volces.com/api/v3/embeddings/multimodal",
+    ),
+}
+
 _CLOUD_URLS = {
-    "zhipu": "https://open.bigmodel.cn/api/paas/v4/embeddings",
-    "dashscope": "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings",
-    "doubao": "https://ark.cn-beijing.volces.com/api/v3/embeddings/multimodal",
-    "openai": "https://api.openai.com/v1/embeddings",
+    provider: spec.default_url
+    for provider, spec in BUILTIN_EMBEDDING_SPECS.items()
 }
 
 
@@ -51,15 +98,31 @@ class CloudEmbedder(Embedder):
         api_url: str | None = None,
         client: httpx.Client | None = None,
     ):
+        spec = BUILTIN_EMBEDDING_SPECS.get(provider)
         self.model = model
-        self._url = api_url or _CLOUD_URLS[provider]
+        self._spec = spec or EmbeddingProviderSpec(
+            provider=provider,
+            default_url=api_url or "",
+        )
+        self._url = api_url or self._spec.default_url
         self._headers = {"Authorization": f"Bearer {api_key}"}
         self._client = client or httpx.Client()
+
+    def _payload(self, input_value: str | list[str], role: EmbeddingRole) -> dict:
+        payload: dict = {"model": self.model, "input": input_value}
+        if self._spec.request_style == "jina":
+            task = (
+                self._spec.query_task if role == "query"
+                else self._spec.document_task
+            )
+            if task:
+                payload["task"] = task
+        return payload
 
     def embed(self, text: str) -> list[float]:
         resp = self._client.post(
             self._url,
-            json={"model": self.model, "input": text},
+            json=self._payload(text, "query"),
             headers=self._headers,
         )
         resp.raise_for_status()
@@ -68,7 +131,7 @@ class CloudEmbedder(Embedder):
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
         resp = self._client.post(
             self._url,
-            json={"model": self.model, "input": texts},
+            json=self._payload(texts, "document"),
             headers=self._headers,
         )
         resp.raise_for_status()

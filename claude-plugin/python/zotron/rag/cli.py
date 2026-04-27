@@ -11,6 +11,15 @@ from typing import Any, cast
 from zotron.collections import find_by_name as _find_collection_by_name
 from zotron.config import load_config
 from zotron.rpc import ZoteroRPC
+from zotron.artifacts import (
+    CHUNKS_SUFFIX,
+    EMBEDDING_SUFFIX,
+    artifact_path,
+    metadata_for_chunks,
+    read_chunks_jsonl,
+    read_embedding_npz,
+    write_embedding_npz,
+)
 from zotron.rag.chunker import chunk_text
 from zotron.rag.embedder import create_embedder
 from zotron.rag.search import VectorStore, results_to_hits
@@ -67,6 +76,78 @@ def _get_item_text(rpc: ZoteroRPC, item_id: str) -> str | None:
 
     return None
 
+
+
+
+def _artifact_item_keys(artifacts_dir: Path, item_key: str | None = None) -> list[str]:
+    if item_key:
+        return [item_key]
+    suffix = f".{CHUNKS_SUFFIX}"
+    return sorted(
+        path.name[: -len(suffix)]
+        for path in artifacts_dir.glob(f"*{suffix}")
+        if path.name.endswith(suffix)
+    )
+
+
+def _embedding_model_from_cfg(cfg: dict[str, Any]) -> str:
+    embed_cfg = cfg.get("embedding", {})
+    return str(
+        embed_cfg.get("model")
+        or embed_cfg.get("openai_model")
+        or "unknown"
+    )
+
+
+def _read_item_embedding(path: Path) -> tuple[list[list[float]], list[dict[str, Any]], str]:
+    loaded = read_embedding_npz(path)
+    if isinstance(loaded, tuple):
+        vectors, metadata, model = loaded
+        return vectors.astype(float).tolist(), list(metadata), model
+
+    vectors = loaded["vectors"].astype(float).tolist()
+    raw_metadata = loaded.get("metadata") or {}
+    chunk_ids = loaded.get("chunk_ids") or []
+    if isinstance(raw_metadata, list):
+        metadata = [dict(row) for row in raw_metadata]
+    else:
+        metadata = [{"chunk_id": chunk_id} for chunk_id in chunk_ids]
+    model = str(raw_metadata.get("model", "unknown")) if isinstance(raw_metadata, dict) else "unknown"
+    return vectors, metadata, model
+
+
+def _artifact_vector_store(artifacts_dir: str | Path, item_key: str | None = None) -> VectorStore:
+    directory = Path(artifacts_dir).expanduser()
+    store = VectorStore(collection="artifacts", collection_id=0, model="artifact")
+
+    for key in _artifact_item_keys(directory, item_key):
+        chunks_path = artifact_path(directory, key, CHUNKS_SUFFIX)
+        embed_path = artifact_path(directory, key, EMBEDDING_SUFFIX)
+        if not chunks_path.exists():
+            raise FileNotFoundError(f"Missing chunks artifact: {chunks_path}")
+        if not embed_path.exists():
+            raise FileNotFoundError(f"Missing embedding artifact: {embed_path}")
+
+        chunks = read_chunks_jsonl(chunks_path)
+        vectors, metadata, model = _read_item_embedding(embed_path)
+        if len(chunks) != len(vectors):
+            raise ValueError(f"Artifact length mismatch for {key}: {len(chunks)} chunks, {len(vectors)} vectors")
+        store.model = model
+
+        for index, (chunk, vector) in enumerate(zip(chunks, vectors)):
+            meta = dict(metadata[index]) if index < len(metadata) else {}
+            row = {**meta, **dict(chunk)}
+            row.setdefault("item_key", key)
+            row.setdefault("item_id", row["item_key"])
+            row.setdefault("title", "")
+            row.setdefault("authors", [])
+            row.setdefault("section", row.get("section_heading") or "")
+            row.setdefault("section_heading", row.get("section") or "")
+            row.setdefault("chunk_index", index)
+            row.setdefault("chunk_id", f"{row['item_key']}:c{index}")
+            row["vector"] = vector
+            store.chunks.append(row)
+    return store
 
 def _build_embedder(cfg: dict[str, Any]):
     embed_cfg = cfg.get("embedding", {})
@@ -183,6 +264,13 @@ def _load_index_or_exit(collection: str) -> VectorStore:
 
 
 def cmd_search(args: argparse.Namespace, cfg: dict[str, Any]) -> None:
+    if getattr(args, "artifacts_dir", None):
+        results = _run_artifact_search(args, cfg)
+        print(json.dumps({"results": results}, ensure_ascii=False, indent=2))
+        return
+    if not args.collection:
+        print(json.dumps({"error": "--collection is required unless --artifacts-dir is used"}), file=sys.stderr)
+        sys.exit(2)
     store = _load_index_or_exit(args.collection)
     embedder = _build_embedder(cfg)
     top_k = cfg.get("rag", {}).get("top_k", 5)
@@ -194,17 +282,59 @@ def cmd_search(args: argparse.Namespace, cfg: dict[str, Any]) -> None:
 
 
 def cmd_hits(args: argparse.Namespace, cfg: dict[str, Any]) -> None:
-    store = _load_index_or_exit(args.collection)
-    embedder = _build_embedder(cfg)
-    query_vec = embedder.embed(args.query)
-    results = store.search(query_vec, top_k=args.limit)
-    hits = results_to_hits(results, query=args.query)
+    _run_hits(
+        args.query,
+        args.collection,
+        args.output,
+        args.top_k,
+        cfg,
+        artifacts_dir=getattr(args, "artifacts_dir", None),
+        item_key=getattr(args, "item_key", None),
+    )
 
-    if args.output == "jsonl":
-        for hit in hits:
-            print(json.dumps(hit, ensure_ascii=False))
-    else:
-        print(json.dumps({"hits": hits, "total": len(hits)}, ensure_ascii=False, indent=2))
+
+def cmd_index_artifacts(args: argparse.Namespace, cfg: dict[str, Any]) -> None:
+    artifacts_dir = Path(args.artifacts_dir).expanduser()
+    item_keys = _artifact_item_keys(artifacts_dir, args.item_key)
+    if not item_keys:
+        print(json.dumps({"error": f"No chunk artifacts found in {str(artifacts_dir)!r}"}), file=sys.stderr)
+        sys.exit(2)
+
+    embedder = _build_embedder(cfg)
+    model = args.model or _embedding_model_from_cfg(cfg)
+    indexed = 0
+    total_chunks = 0
+    written_paths: list[str] = []
+
+    for key in item_keys:
+        chunks_path = artifact_path(artifacts_dir, key, CHUNKS_SUFFIX)
+        chunks = read_chunks_jsonl(chunks_path)
+        texts = [str(chunk.get("text", "")) for chunk in chunks]
+        vectors = embedder.embed_batch(texts) if texts else []
+        embedding_path = write_embedding_npz(
+            artifacts_dir,
+            key,
+            vectors=vectors,
+            metadata=metadata_for_chunks(chunks),
+            model=model,
+        )
+        indexed += 1
+        total_chunks += len(chunks)
+        written_paths.append(str(embedding_path))
+
+    print(json.dumps({
+        "status": "ok",
+        "indexed": indexed,
+        "total_chunks": total_chunks,
+        "embedding_path": written_paths[0] if len(written_paths) == 1 else None,
+        "embedding_paths": written_paths,
+    }, ensure_ascii=False))
+
+
+def _run_artifact_search(args: argparse.Namespace, cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    embedder = _build_embedder(cfg)
+    store = _artifact_vector_store(args.artifacts_dir, args.item_key)
+    return store.search(embedder.embed(args.query), top_k=args.top_k, query=args.query)
 
 
 def cmd_status(args: argparse.Namespace, cfg: dict[str, Any]) -> None:
@@ -228,7 +358,25 @@ def cmd_status(args: argparse.Namespace, cfg: dict[str, Any]) -> None:
 
 
 
-def _run_hits(query: str, collection: str, output: str, top_k: int, cfg: dict[str, Any]) -> None:
+def _emit_hits(hits: list[dict[str, Any]], output: str) -> None:
+    if output == "jsonl":
+        for hit in hits:
+            print(json.dumps(hit, ensure_ascii=False, separators=(",", ":")))
+    else:
+        print(json.dumps({"hits": hits, "total": len(hits)}, ensure_ascii=False, indent=2))
+
+
+def _run_hits(query: str, collection: str | None, output: str, top_k: int, cfg: dict[str, Any], *, artifacts_dir: str | None = None, item_key: str | None = None) -> None:
+    if artifacts_dir:
+        store = _artifact_vector_store(artifacts_dir, item_key)
+        embedder = _build_embedder(cfg)
+        rows = store.search(embedder.embed(query), top_k=top_k, query=query)
+        _emit_hits(results_to_hits(rows, query=query), output)
+        return
+
+    if not collection:
+        print(json.dumps({"error": "--collection is required unless --artifacts-dir is used"}), file=sys.stderr)
+        sys.exit(2)
     store_path = _store_path(collection)
     if not store_path.exists():
         print(json.dumps({"error": f"Collection not indexed: {collection!r}"}), file=sys.stderr)
@@ -236,12 +384,7 @@ def _run_hits(query: str, collection: str, output: str, top_k: int, cfg: dict[st
     store = VectorStore.load(store_path)
     embedder = _build_embedder(cfg)
     rows = store.search(embedder.embed(query), top_k=top_k)
-    hits = results_to_hits(rows, query=query)
-    if output == "jsonl":
-        for hit in hits:
-            print(json.dumps(hit, ensure_ascii=False, separators=(",", ":")))
-    else:
-        print(json.dumps({"hits": hits, "total": len(hits)}, ensure_ascii=False, indent=2))
+    _emit_hits(results_to_hits(rows, query=query), output)
 
 # ---------------------------------------------------------------------------
 # Entry point
@@ -268,6 +411,15 @@ def main() -> None:
     p_index.add_argument("--collection", required=True, help="Collection name")
     p_index.add_argument("--rebuild", action="store_true", help="Re-embed all items")
 
+    # index-artifacts
+    p_index_artifacts = sub.add_parser(
+        "index-artifacts",
+        help="Embed Zotero-native OCR chunk artifacts into <item-key>.zotron-embed.npz",
+    )
+    p_index_artifacts.add_argument("--artifacts-dir", required=True, help="Directory containing <item-key>.zotron-chunks.jsonl files")
+    p_index_artifacts.add_argument("--item-key", help="Limit indexing to one Zotero item key")
+    p_index_artifacts.add_argument("--model", help="Embedding model label to store in the artifact")
+
     # search
     p_search = sub.add_parser(
         "search",
@@ -279,7 +431,10 @@ def main() -> None:
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p_search.add_argument("--collection", required=True, help="Collection name")
+    p_search.add_argument("--collection", help="Collection name")
+    p_search.add_argument("--artifacts-dir", help="Directory containing chunk and embedding artifacts")
+    p_search.add_argument("--item-key", help="Limit artifact search to one Zotero item key")
+    p_search.add_argument("--limit", "--top-k", dest="top_k", type=int, default=5, help="Maximum results to emit")
     p_search.add_argument("query", help="Query text")
 
     # status
@@ -292,7 +447,9 @@ def main() -> None:
         help="Emit academic-zh retrieval hits with item_key/title/text provenance.",
     )
     p_hits.add_argument("query", help="Query text")
-    p_hits.add_argument("--collection", required=True, help="Collection name")
+    p_hits.add_argument("--collection", help="Collection name")
+    p_hits.add_argument("--artifacts-dir", help="Directory containing chunk and embedding artifacts")
+    p_hits.add_argument("--item-key", help="Limit artifact search to one Zotero item key")
     p_hits.add_argument("--limit", "--top-k", dest="top_k", type=int, default=50, help="Maximum hits to emit")
     p_hits.add_argument("--output", choices=["json", "jsonl"], default="json", help="Output format")
 
@@ -321,7 +478,19 @@ def main() -> None:
     cfg = load_config()
 
     if args.command == "hits":
-        _run_hits(args.query, args.collection, args.output, args.top_k, cfg)
+        _run_hits(
+            args.query,
+            args.collection,
+            args.output,
+            args.top_k,
+            cfg,
+            artifacts_dir=args.artifacts_dir,
+            item_key=args.item_key,
+        )
+        return
+
+    if args.command == "index-artifacts":
+        cmd_index_artifacts(args, cfg)
         return
 
     if args.command == "cite":

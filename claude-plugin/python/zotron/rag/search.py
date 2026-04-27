@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any, Iterable, Mapping
 
 import numpy as np
+
+from zotron.artifacts import is_metadata_stale, read_chunks_jsonl, read_embedding_npz
 
 
 class VectorStore:
@@ -90,6 +93,146 @@ class VectorStore:
         )
         store.chunks = data["chunks"]
         return store
+
+
+
+class ArtifactBackedVectorStore(VectorStore):
+    """VectorStore populated directly from Zotero-native chunk/embedding artifacts.
+
+    OCR/RAG artifacts are item-scoped files attached to Zotero items:
+    ``<item-key>.zotron-chunks.jsonl`` plus ``<item-key>.zotron-embed.npz``.
+    This adapter keeps the legacy in-memory ``VectorStore`` search behavior but
+    makes artifacts the source of truth and validates per-chunk embedding
+    metadata when the NPZ includes it.
+    """
+
+    @classmethod
+    def from_item_artifacts(
+        cls,
+        *,
+        collection: str,
+        collection_id: int,
+        item_key: str,
+        chunks_path: str | Path,
+        embeddings_path: str | Path,
+        item_metadata: Mapping[str, Any] | None = None,
+    ) -> "ArtifactBackedVectorStore":
+        store = cls(collection=collection, collection_id=collection_id, model="")
+        store.add_item_artifacts(
+            item_key=item_key,
+            chunks_path=chunks_path,
+            embeddings_path=embeddings_path,
+            item_metadata=item_metadata,
+        )
+        return store
+
+    @classmethod
+    def from_artifacts(
+        cls,
+        *,
+        collection: str,
+        collection_id: int,
+        items: Iterable[Mapping[str, Any]],
+    ) -> "ArtifactBackedVectorStore":
+        """Build one searchable store from multiple item artifact descriptors.
+
+        Each item descriptor must include ``item_key``, ``chunks_path``, and
+        ``embeddings_path``; additional keys become item-level provenance.
+        """
+        store = cls(collection=collection, collection_id=collection_id, model="")
+        for item in items:
+            item_key = str(item.get("item_key") or item.get("key") or "")
+            if not item_key:
+                raise ValueError("artifact item descriptor requires item_key")
+            chunks_path = item.get("chunks_path")
+            embeddings_path = item.get("embeddings_path")
+            if chunks_path is None or embeddings_path is None:
+                raise ValueError(f"artifact item {item_key!r} requires chunks_path and embeddings_path")
+            metadata = {k: v for k, v in dict(item).items() if k not in {"chunks_path", "embeddings_path"}}
+            store.add_item_artifacts(
+                item_key=item_key,
+                chunks_path=chunks_path,
+                embeddings_path=embeddings_path,
+                item_metadata=metadata,
+            )
+        return store
+
+    def add_item_artifacts(
+        self,
+        *,
+        item_key: str,
+        chunks_path: str | Path,
+        embeddings_path: str | Path,
+        item_metadata: Mapping[str, Any] | None = None,
+    ) -> None:
+        metadata = dict(item_metadata or {})
+        chunks = read_chunks_jsonl(chunks_path)
+        vectors, embedding_metadata, model = self._read_embeddings(embeddings_path)
+
+        if len(vectors) != len(chunks):
+            raise ValueError(
+                f"embedding vector count ({len(vectors)}) does not match chunk count ({len(chunks)}) for {item_key}"
+            )
+        if embedding_metadata is not None and is_metadata_stale(embedding_metadata, chunks):
+            raise ValueError(f"stale embedding metadata for {item_key}")
+
+        if self.model and model and self.model != model:
+            raise ValueError(f"mixed embedding models are not supported: {self.model!r} != {model!r}")
+        if model:
+            self.model = model
+
+        item_id = str(metadata.get("item_id") or metadata.get("id") or item_key)
+        title = str(metadata.get("title") or "")
+        authors = metadata.get("authors") or metadata.get("creators") or []
+        item_provenance = {
+            key: metadata[key]
+            for key in (
+                "attachment_id",
+                "attachment_key",
+                "doi",
+                "venue",
+                "year",
+                "zotero_uri",
+            )
+            if key in metadata
+        }
+
+        for idx, (chunk, vector) in enumerate(zip(chunks, vectors, strict=True)):
+            row = dict(chunk)
+            text = str(row.pop("text", ""))
+            section_heading = row.get("section_heading") or row.get("section") or ""
+            provenance = {**item_provenance, **row}
+            attachment_id = metadata.get("attachment_id") or row.get("attachment_id")
+            provenance.pop("attachment_id", None)
+            self.add_chunk(
+                item_id=item_id,
+                item_key=item_key,
+                title=str(row.get("title") or title),
+                authors=row.get("authors") or authors,
+                section=str(section_heading),
+                chunk_index=int(row.get("chunk_index", idx)),
+                text=text,
+                vector=np.asarray(vector, dtype=np.float32).tolist(),
+                attachment_id=attachment_id,
+                **provenance,
+            )
+
+    @staticmethod
+    def _read_embeddings(embeddings_path: str | Path) -> tuple[np.ndarray, list[dict[str, Any]] | None, str]:
+        loaded = read_embedding_npz(embeddings_path)
+        if isinstance(loaded, tuple):
+            vectors, metadata, model = loaded
+            return np.asarray(vectors, dtype=np.float32), list(metadata), model
+
+        vectors = np.asarray(loaded["vectors"], dtype=np.float32)
+        chunk_ids = loaded.get("chunk_ids") or []
+        embedding_metadata: list[dict[str, Any]] | None
+        if chunk_ids:
+            embedding_metadata = [{"chunk_id": chunk_id} for chunk_id in chunk_ids]
+        else:
+            embedding_metadata = None
+        model = str(loaded.get("metadata", {}).get("model") or loaded.get("metadata", {}).get("embedder_model") or "")
+        return vectors, embedding_metadata, model
 
 
 def _authors_list(authors: object) -> list[str]:
