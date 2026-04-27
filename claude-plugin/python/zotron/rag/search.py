@@ -62,6 +62,9 @@ class VectorStore:
             row = dict(self.chunks[i])
             row.pop("vector", None)
             row["score"] = float(scores[i])
+            row["section_heading"] = row.get("section_heading") or row.get("section")
+            if query is not None:
+                row["query"] = query
             results.append(row)
         return results
 

@@ -233,7 +233,7 @@ def _run_hits(query: str, collection: str, output: str, top_k: int, cfg: dict[st
     store = VectorStore.load(store_path)
     embedder = _build_embedder(cfg)
     rows = store.search(embedder.embed(query), top_k=top_k)
-    hits = [format_retrieval_hit(row, query=query) for row in rows]
+    hits = results_to_hits(rows, query=query)
     if output == "jsonl":
         for hit in hits:
             print(json.dumps(hit, ensure_ascii=False, separators=(",", ":")))
@@ -279,13 +279,6 @@ def main() -> None:
     p_search.add_argument("--collection", required=True, help="Collection name")
     p_search.add_argument("query", help="Query text")
 
-    # hits
-    p_hits = sub.add_parser("hits", help="Output academic-zh retrieval hits.")
-    p_hits.add_argument("query", help="Query text")
-    p_hits.add_argument("--collection", required=True, help="Collection name")
-    p_hits.add_argument("--top-k", type=int, default=10, help="Number of hits to return")
-    p_hits.add_argument("--output", choices=["json", "jsonl"], default="json", help="Output format")
-
     # status
     p_status = sub.add_parser("status", help="Show index status for a collection")
     p_status.add_argument("--collection", required=True, help="Collection name")
@@ -297,7 +290,7 @@ def main() -> None:
     )
     p_hits.add_argument("query", help="Query text")
     p_hits.add_argument("--collection", required=True, help="Collection name")
-    p_hits.add_argument("--limit", type=int, default=50, help="Maximum hits to emit")
+    p_hits.add_argument("--limit", "--top-k", dest="top_k", type=int, default=50, help="Maximum hits to emit")
     p_hits.add_argument("--output", choices=["json", "jsonl"], default="json", help="Output format")
 
     # cite
