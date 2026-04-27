@@ -13,7 +13,7 @@ from zotron.config import load_config
 from zotron.rpc import ZoteroRPC
 from zotron.rag.chunker import chunk_text
 from zotron.rag.embedder import create_embedder
-from zotron.rag.search import VectorStore, format_retrieval_hit
+from zotron.rag.search import VectorStore, results_to_hits
 
 
 # ---------------------------------------------------------------------------
@@ -171,13 +171,16 @@ def cmd_index(args: argparse.Namespace, cfg: dict[str, Any]) -> None:
     }))
 
 
-def cmd_search(args: argparse.Namespace, cfg: dict[str, Any]) -> None:
-    store_path = _store_path(args.collection)
+def _load_index_or_exit(collection: str) -> VectorStore:
+    store_path = _store_path(collection)
     if not store_path.exists():
-        print(json.dumps({"error": f"Collection not indexed: {args.collection!r}"}), file=sys.stderr)
+        print(json.dumps({"error": f"Collection not indexed: {collection!r}"}), file=sys.stderr)
         sys.exit(1)
+    return VectorStore.load(store_path)
 
-    store = VectorStore.load(store_path)
+
+def cmd_search(args: argparse.Namespace, cfg: dict[str, Any]) -> None:
+    store = _load_index_or_exit(args.collection)
     embedder = _build_embedder(cfg)
     top_k = cfg.get("rag", {}).get("top_k", 5)
 
@@ -188,12 +191,7 @@ def cmd_search(args: argparse.Namespace, cfg: dict[str, Any]) -> None:
 
 
 def cmd_hits(args: argparse.Namespace, cfg: dict[str, Any]) -> None:
-    store_path = _store_path(args.collection)
-    if not store_path.exists():
-        print(json.dumps({"error": f"Collection not indexed: {args.collection!r}"}), file=sys.stderr)
-        sys.exit(1)
-
-    store = VectorStore.load(store_path)
+    store = _load_index_or_exit(args.collection)
     embedder = _build_embedder(cfg)
     query_vec = embedder.embed(args.query)
     results = store.search(query_vec, top_k=args.limit)
@@ -201,7 +199,7 @@ def cmd_hits(args: argparse.Namespace, cfg: dict[str, Any]) -> None:
 
     if args.output == "jsonl":
         for hit in hits:
-            print(json.dumps(hit, ensure_ascii=False, separators=(",", ":")))
+            print(json.dumps(hit, ensure_ascii=False))
     else:
         print(json.dumps({"hits": hits, "total": len(hits)}, ensure_ascii=False, indent=2))
 
@@ -292,6 +290,16 @@ def main() -> None:
     p_status = sub.add_parser("status", help="Show index status for a collection")
     p_status.add_argument("--collection", required=True, help="Collection name")
 
+    # hits
+    p_hits = sub.add_parser(
+        "hits",
+        help="Emit academic-zh retrieval hits with item_key/title/text provenance.",
+    )
+    p_hits.add_argument("query", help="Query text")
+    p_hits.add_argument("--collection", required=True, help="Collection name")
+    p_hits.add_argument("--limit", type=int, default=50, help="Maximum hits to emit")
+    p_hits.add_argument("--output", choices=["json", "jsonl"], default="json", help="Output format")
+
     # cite
     p_cite = sub.add_parser(
         "cite",
@@ -352,7 +360,7 @@ def main() -> None:
                 print(format_citation_markdown(c))
         return
 
-    dispatch = {"index": cmd_index, "search": cmd_search, "hits": cmd_hits, "status": cmd_status}
+    dispatch = {"index": cmd_index, "search": cmd_search, "status": cmd_status, "hits": cmd_hits}
     dispatch[args.command](args, cfg)
 
 

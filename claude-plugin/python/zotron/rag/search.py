@@ -25,26 +25,19 @@ class VectorStore:
         attachment_id: int | None = None,
         **provenance: object,
     ) -> None:
-        item_key = str(provenance.pop("item_key", item_id))
-        chunk_id = str(provenance.pop("chunk_id", f"{item_key}:c{chunk_index}"))
-        block_ids = provenance.pop("block_ids", [])
-        self.chunks.append(
-            {
-                "item_id": item_id,
-                "item_key": item_key,
-                "title": title,
-                "authors": authors,
-                "section": section,
-                "section_heading": provenance.pop("section_heading", section),
-                "chunk_index": chunk_index,
-                "chunk_id": chunk_id,
-                "block_ids": list(block_ids) if isinstance(block_ids, list) else [],
-                "text": text,
-                "vector": vector,
-                "attachment_id": attachment_id,
-                **provenance,
-            }
-        )
+        row = {
+            "item_id": item_id,
+            "item_key": provenance.pop("item_key", item_id),
+            "title": title,
+            "authors": authors,
+            "section": section,
+            "chunk_index": chunk_index,
+            "text": text,
+            "vector": vector,
+            "attachment_id": attachment_id,
+        }
+        row.update(provenance)
+        self.chunks.append(row)
 
     def clear_item(self, item_id: str) -> None:
         self.chunks = [c for c in self.chunks if c["item_id"] != item_id]
@@ -64,20 +57,15 @@ class VectorStore:
 
         top_indices = np.argsort(scores)[::-1][:top_k]
 
-        results = [
-            {
-                **{k: v for k, v in self.chunks[i].items() if k != "vector"},
-                "score": float(scores[i]),
-            }
-            for i in top_indices
-        ]
-        if query is not None:
-            for row in results:
-                row["query"] = query
-                row["zotero_uri"] = f"zotero://select/library/items/{row['item_key']}"
+        results: list[dict] = []
+        for i in top_indices:
+            row = dict(self.chunks[i])
+            row.pop("vector", None)
+            row["score"] = float(scores[i])
+            results.append(row)
         return results
 
-    def search_hits(self, query_vector: list[float], query: str, top_k: int = 10) -> list[dict]:
+    def search_hits(self, query_vector: list[float], *, query: str, top_k: int = 10) -> list[dict]:
         return results_to_hits(self.search(query_vector, top_k=top_k), query=query)
 
     def save(self, path: Path) -> None:
@@ -101,36 +89,41 @@ class VectorStore:
         return store
 
 
-def format_retrieval_hit(row: dict, *, query: str = "") -> dict:
-    """Format an internal search row as the academic-zh retrieval hit contract."""
-    item_key = str(row.get("item_key") or row.get("item_id") or "")
-    hit = {
-        "item_key": item_key,
-        "title": row.get("title", ""),
-        "text": row.get("text", ""),
-    }
-    optional_map = {
-        "authors": row.get("authors"),
-        "year": row.get("year"),
-        "venue": row.get("venue"),
-        "doi": row.get("doi"),
-        "section_heading": row.get("section_heading") or row.get("section"),
-        "chunk_id": row.get("chunk_id"),
-        "block_ids": row.get("block_ids"),
-        "score": row.get("score"),
-    }
-    if query:
-        optional_map["query"] = query
-    if item_key:
-        optional_map["zotero_uri"] = row.get("zotero_uri") or f"zotero://select/library/items/{item_key}"
-    for key, value in optional_map.items():
-        if value not in (None, "", []):
+def _authors_list(authors: object) -> list[str]:
+    if authors is None:
+        return []
+    if isinstance(authors, list):
+        return [str(a) for a in authors if str(a)]
+    return [part.strip() for part in str(authors).split(";") if part.strip()]
+
+
+def results_to_hits(rows: list[dict], *, query: str) -> list[dict]:
+    """Convert internal search rows to the academic-zh retrieval hit contract."""
+    hits: list[dict] = []
+    for row in rows:
+        item_key = str(row.get("item_key") or row.get("item_id") or "")
+        hit = {
+            "item_key": item_key,
+            "title": row.get("title") or "",
+            "text": row.get("text") or "",
+        }
+        optional = {
+            "authors": _authors_list(row.get("authors")),
+            "year": row.get("year"),
+            "venue": row.get("venue"),
+            "doi": row.get("doi"),
+            "zotero_uri": row.get("zotero_uri") or (f"zotero://select/library/items/{item_key}" if item_key else ""),
+            "section_heading": row.get("section_heading") or row.get("section"),
+            "chunk_id": row.get("chunk_id") or (f"{item_key}:c{row.get('chunk_index')}" if item_key and row.get("chunk_index") is not None else None),
+            "block_ids": row.get("block_ids"),
+            "query": query,
+            "score": row.get("score"),
+        }
+        for key, value in optional.items():
+            if value is None or value == []:
+                continue
+            if value == "" and key not in {"doi", "venue"}:
+                continue
             hit[key] = value
-    return hit
-
-
-def write_hits_jsonl(path: Path, hits: list[dict]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as fh:
-        for hit in hits:
-            fh.write(json.dumps(hit, ensure_ascii=False, separators=(",", ":")) + "\n")
+        hits.append(hit)
+    return hits

@@ -21,14 +21,19 @@ from zotron.artifacts import (
 
 def test_zotero_artifact_store_filters_by_title_suffix_and_adds_attachment(tmp_path):
     rpc = MagicMock()
-    rpc.call.side_effect = lambda method, params=None: {
-        "attachments.list": [
-            {"id": 1, "title": "ITEM.zotron-ocr.raw.zip"},
-            {"id": 2, "title": "ITEM.zotron-blocks.jsonl"},
-            {"id": 3, "title": "unrelated.pdf"},
-        ],
-        "attachments.add": {"id": 99, "title": params["title"]},
-    }[method]
+
+    def call(method, params=None):
+        if method == "attachments.list":
+            return [
+                {"id": 1, "title": "ITEM.zotron-ocr.raw.zip"},
+                {"id": 2, "title": "ITEM.zotron-blocks.jsonl"},
+                {"id": 3, "title": "unrelated.pdf"},
+            ]
+        if method == "attachments.add":
+            return {"id": 99, "title": params["title"]}
+        raise AssertionError(method)
+
+    rpc.call.side_effect = call
     store = ZoteroArtifactStore(rpc)
 
     assert store.list_artifacts(parent_id=42, suffix=".zotron-blocks.jsonl") == [
