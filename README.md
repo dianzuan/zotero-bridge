@@ -58,7 +58,7 @@ Zotero's built-in `localhost:23119` HTTP service is hardcoded for the browser-ex
 /zotron:setup
 ```
 
-`/zotron:setup` pings the bridge; if Zotero is missing the XPI, it fetches the latest release, downloads it, and walks you through **Tools → Plugins → ⚙ → Install From File → restart**. Then talk to Claude in plain English — *"find papers on transformer attention"*, *"add DOI 10.1038/nature12373 to my ML collection"*, *"export APA references for items 10, 13, 16"*. Claude routes to the right sub-workflow (search / manage / export / OCR / RAG), which calls the RPC.
+`/zotron:setup` pings the bridge; if Zotero is missing the XPI, it hands the bundled `claude-plugin/xpi/zotron.xpi` straight to Zotero (no download — the XPI ships inside the plugin), which pops a native install dialog. One click → restart Zotero → done. Cross-platform: Linux/macOS/Windows-native/WSL all handled. Then talk to Claude in plain English — *"find papers on transformer attention"*, *"add DOI 10.1038/nature12373 to my ML collection"*, *"export APA references for items 10, 13, 16"*. Claude routes to the right sub-workflow (search / manage / export / OCR / RAG), which calls the RPC.
 
 ### Path B — Python CLI / SDK
 
