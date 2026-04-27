@@ -79,20 +79,16 @@ Pre-Zotero-7 alternatives — vendoring a SQLite reader (fragile, write-locked, 
 
 ### Path B — Codex / Code CLI
 
-Codex users can use the same bundled bridge without changing the Claude Code setup path. Until a Codex marketplace package is published, copy the plugin-shaped files from this repository (or a release checkout) into your Codex plugin/skills area and install the same Python CLI + XPI:
+Codex does not need the Claude plugin marketplace. Install the Python CLI, install the XPI in Zotero, and make sure the `zotron*` commands are on `PATH` for the Code CLI session:
 
 ```bash
-# 1) Install the Zotero XPI manually from the latest release, or use this checkout:
-#    claude-plugin/xpi/zotron.xpi
-# 2) Install the CLI commands used by the Codex skills:
 uv tool install "git+https://github.com/dianzuan/zotron.git#subdirectory=claude-plugin/python"
-# 3) Put the installed zotron commands on PATH for code-cli/Codex sessions:
+# Zotero desktop: Tools → Plugins → ⚙ → Install Add-on From File → claude-plugin/xpi/zotron.xpi
 zotron ping
-zotron-ocr status --collection "My Papers"
-zotron-rag hits "transformer attention" --collection "My Papers" --output jsonl
+zotron-rag hits "transformer attention" --collection "Reading" --output jsonl
 ```
 
-A future `codex-plugin/` package should mirror the existing plugin layout: `.codex-plugin/plugin.json`, `skills/zotero/SKILL.md`, `skills/zotero/*.md`, `agents/zotero-researcher.md`, and `bin/zotron*`. For now, Codex/code-cli users should install the XPI in Zotero, install the Python CLI, and expose `zotron`, `zotron-ocr`, and `zotron-rag` on `PATH`.
+The future Codex plugin layout is expected to be copyable under `codex-plugin/` (`.codex-plugin/plugin.json`, `skills/zotero/`, `agents/`, and `bin/zotron*`). Until that surface is published, use the Python CLI + manual XPI path above; it preserves the same RPC and RAG/OCR contracts.
 
 ### Path C — Python CLI / SDK
 
