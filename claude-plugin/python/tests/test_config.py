@@ -36,6 +36,9 @@ def test_load_defaults_when_no_file(tmp_path, monkeypatch):
     cfg = load_config(config_path=nonexistent)
 
     assert cfg["ocr"]["provider"] == DEFAULTS["ocr"]["provider"]
+    assert cfg["ocr"]["provider"] == "glm"
+    assert cfg["ocr"]["model"] == "glm-ocr"
+    assert cfg["ocr"]["api_url"] == "https://open.bigmodel.cn/api/paas/v4/layout_parsing"
     assert cfg["zotero"]["rpc_url"] == DEFAULTS["zotero"]["rpc_url"]
     assert cfg["rag"]["top_k"] == DEFAULTS["rag"]["top_k"]
     assert cfg["embedding"]["model"] == DEFAULTS["embedding"]["model"]
@@ -79,12 +82,14 @@ def test_env_overrides_file(tmp_path, monkeypatch):
     )
 
     monkeypatch.setenv("ZOTRON_OCR_PROVIDER", "mineru")
+    monkeypatch.setenv("ZOTRON_OCR_MODEL", "custom-ocr-model")
     monkeypatch.setenv("ZOTRON_TIMEOUT", "60")
 
     cfg = load_config(config_path=config_file)
 
     # env var wins over file
     assert cfg["ocr"]["provider"] == "mineru"
+    assert cfg["ocr"]["model"] == "custom-ocr-model"
     # env var wins over default (note: ZOTRON_TIMEOUT → zotero.timeout)
     assert cfg["zotero"]["timeout"] == 60
 

@@ -6,11 +6,11 @@ import { findUnknownKey } from "../utils/settings-validate";
 const PREF_PREFIX = "extensions.zotron.";
 
 const SETTINGS_KEYS = [
-  "ocr.provider",      // glm | qwen | ernie | custom
+  "ocr.provider",      // default: glm
   "ocr.apiKey",
   "ocr.apiUrl",
   "ocr.model",
-  "embedding.provider", // ollama | zhipu | doubao | openai | deepseek
+  "embedding.provider", // ollama | openai | zhipu | dashscope | siliconflow | jina | voyage | cohere | gemini | doubao
   "embedding.model",
   "embedding.apiKey",
   "embedding.apiUrl",

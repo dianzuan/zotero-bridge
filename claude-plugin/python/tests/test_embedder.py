@@ -4,6 +4,7 @@ import httpx
 
 from zotron.rag.embedder import (
     BUILTIN_EMBEDDING_SPECS,
+    GeminiEmbedder,
     OllamaEmbedder,
     CloudEmbedder,
     create_embedder,
@@ -49,6 +50,20 @@ def test_create_jina_embedder_from_builtin_registry():
     assert emb.model == "jina-embeddings-v3"
     assert BUILTIN_EMBEDDING_SPECS["jina"].query_task == "retrieval.query"
     assert BUILTIN_EMBEDDING_SPECS["jina"].document_task == "retrieval.passage"
+
+
+def test_create_new_embedding_providers_from_registry():
+    for provider, model in [
+        ("siliconflow", "BAAI/bge-m3"),
+        ("voyage", "voyage-4"),
+        ("cohere", "embed-v4.0"),
+    ]:
+        emb = create_embedder(provider, model, api_key="key123")
+        assert isinstance(emb, CloudEmbedder)
+        assert emb.model == model
+
+    gemini = create_embedder("gemini", "gemini-embedding-001", api_key="key123")
+    assert isinstance(gemini, GeminiEmbedder)
 
 
 def test_create_unknown_embedder():
@@ -136,6 +151,95 @@ def test_openai_compatible_payload_remains_legacy_without_task_field():
 
     assert emb.embed("query text") == [0.1, 0.2]
     assert requests == [{"model": "text-embedding-3-small", "input": "query text"}]
+
+
+def test_voyage_query_and_document_payloads():
+    requests: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(json_request(request))
+        return httpx.Response(200, json={"data": [{"embedding": [0.1, 0.2]}]})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    emb = CloudEmbedder(
+        provider="voyage",
+        model="voyage-4",
+        api_key="key123",
+        client=client,
+    )
+
+    assert emb.embed("query text") == [0.1, 0.2]
+    assert emb.embed_batch(["document text"]) == [[0.1, 0.2]]
+
+    assert requests[0] == {
+        "model": "voyage-4",
+        "input": "query text",
+        "input_type": "query",
+    }
+    assert requests[1] == {
+        "model": "voyage-4",
+        "input": ["document text"],
+        "input_type": "document",
+    }
+
+
+def test_cohere_query_and_document_payloads_and_response_shape():
+    requests: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(json_request(request))
+        return httpx.Response(200, json={"embeddings": {"float": [[0.1, 0.2]]}})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    emb = CloudEmbedder(
+        provider="cohere",
+        model="embed-v4.0",
+        api_key="key123",
+        client=client,
+    )
+
+    assert emb.embed("query text") == [0.1, 0.2]
+    assert emb.embed_batch(["document text"]) == [[0.1, 0.2]]
+
+    assert requests[0] == {
+        "model": "embed-v4.0",
+        "texts": ["query text"],
+        "input_type": "search_query",
+        "embedding_types": ["float"],
+    }
+    assert requests[1] == {
+        "model": "embed-v4.0",
+        "texts": ["document text"],
+        "input_type": "search_document",
+        "embedding_types": ["float"],
+    }
+
+
+def test_gemini_query_and_document_payloads_and_response_shape():
+    requests: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(json_request(request))
+        return httpx.Response(200, json={"embedding": {"values": [0.1, 0.2]}})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    emb = GeminiEmbedder(
+        model="gemini-embedding-001",
+        api_key="key123",
+        client=client,
+    )
+
+    assert emb.embed("query text") == [0.1, 0.2]
+    assert emb.embed_batch(["document text"]) == [[0.1, 0.2]]
+
+    assert requests[0] == {
+        "taskType": "RETRIEVAL_QUERY",
+        "content": {"parts": [{"text": "query text"}]},
+    }
+    assert requests[1] == {
+        "taskType": "RETRIEVAL_DOCUMENT",
+        "content": {"parts": [{"text": "document text"}]},
+    }
 
 
 def json_request(request: httpx.Request) -> dict:

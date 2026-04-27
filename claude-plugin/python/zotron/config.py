@@ -15,13 +15,16 @@ from typing import Any
 
 DEFAULTS: dict[str, Any] = {
     "ocr": {
-        "provider": "glm",          # "glm" | "paddleocr" | "mineru"
+        "provider": "glm",          # default live OCR: GLM-OCR
         "glm_api_key": "",
+        "api_key": "",
+        "api_url": "https://open.bigmodel.cn/api/paas/v4/layout_parsing",
+        "model": "glm-ocr",
         "output_dir": "~/zotron-ocr-output",
         "concurrency": 4,
     },
     "embedding": {
-        "provider": "ollama",       # "ollama" | "openai"
+        "provider": "ollama",
         "model": "nomic-embed-text",
         "ollama_base_url": "http://localhost:11434",
         "openai_api_key": "",
@@ -47,6 +50,9 @@ DEFAULTS: dict[str, Any] = {
 ENV_MAP: dict[str, tuple[str, str]] = {
     "ZOTRON_OCR_PROVIDER":        ("ocr", "provider"),
     "ZOTRON_GLM_API_KEY":         ("ocr", "glm_api_key"),
+    "ZOTRON_OCR_API_KEY":         ("ocr", "api_key"),
+    "ZOTRON_OCR_API_URL":         ("ocr", "api_url"),
+    "ZOTRON_OCR_MODEL":           ("ocr", "model"),
     "ZOTRON_OCR_OUTPUT_DIR":      ("ocr", "output_dir"),
     "ZOTRON_OCR_CONCURRENCY":     ("ocr", "concurrency"),
     "ZOTRON_EMBED_PROVIDER":      ("embedding", "provider"),
@@ -161,5 +167,4 @@ def load_config(config_path: str | Path | None = None) -> dict[str, Any]:
             cfg.setdefault(section, {})[key] = _coerce(raw, default_val)
 
     return cfg
-
 

@@ -13,6 +13,11 @@ var EMB_CONFIGS = {
   ollama:    { url: "http://localhost:11434",                                            model: "qwen3-embedding:4b" },
   zhipu:     { url: "https://open.bigmodel.cn/api/paas/v4/embeddings",                  model: "embedding-3" },
   dashscope: { url: "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings",     model: "text-embedding-v4" },
+  siliconflow: { url: "https://api.siliconflow.cn/v1/embeddings",                       model: "BAAI/bge-m3" },
+  jina:      { url: "https://api.jina.ai/v1/embeddings",                                model: "jina-embeddings-v3" },
+  voyage:   { url: "https://api.voyageai.com/v1/embeddings",                           model: "voyage-4" },
+  cohere:   { url: "https://api.cohere.com/v2/embed",                                  model: "embed-v4.0" },
+  gemini:   { url: "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent", model: "gemini-embedding-001" },
   doubao:    { url: "https://ark.cn-beijing.volces.com/api/v3/embeddings/multimodal",  model: "doubao-embedding-vision-251215" },
   openai:    { url: "https://api.openai.com/v1/embeddings",                             model: "text-embedding-3-small" },
 };
@@ -77,6 +82,22 @@ function testEmb() {
     reqUrl = url;
     body = JSON.stringify({ model: model, input: [{ type: "text", text: "test" }] });
     headers = { "Content-Type": "application/json", "Authorization": "Bearer " + key };
+  } else if (provider === "cohere") {
+    reqUrl = url;
+    body = JSON.stringify({ model: model, texts: ["test"], input_type: "search_query", embedding_types: ["float"] });
+    headers = { "Content-Type": "application/json", "Authorization": "Bearer " + key };
+  } else if (provider === "gemini") {
+    reqUrl = url;
+    body = JSON.stringify({ taskType: "RETRIEVAL_QUERY", content: { parts: [{ text: "test" }] } });
+    headers = { "Content-Type": "application/json", "x-goog-api-key": key };
+  } else if (provider === "voyage") {
+    reqUrl = url;
+    body = JSON.stringify({ model: model, input: "test", input_type: "query" });
+    headers = { "Content-Type": "application/json", "Authorization": "Bearer " + key };
+  } else if (provider === "jina") {
+    reqUrl = url;
+    body = JSON.stringify({ model: model, input: "test", task: "retrieval.query" });
+    headers = { "Content-Type": "application/json", "Authorization": "Bearer " + key };
   } else {
     reqUrl = url;
     body = JSON.stringify({ model: model, input: "test" });
@@ -96,7 +117,11 @@ function testEmb() {
         var data = JSON.parse(xhr.responseText);
         var dim = provider === "ollama"
           ? (data.embedding ? data.embedding.length : "?")
-          : (data.data && data.data[0] ? data.data[0].embedding.length : "?");
+          : provider === "cohere"
+            ? (data.embeddings && data.embeddings.float && data.embeddings.float[0] ? data.embeddings.float[0].length : "?")
+            : provider === "gemini"
+              ? (data.embedding && data.embedding.values ? data.embedding.values.length : "?")
+              : (data.data && data.data[0] ? data.data[0].embedding.length : "?");
         setStatus("zotron-emb-status", "连接成功 — 向量维度: " + dim, "#27ae60");
       } catch(e) {
         setStatus("zotron-emb-status", "连接成功 (HTTP " + xhr.status + ")", "#27ae60");
