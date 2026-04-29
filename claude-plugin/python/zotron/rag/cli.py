@@ -11,6 +11,7 @@ from typing import Any, cast
 from zotron.collections import find_by_name as _find_collection_by_name
 from zotron.config import load_config
 from zotron.rpc import ZoteroRPC
+from zotron._paginate import paginate
 from zotron.artifacts import (
     CHUNKS_SUFFIX,
     EMBEDDING_SUFFIX,
@@ -200,8 +201,7 @@ def cmd_index(args: argparse.Namespace, cfg: dict[str, Any]) -> None:
 
     embedder = _build_embedder(cfg)
 
-    raw = rpc.call("collections.getItems", {"id": collection_id, "limit": 500}) or {}
-    items = raw.get("items", []) if isinstance(raw, dict) else raw
+    items = paginate(rpc, "collections.getItems", {"id": collection_id}, page_size=500)
     indexed = 0
     skipped = 0
 
@@ -382,8 +382,7 @@ def _zotero_item_ids_for_index(rpc: ZoteroRPC, args: argparse.Namespace) -> list
         if collection_id is None:
             print(json.dumps({"error": f"Collection not found: {args.collection!r}"}), file=sys.stderr)
             sys.exit(1)
-        raw = rpc.call("collections.getItems", {"id": collection_id, "limit": 500}) or {}
-        items = raw.get("items", []) if isinstance(raw, dict) else raw
+        items = paginate(rpc, "collections.getItems", {"id": collection_id}, page_size=500)
         return [int(item["id"]) for item in items if item.get("id") is not None]
     print(json.dumps({"error": "--item or --collection is required when --zotero is used"}), file=sys.stderr)
     sys.exit(2)

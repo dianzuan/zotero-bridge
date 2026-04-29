@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 
 from zotron.artifacts import read_embedding_npz, write_chunks_jsonl
-from zotron.rag.cli import main as rag_main
+from zotron.rag.cli import _zotero_item_ids_for_index, main as rag_main
 
 
 def test_rag_hits_zotero_backend_calls_search_hits_rpc(capsys):
@@ -162,3 +162,24 @@ def test_rag_index_artifacts_zotero_item_embeds_attached_chunks(tmp_path, capsys
     assert out["items"][0]["item_id"] == 5443
     assert out["items"][0]["embedding_title"] == "ITEM1.zotron-embed.npz"
     assert out["items"][0]["replaced"] == 1
+
+
+def test_zotero_collection_index_uses_pagination():
+    rpc = MagicMock()
+    rpc.call.side_effect = [
+        {"items": [{"id": item_id} for item_id in range(1, 501)], "total": 501},
+        {"items": [{"id": 501}], "total": 501},
+    ]
+    args = MagicMock(item=None, collection="test")
+
+    with patch("zotron.rag.cli._find_collection_id", return_value=69):
+        assert _zotero_item_ids_for_index(rpc, args) == list(range(1, 502))
+
+    assert rpc.call.call_args_list[0].args == (
+        "collections.getItems",
+        {"id": 69, "offset": 0, "limit": 500},
+    )
+    assert rpc.call.call_args_list[1].args == (
+        "collections.getItems",
+        {"id": 69, "offset": 500, "limit": 500},
+    )
