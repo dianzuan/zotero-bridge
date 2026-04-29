@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 diamondrill
 import { registerHandlers, getRegisteredMethods } from "../server";
+import { setPref } from "../utils/prefs";
 
 export const systemHandlers = {
   async ping() { return { status: "ok", timestamp: new Date().toISOString() }; },
-  async version() { return { zotero: Zotero.version, plugin: "0.1.1", methods: getRegisteredMethods().length }; },
+  async version() { return { zotero: Zotero.version, plugin: "0.1.2", methods: getRegisteredMethods().length }; },
   async libraries() {
     const libs = Zotero.Libraries.getAll();
     return libs.map((lib: any) => ({ id: lib.id, type: lib.libraryType, name: lib.name, editable: lib.editable }));
@@ -12,7 +13,7 @@ export const systemHandlers = {
   async switchLibrary(params: { id: number }) {
     const lib = Zotero.Libraries.get(params.id);
     if (!lib) throw { code: -32602, message: `Library ${params.id} not found` };
-    Zotero.Prefs.set("extensions.zotron.lastLibraryID", params.id, true);
+    setPref("lastLibraryID", params.id);
     return { id: lib.id, name: lib.name };
   },
   async libraryStats(params: { id?: number }) {

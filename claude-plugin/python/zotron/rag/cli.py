@@ -151,13 +151,13 @@ def _artifact_vector_store(artifacts_dir: str | Path, item_key: str | None = Non
 
 def _build_embedder(cfg: dict[str, Any]):
     embed_cfg = cfg.get("embedding", {})
-    provider = embed_cfg.get("provider", "ollama")
+    provider = embed_cfg.get("provider", "doubao")
     if provider == "ollama":
         model = embed_cfg.get("model", "nomic-embed-text")
         api_url = embed_cfg.get("ollama_base_url", "http://localhost:11434")
         return create_embedder(provider="ollama", model=model, api_url=api_url)
     else:
-        model = embed_cfg.get("model") or embed_cfg.get("openai_model", "text-embedding-3-small")
+        model = embed_cfg.get("model") or embed_cfg.get("openai_model", "doubao-embedding-vision-251215")
         api_key = embed_cfg.get("api_key") or embed_cfg.get("openai_api_key", "")
         api_url = embed_cfg.get("api_url")
         return create_embedder(provider=provider, model=model, api_key=api_key, api_url=api_url)
@@ -183,7 +183,7 @@ def cmd_index(args: argparse.Namespace, cfg: dict[str, Any]) -> None:
     model_name = (
         embed_cfg.get("model")
         if embed_cfg.get("provider") == "ollama"
-        else embed_cfg.get("openai_model", "text-embedding-3-small")
+        else embed_cfg.get("model") or embed_cfg.get("openai_model", "doubao-embedding-vision-251215")
     )
 
     store_path = _store_path(args.collection)

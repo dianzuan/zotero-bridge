@@ -2,15 +2,15 @@
 // Copyright (C) 2026 diamondrill
 import { registerHandlers } from "../server";
 import { findUnknownKey } from "../utils/settings-validate";
-
-const PREF_PREFIX = "extensions.zotron.";
+import { getPref, setPref } from "../utils/prefs";
 
 const SETTINGS_KEYS = [
+  "ui.language",
   "ocr.provider",      // default: glm
   "ocr.apiKey",
   "ocr.apiUrl",
   "ocr.model",
-  "embedding.provider", // ollama | openai | zhipu | dashscope | siliconflow | jina | voyage | cohere | gemini | doubao
+  "embedding.provider", // doubao | ollama | openai | zhipu | dashscope | siliconflow | jina | voyage | cohere | gemini
   "embedding.model",
   "embedding.apiKey",
   "embedding.apiUrl",
@@ -23,14 +23,17 @@ const SETTINGS_KEYS = [
 // setAll (findUnknownKey). Extend here when new settings are introduced.
 const KNOWN_KEYS: ReadonlySet<string> = new Set(SETTINGS_KEYS);
 
+function getSetting(key: string): any {
+  return getPref(key);
+}
+
 export const settingsHandlers = {
   async get(params: { key: string }) {
     if (!params.key) throw { code: -32602, message: "key is required" };
     if (!KNOWN_KEYS.has(params.key)) {
       throw { code: -32602, message: `Unknown setting key: ${params.key}` };
     }
-    const val = Zotero.Prefs.get(PREF_PREFIX + params.key, true) ?? null;
-    return { [params.key]: val };
+    return { [params.key]: getSetting(params.key) };
   },
 
   async set(params: { key: string; value: any }) {
@@ -38,14 +41,14 @@ export const settingsHandlers = {
     if (!KNOWN_KEYS.has(params.key)) {
       throw { code: -32602, message: `Unknown setting: ${params.key}. Valid: ${SETTINGS_KEYS.join(", ")}` };
     }
-    Zotero.Prefs.set(PREF_PREFIX + params.key, params.value, true);
+    setPref(params.key, params.value);
     return { key: params.key, value: params.value };
   },
 
   async getAll() {
     const result: Record<string, any> = {};
     for (const key of SETTINGS_KEYS) {
-      result[key] = Zotero.Prefs.get(PREF_PREFIX + key, true) ?? null;
+      result[key] = getSetting(key);
     }
     return result;
   },
@@ -56,7 +59,7 @@ export const settingsHandlers = {
 
     const updated: Record<string, any> = {};
     for (const [key, value] of Object.entries(params)) {
-      Zotero.Prefs.set(PREF_PREFIX + key, value, true);
+      setPref(key, value);
       updated[key] = value;
     }
     return { updated };

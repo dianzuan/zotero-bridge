@@ -37,7 +37,7 @@ describe("system handler", () => {
   });
 
   describe("switchLibrary (fix #8)", () => {
-    it("writes to extensions.zotron.lastLibraryID with global=true — NOT Zotero's own branch", async () => {
+    it("writes to the zotron add-on preference branch", async () => {
       const setStub = sinon.stub();
       const getLibStub = sinon.stub().returns({ id: 5, name: "My Library" });
       installZotero({
@@ -52,9 +52,9 @@ describe("system handler", () => {
 
       expect(setStub.calledOnce).to.equal(true);
       const [key, value, global] = setStub.firstCall.args;
-      expect(key).to.equal("extensions.zotron.lastLibraryID");
+      expect(key).to.equal("zotron.lastLibraryID");
       expect(value).to.equal(5);
-      expect(global).to.equal(true);
+      expect(global).to.equal(undefined);
     });
   });
 

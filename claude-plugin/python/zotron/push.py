@@ -9,25 +9,12 @@ in cnki-plugin's exporters/zotero.py.
 """
 from __future__ import annotations
 
-import os
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
 from zotron.errors import CollectionAmbiguous, CollectionNotFound, InvalidPDF
-
-
-def _is_wsl() -> bool:
-    """Detect running inside Microsoft's Windows Subsystem for Linux."""
-    if os.environ.get("WSL_DISTRO_NAME"):
-        return True
-    try:
-        with open("/proc/sys/kernel/osrelease") as f:
-            release = f.read().lower()
-    except OSError:
-        return False
-    return "microsoft" in release or "wsl" in release
+from zotron.paths import zotero_path
 
 
 def _zotero_path(local_path: Path) -> str:
@@ -39,17 +26,7 @@ def _zotero_path(local_path: Path) -> str:
 
     On native Linux/macOS the path is returned unchanged.
     """
-    path_str = str(local_path)
-    if _is_wsl():
-        try:
-            result = subprocess.run(
-                ["wslpath", "-w", path_str],
-                capture_output=True, text=True, timeout=5, check=True,
-            )
-            return result.stdout.strip()
-        except (subprocess.SubprocessError, FileNotFoundError):
-            return path_str
-    return path_str
+    return zotero_path(local_path)
 
 
 def check_pdf_magic(path: Path) -> bool:

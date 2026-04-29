@@ -1,6 +1,6 @@
 [project]
 name = "zotron"
-version = "0.1.1"
+version = "0.1.2"
 requires-python = ">=3.11"
 description = "Python client + CLI for Zotron — typed JSON-RPC bridge between Zotero and AI agents"
 dependencies = [

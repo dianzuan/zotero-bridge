@@ -11,6 +11,7 @@ import markdown as md  # type: ignore[import-untyped]
 
 from zotron.collections import find_by_name as _find_collection_by_name
 from zotron.ocr.artifacts import (
+    CHUNKS_SUFFIX,
     ProviderRawArtifact,
     write_blocks_jsonl,
     write_chunks_jsonl,
@@ -18,6 +19,7 @@ from zotron.ocr.artifacts import (
 )
 from zotron.ocr.engine import OCREngine
 from zotron.ocr.normalize import blocks_from_provider_payload, chunks_from_blocks
+from zotron.paths import linux_path, zotero_path
 from zotron.rpc import ZoteroRPC
 
 
@@ -58,6 +60,18 @@ class OCRProcessor:
                 return True
         return False
 
+    def has_ocr_artifact(self, item_id: int) -> bool:
+        """Return True if the item has OCR/RAG chunk artifacts attached."""
+        attachments = cast(
+            list[dict[str, Any]],
+            self.rpc.call("attachments.list", {"parentId": item_id}) or [],
+        )
+        return any(str(att.get("title") or "").endswith(CHUNKS_SUFFIX) for att in attachments)
+
+    def has_ocr_result(self, item_id: int) -> bool:
+        """Return True when either canonical artifacts or legacy OCR note exists."""
+        return self.has_ocr_artifact(item_id) or self.has_ocr_note(item_id)
+
     # ------------------------------------------------------------------
     # Attachment helpers
     # ------------------------------------------------------------------
@@ -65,17 +79,7 @@ class OCRProcessor:
     @staticmethod
     def _to_linux_path(win_path: str) -> str:
         """Convert a Windows path to a WSL Linux path if running under WSL."""
-        import subprocess
-        try:
-            r = subprocess.run(
-                ["wslpath", "-u", win_path],
-                capture_output=True, text=True, timeout=5,
-            )
-            if r.returncode == 0:
-                return r.stdout.strip()
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            pass
-        return win_path
+        return linux_path(win_path)
 
     def get_pdf_attachment(self, item_id: int) -> dict[str, Any] | None:
         """Return first PDF attachment with a resolved filesystem ``path``."""
@@ -117,7 +121,7 @@ class OCRProcessor:
     def _attach_artifact(self, item_id: int, path: Path) -> None:
         self.rpc.call(
             "attachments.add",
-            {"parentId": item_id, "path": str(path), "title": path.name},
+            {"parentId": item_id, "path": zotero_path(path), "title": path.name},
         )
 
     # ------------------------------------------------------------------
@@ -233,7 +237,7 @@ class OCRProcessor:
     ) -> str:
         """OCR a single item, attach raw/block/chunk artifacts, and maybe a Note."""
         try:
-            if self.write_preview_note and not force and self.has_ocr_note(item_id):
+            if not force and self.has_ocr_result(item_id):
                 return "skipped"
 
             attachment = self.get_pdf_attachment(item_id)

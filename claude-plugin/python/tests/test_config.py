@@ -39,6 +39,11 @@ def test_load_defaults_when_no_file(tmp_path, monkeypatch):
     assert cfg["ocr"]["provider"] == "glm"
     assert cfg["ocr"]["model"] == "glm-ocr"
     assert cfg["ocr"]["api_url"] == "https://open.bigmodel.cn/api/paas/v4/layout_parsing"
+    assert cfg["ocr"]["api_key"] == ""
+    assert cfg["embedding"]["provider"] == "doubao"
+    assert cfg["embedding"]["model"] == "doubao-embedding-vision-251215"
+    assert cfg["embedding"]["api_url"] == "https://ark.cn-beijing.volces.com/api/v3/embeddings/multimodal"
+    assert cfg["embedding"]["api_key"] == ""
     assert cfg["zotero"]["rpc_url"] == DEFAULTS["zotero"]["rpc_url"]
     assert cfg["rag"]["top_k"] == DEFAULTS["rag"]["top_k"]
     assert cfg["embedding"]["model"] == DEFAULTS["embedding"]["model"]
@@ -83,6 +88,8 @@ def test_env_overrides_file(tmp_path, monkeypatch):
 
     monkeypatch.setenv("ZOTRON_OCR_PROVIDER", "mineru")
     monkeypatch.setenv("ZOTRON_OCR_MODEL", "custom-ocr-model")
+    monkeypatch.setenv("ZOTRON_EMBED_API_KEY", "embed-env-key")
+    monkeypatch.setenv("ZOTRON_EMBED_API_URL", "https://embed.example.com/v1")
     monkeypatch.setenv("ZOTRON_TIMEOUT", "60")
 
     cfg = load_config(config_path=config_file)
@@ -90,6 +97,8 @@ def test_env_overrides_file(tmp_path, monkeypatch):
     # env var wins over file
     assert cfg["ocr"]["provider"] == "mineru"
     assert cfg["ocr"]["model"] == "custom-ocr-model"
+    assert cfg["embedding"]["api_key"] == "embed-env-key"
+    assert cfg["embedding"]["api_url"] == "https://embed.example.com/v1"
     # env var wins over default (note: ZOTRON_TIMEOUT → zotero.timeout)
     assert cfg["zotero"]["timeout"] == 60
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 
 from zotron.ocr.processor import OCRProcessor
@@ -98,6 +98,35 @@ def test_has_ocr_note_no_notes():
     processor, rpc, _ = _make_processor()
     rpc.call.return_value = []
     assert processor.has_ocr_note(42) is False
+
+
+def test_has_ocr_result_prefers_chunk_artifacts():
+    processor, rpc, _ = _make_processor()
+
+    def call(method, params=None):
+        if method == "attachments.list":
+            return [{"title": "ITEM.zotron-chunks.jsonl"}]
+        raise AssertionError(f"unexpected RPC method {method}")
+
+    rpc.call.side_effect = call
+
+    assert processor.has_ocr_result(42) is True
+    rpc.call.assert_called_once_with("attachments.list", {"parentId": 42})
+
+
+def test_process_item_skips_when_artifact_exists_without_preview_note():
+    processor, rpc, engine = _make_processor()
+    processor.write_preview_note = False
+
+    def call(method, params=None):
+        if method == "attachments.list":
+            return [{"title": "ITEM.zotron-chunks.jsonl"}]
+        raise AssertionError(f"unexpected RPC method {method}")
+
+    rpc.call.side_effect = call
+
+    assert processor.process_item(42, "Done", force=False) == "skipped"
+    engine.ocr_pdf.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -216,3 +245,21 @@ def test_process_item_can_skip_preview_note_while_writing_artifacts(tmp_path):
     assert processor.process_item(43, "Plain", force=True) == "ok"
     assert not any(c.args[0] == "notes.create" for c in rpc.call.call_args_list)
     assert (tmp_path / "ITEM2.zotron-ocr.raw.zip").exists()
+
+
+def test_attach_artifact_converts_path_for_zotero(tmp_path):
+    processor, rpc, _ = _make_processor()
+    artifact = tmp_path / "ITEM.zotron-chunks.jsonl"
+    artifact.write_text("{}", encoding="utf-8")
+
+    with patch("zotron.ocr.processor.zotero_path", return_value="\\\\wsl.localhost\\Ubuntu\\tmp\\ITEM.zotron-chunks.jsonl"):
+        processor._attach_artifact(42, artifact)
+
+    rpc.call.assert_called_once_with(
+        "attachments.add",
+        {
+            "parentId": 42,
+            "path": "\\\\wsl.localhost\\Ubuntu\\tmp\\ITEM.zotron-chunks.jsonl",
+            "title": "ITEM.zotron-chunks.jsonl",
+        },
+    )
