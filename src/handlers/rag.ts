@@ -5,6 +5,7 @@ import { registerHandlers } from "../server";
 import { rpcError, INVALID_PARAMS } from "../utils/errors";
 
 const CHUNKS_SUFFIX = ".zotron-chunks.jsonl";
+const EMBEDDING_SUFFIX = ".zotron-embed.npz";
 
 type SearchHitsParams = {
   query: string;
@@ -14,6 +15,32 @@ type SearchHitsParams = {
   limit?: number;
   top_spans_per_item?: number;
   include_fulltext_spans?: boolean;
+};
+
+type RetrievalMode = "lexical" | "lexical_fallback";
+
+type EmbeddingArtifactMetadata = {
+  title: string;
+  path?: string;
+};
+
+type RetrievalMetadata = {
+  mode: RetrievalMode;
+  semantic_available: boolean;
+  semantic_used: boolean;
+  embedding_artifacts: number;
+  reason?: string;
+};
+
+type SearchHitsResult = {
+  hits: RetrievalHit[];
+  total: number;
+  retrieval: RetrievalMetadata;
+};
+
+type ItemArtifacts = {
+  chunks: Record<string, any>[];
+  embeddingArtifacts: EmbeddingArtifactMetadata[];
 };
 
 type RetrievalHit = {
@@ -30,6 +57,9 @@ type RetrievalHit = {
   block_ids?: string[];
   query: string;
   score: number;
+  retrieval_mode?: RetrievalMode;
+  embedding_artifact_title?: string;
+  embedding_artifact_path?: string;
 };
 
 function parseJsonl(text: string, source: string): Record<string, any>[] {
@@ -125,23 +155,41 @@ async function resolveCollectionItems(params: SearchHitsParams): Promise<any[]> 
   return (collection.getChildItems(false) || []).filter((item: any) => !item.isNote?.() && !item.isAttachment?.());
 }
 
-async function readChunkArtifacts(item: any): Promise<Record<string, any>[]> {
-  const rows: Record<string, any>[] = [];
+async function readItemArtifacts(item: any): Promise<ItemArtifacts> {
+  const chunks: Record<string, any>[] = [];
+  const embeddingArtifacts: EmbeddingArtifactMetadata[] = [];
   const attachmentIds = item.getAttachments?.() || [];
+
   for (const attachmentId of attachmentIds) {
     const attachment = await Zotero.Items.getAsync(attachmentId);
     if (!attachment?.isAttachment?.()) continue;
+
     const title = String(attachment.getField?.("title") || "");
-    if (!title.endsWith(CHUNKS_SUFFIX)) continue;
+    if (!title.endsWith(CHUNKS_SUFFIX) && !title.endsWith(EMBEDDING_SUFFIX)) continue;
+
     const path = await attachment.getFilePathAsync?.();
+    if (title.endsWith(EMBEDDING_SUFFIX)) {
+      const metadata: EmbeddingArtifactMetadata = { title };
+      if (path) metadata.path = String(path);
+      embeddingArtifacts.push(metadata);
+      continue;
+    }
+
     if (!path) continue;
     const content = String((await Zotero.File.getContentsAsync(path)) || "");
-    rows.push(...parseJsonl(content, title));
+    chunks.push(...parseJsonl(content, title));
   }
-  return rows;
+
+  return { chunks, embeddingArtifacts };
 }
 
-function hitFromChunk(item: any, chunk: Record<string, any>, query: string, score: number): RetrievalHit {
+function hitFromChunk(
+  item: any,
+  chunk: Record<string, any>,
+  query: string,
+  score: number,
+  embeddingArtifact?: EmbeddingArtifactMetadata,
+): RetrievalHit {
   const itemKey = String(chunk.item_key || item.key || item.id);
   const title = String(chunk.title || item.getField?.("title") || "");
   const chunkId = String(chunk.chunk_id || `${itemKey}:c${chunk.chunk_index ?? 0}`);
@@ -155,6 +203,7 @@ function hitFromChunk(item: any, chunk: Record<string, any>, query: string, scor
     chunk_id: chunkId,
     query,
     score,
+    retrieval_mode: embeddingArtifact ? "lexical_fallback" : "lexical",
   };
   const year = Number(chunk.year) || itemYear(item);
   if (year) hit.year = year;
@@ -163,10 +212,14 @@ function hitFromChunk(item: any, chunk: Record<string, any>, query: string, scor
   const doi = String(chunk.doi || item.getField?.("DOI") || "");
   if (doi) hit.doi = doi;
   if (Array.isArray(chunk.block_ids)) hit.block_ids = chunk.block_ids;
+  if (embeddingArtifact) {
+    hit.embedding_artifact_title = embeddingArtifact.title;
+    if (embeddingArtifact.path) hit.embedding_artifact_path = embeddingArtifact.path;
+  }
   return hit;
 }
 
-async function searchChunkArtifacts(params: SearchHitsParams): Promise<RetrievalHit[]> {
+async function searchChunkArtifacts(params: SearchHitsParams): Promise<SearchHitsResult> {
   const query = params.query?.trim();
   if (!query) throw rpcError(INVALID_PARAMS, "rag.searchHits requires query");
 
@@ -174,13 +227,18 @@ async function searchChunkArtifacts(params: SearchHitsParams): Promise<Retrieval
   const topSpansPerItem = Math.max(1, params.top_spans_per_item ?? 3);
   const items = await resolveCollectionItems(params);
   const scored: RetrievalHit[] = [];
+  let embeddingArtifactCount = 0;
 
   for (const item of items) {
-    for (const chunk of await readChunkArtifacts(item)) {
+    const artifacts = await readItemArtifacts(item);
+    const embeddingArtifact = artifacts.embeddingArtifacts[0];
+    embeddingArtifactCount += artifacts.embeddingArtifacts.length;
+
+    for (const chunk of artifacts.chunks) {
       const text = String(chunk.text || "");
       const score = lexicalScore(text, query);
       if (score <= 0) continue;
-      scored.push(hitFromChunk(item, chunk, query, score));
+      scored.push(hitFromChunk(item, chunk, query, score, embeddingArtifact));
     }
   }
 
@@ -194,18 +252,28 @@ async function searchChunkArtifacts(params: SearchHitsParams): Promise<Retrieval
     hits.push(hit);
     if (hits.length >= limit) break;
   }
-  return hits;
+
+  const hasEmbeddingArtifacts = embeddingArtifactCount > 0;
+  const retrieval: RetrievalMetadata = {
+    mode: hasEmbeddingArtifacts ? "lexical_fallback" : "lexical",
+    semantic_available: hasEmbeddingArtifacts,
+    semantic_used: false,
+    embedding_artifacts: embeddingArtifactCount,
+  };
+  if (hasEmbeddingArtifacts) {
+    retrieval.reason = "Embedding NPZ parsing and query embedding are not available in Zotero JS without new dependencies; lexical fallback was used.";
+  }
+
+  return { hits, total: hits.length, retrieval };
 }
 
 export const ragHandlers = {
   async searchHits(params: SearchHitsParams) {
-    const hits = await searchChunkArtifacts(params);
-    return { hits, total: hits.length };
+    return searchChunkArtifacts(params);
   },
 
   async searchCards(params: SearchHitsParams) {
-    const hits = await searchChunkArtifacts(params);
-    return { hits, total: hits.length };
+    return searchChunkArtifacts(params);
   },
 };
 
