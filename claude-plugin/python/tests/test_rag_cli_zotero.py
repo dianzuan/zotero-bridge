@@ -114,7 +114,11 @@ def test_rag_index_artifacts_zotero_item_embeds_attached_chunks(tmp_path, capsys
     rpc = MagicMock()
     rpc.call.side_effect = [
         {"id": 5443, "key": "ITEM1", "title": "Paper"},
-        [{"id": 9001, "title": "ITEM1.zotron-chunks.jsonl", "path": str(chunks_path)}],
+        [
+            {"id": 9001, "title": "ITEM1.zotron-chunks.jsonl", "path": str(chunks_path)},
+            {"id": 9002, "title": "ITEM1.zotron-embed.npz", "path": str(tmp_path / "old.npz")},
+        ],
+        {"ok": True, "id": 9002},
         {"id": 9100, "title": "ITEM1.zotron-embed.npz"},
     ]
     mock_embedder = MagicMock()
@@ -136,6 +140,9 @@ def test_rag_index_artifacts_zotero_item_embeds_attached_chunks(tmp_path, capsys
         rag_main()
 
     mock_embedder.embed_batch.assert_called_once_with(["first Zotero span", "second Zotero span"])
+    delete_call = rpc.call.call_args_list[-2]
+    assert delete_call.args == ("attachments.delete", {"id": 9002})
+
     add_call = rpc.call.call_args_list[-1]
     assert add_call.args[0] == "attachments.add"
     add_params = add_call.args[1]
@@ -154,3 +161,4 @@ def test_rag_index_artifacts_zotero_item_embeds_attached_chunks(tmp_path, capsys
     assert out["total_chunks"] == 2
     assert out["items"][0]["item_id"] == 5443
     assert out["items"][0]["embedding_title"] == "ITEM1.zotron-embed.npz"
+    assert out["items"][0]["replaced"] == 1

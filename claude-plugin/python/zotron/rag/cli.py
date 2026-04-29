@@ -363,6 +363,10 @@ def _attachment_path(rpc: ZoteroRPC, attachment: dict[str, Any]) -> Path:
 
 def _find_chunks_attachment(rpc: ZoteroRPC, item_id: int) -> dict[str, Any] | None:
     attachments = cast(list[dict[str, Any]], rpc.call("attachments.list", {"parentId": item_id}) or [])
+    return _find_chunks_attachment_in(attachments)
+
+
+def _find_chunks_attachment_in(attachments: list[dict[str, Any]]) -> dict[str, Any] | None:
     suffix = f".{CHUNKS_SUFFIX}"
     return next(
         (attachment for attachment in attachments if str(attachment.get("title") or "").endswith(suffix)),
@@ -394,7 +398,8 @@ def _index_zotero_item_artifact(
     output_dir: Path | None,
 ) -> dict[str, Any]:
     item_info = cast(dict[str, Any], rpc.call("items.get", {"id": item_id}) or {})
-    chunks_attachment = _find_chunks_attachment(rpc, item_id)
+    attachments = cast(list[dict[str, Any]], rpc.call("attachments.list", {"parentId": item_id}) or [])
+    chunks_attachment = _find_chunks_attachment_in(attachments)
     if chunks_attachment is None:
         return {"item_id": item_id, "status": "skipped", "reason": "missing chunks artifact"}
 
@@ -414,6 +419,16 @@ def _index_zotero_item_artifact(
             model=model,
         ),
     )
+    replaced = 0
+    for attachment in attachments:
+        if str(attachment.get("title") or "") != embedding_path.name:
+            continue
+        attachment_id = attachment.get("id")
+        if attachment_id is None:
+            continue
+        rpc.call("attachments.delete", {"id": int(attachment_id)})
+        replaced += 1
+
     attachment = rpc.call(
         "attachments.add",
         {
@@ -432,6 +447,7 @@ def _index_zotero_item_artifact(
         "embedding_title": embedding_path.name,
         "embedding_path": str(embedding_path),
         "embedding_attachment_id": attachment.get("id") if isinstance(attachment, dict) else None,
+        "replaced": replaced,
     }
 
 
