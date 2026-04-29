@@ -21,10 +21,11 @@ export async function onStartup() {
     "ocr.apiKey": "",
     "ocr.apiUrl": "https://open.bigmodel.cn/api/paas/v4/layout_parsing",
     "ocr.model": "glm-ocr",
-    "embedding.provider": "ollama",
-    "embedding.model": "qwen3-embedding:4b",
+    "embedding.provider": "doubao",
+    "embedding.model": "doubao-embedding-vision-251215",
     "embedding.apiKey": "",
-    "embedding.apiUrl": "http://localhost:11434",
+    "embedding.apiUrl": "https://ark.cn-beijing.volces.com/api/v3/embeddings/multimodal",
+    "ui.language": "",
   };
   for (const [key, val] of Object.entries(defaults)) {
     if (Zotero.Prefs.get(PREF + key, true) === undefined) {
