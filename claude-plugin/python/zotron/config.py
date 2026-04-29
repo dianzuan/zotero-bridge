@@ -24,8 +24,10 @@ DEFAULTS: dict[str, Any] = {
         "concurrency": 4,
     },
     "embedding": {
-        "provider": "ollama",
-        "model": "nomic-embed-text",
+        "provider": "doubao",
+        "model": "doubao-embedding-vision-251215",
+        "api_key": "",
+        "api_url": "https://ark.cn-beijing.volces.com/api/v3/embeddings/multimodal",
         "ollama_base_url": "http://localhost:11434",
         "openai_api_key": "",
         "openai_model": "text-embedding-3-small",
@@ -57,6 +59,8 @@ ENV_MAP: dict[str, tuple[str, str]] = {
     "ZOTRON_OCR_CONCURRENCY":     ("ocr", "concurrency"),
     "ZOTRON_EMBED_PROVIDER":      ("embedding", "provider"),
     "ZOTRON_EMBED_MODEL":         ("embedding", "model"),
+    "ZOTRON_EMBED_API_KEY":       ("embedding", "api_key"),
+    "ZOTRON_EMBED_API_URL":       ("embedding", "api_url"),
     "ZOTRON_OLLAMA_BASE_URL":     ("embedding", "ollama_base_url"),
     "ZOTRON_OPENAI_API_KEY":      ("embedding", "openai_api_key"),
     "ZOTRON_OPENAI_MODEL":        ("embedding", "openai_model"),
@@ -167,4 +171,3 @@ def load_config(config_path: str | Path | None = None) -> dict[str, Any]:
             cfg.setdefault(section, {})[key] = _coerce(raw, default_val)
 
     return cfg
-
