@@ -53,6 +53,46 @@ describe("notes handler", () => {
       expect(result).to.have.lengthOf(3);
       expect(result[0].id).to.equal(101);
     });
+
+    it("accepts Zotero 8 object results from getAnnotations", async () => {
+      const annotationItems = [101, 102].map((id) => ({
+        id,
+        key: `ANN${id}`,
+        annotationType: "highlight",
+        annotationText: `text${id}`,
+        annotationComment: "",
+        annotationColor: "#ffd400",
+        annotationPageLabel: "1",
+        annotationPosition: JSON.stringify({}),
+        getTags: () => [],
+        dateAdded: "2026-01-01T00:00:00Z",
+      }));
+
+      const getAnnotationsStub = sinon.stub().returns(annotationItems);
+      const pdfChild = {
+        id: 200,
+        isAttachment: () => true,
+        attachmentContentType: "application/pdf",
+        getAnnotations: getAnnotationsStub,
+      };
+      const parent = fakeItem({ id: 1 });
+      (parent as any).getAttachments = () => [200];
+
+      const getAsyncStub = sinon.stub();
+      getAsyncStub.withArgs(1).resolves(parent);
+      getAsyncStub.withArgs([200]).resolves([pdfChild]);
+
+      installZotero({
+        Items: { getAsync: getAsyncStub },
+      });
+
+      const { notesHandlers } = await import("../../src/handlers/notes");
+      const result = await notesHandlers.getAnnotations({ parentId: 1 });
+
+      expect(result).to.have.lengthOf(2);
+      expect(result[0].id).to.equal(101);
+      expect(getAsyncStub.neverCalledWith(annotationItems)).to.equal(true);
+    });
   });
 
   describe("createAnnotation validation (fix #13)", () => {
@@ -219,6 +259,34 @@ describe("notes handler", () => {
       });
       expect(result).to.have.property("id", 999);
       expect(result).to.have.property("key", "ANN999");
+      expect(annotation.annotationSortIndex).to.equal("00000|000000|00000");
+    });
+
+    it("uses caller-provided annotation sortIndex when supplied", async () => {
+      const parent: any = {
+        id: 1, libraryID: 1, isAttachment: () => true, attachmentContentType: "application/pdf",
+      };
+      const annotation: any = {
+        id: 999, key: "ANN999",
+        saveTx: sinon.stub().resolves(),
+      };
+      installZotero({
+        Items: { getAsync: sinon.stub().withArgs(1).resolves(parent) },
+        Item: function () { return annotation; } as any,
+      });
+      (globalThis as any).Zotero.Item = function () {
+        return annotation;
+      };
+
+      const { notesHandlers } = await import("../../src/handlers/notes");
+      await notesHandlers.createAnnotation({
+        parentId: 1,
+        type: "highlight",
+        text: "selected",
+        position: { pageIndex: 3, rects: [[0, 42, 100, 50]] },
+        sortIndex: "00003|000012|00042",
+      });
+      expect(annotation.annotationSortIndex).to.equal("00003|000012|00042");
     });
   });
 });

@@ -20,6 +20,31 @@ async function resolvePDFAttachment(item: Zotero.Item): Promise<Zotero.Item> {
   return pdf;
 }
 
+function defaultAnnotationSortIndex(position: any): string {
+  const pageIndex = Number.isFinite(position?.pageIndex) ? Number(position.pageIndex) : 0;
+  const firstRect = Array.isArray(position?.rects) ? position.rects[0] : null;
+  const y = Array.isArray(firstRect) && Number.isFinite(firstRect[1]) ? Number(firstRect[1]) : 0;
+  return [
+    Math.max(0, Math.round(pageIndex)).toString().padStart(5, "0"),
+    "000000",
+    Math.max(0, Math.round(y)).toString().padStart(5, "0"),
+  ].join("|");
+}
+
+function serializeAnnotation(a: any): Record<string, any> {
+  return {
+    id: a.id,
+    type: a.annotationType,
+    text: a.annotationText,
+    comment: a.annotationComment,
+    color: a.annotationColor,
+    pageLabel: a.annotationPageLabel,
+    position: a.annotationPosition,
+    dateAdded: a.dateAdded,
+    tags: a.getTags().map((t: any) => t.tag),
+  };
+}
+
 export const notesHandlers = {
   async get(params: { parentId: number }) {
     const parent = await requireItem(params.parentId);
@@ -71,19 +96,11 @@ export const notesHandlers = {
   async getAnnotations(params: { parentId: number }) {
     const parent = await requireItem(params.parentId);
     const pdfItem = await resolvePDFAttachment(parent);
-    const annotationIDs: number[] = (pdfItem as any).getAnnotations(false, true);
-    const annotations = await Zotero.Items.getAsync(annotationIDs);
-    return annotations.map((a: any) => ({
-      id: a.id,
-      type: a.annotationType,
-      text: a.annotationText,
-      comment: a.annotationComment,
-      color: a.annotationColor,
-      pageLabel: a.annotationPageLabel,
-      position: a.annotationPosition,
-      dateAdded: a.dateAdded,
-      tags: a.getTags().map((t: any) => t.tag),
-    }));
+    const annotationsOrIDs: any[] = (pdfItem as any).getAnnotations(false, true) || [];
+    const annotations = annotationsOrIDs.every((value) => typeof value === "number")
+      ? await Zotero.Items.getAsync(annotationsOrIDs)
+      : annotationsOrIDs;
+    return annotations.map(serializeAnnotation);
   },
 
   async createAnnotation(params: {
@@ -93,6 +110,7 @@ export const notesHandlers = {
     comment?: string;
     color?: string;
     position: any;
+    sortIndex?: string;
   }) {
     const v = validateAnnotationParams(params as any);
     if (!v.ok) throw { code: -32602, message: v.message };
@@ -105,6 +123,7 @@ export const notesHandlers = {
     if (params.text) annotation.annotationText = params.text;
     if (params.comment) annotation.annotationComment = params.comment;
     annotation.annotationColor = params.color || "#ffd400";
+    (annotation as any).annotationSortIndex = params.sortIndex || defaultAnnotationSortIndex(params.position);
     annotation.annotationPosition = JSON.stringify(params.position);
     await annotation.saveTx();
     return { id: annotation.id, key: annotation.key };

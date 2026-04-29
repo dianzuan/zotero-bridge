@@ -38,7 +38,7 @@ esac
 
 echo "Zotron CLI shims linked in ${BIN_DIR}."
 
-REQUIRED_VERSION="${ZOTRON_REQUIRED_VERSION:-0.1.2}"
+REQUIRED_VERSION="${ZOTRON_REQUIRED_VERSION:-0.1.3}"
 GITHUB_XPI_URL="https://github.com/dianzuan/zotron/releases/download/v${REQUIRED_VERSION}/zotron.xpi"
 DEFAULT_XPI_URLS="${GITHUB_XPI_URL}
 https://gh-proxy.com/${GITHUB_XPI_URL}
