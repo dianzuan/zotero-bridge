@@ -2,8 +2,7 @@
 // Copyright (C) 2026 diamondrill
 import { registerHandlers } from "../server";
 import { findUnknownKey } from "../utils/settings-validate";
-
-const PREF_PREFIX = "extensions.zotron.";
+import { getPref, setPref } from "../utils/prefs";
 
 const SETTINGS_KEYS = [
   "ui.language",
@@ -24,24 +23,8 @@ const SETTINGS_KEYS = [
 // setAll (findUnknownKey). Extend here when new settings are introduced.
 const KNOWN_KEYS: ReadonlySet<string> = new Set(SETTINGS_KEYS);
 
-const SETTINGS_DEFAULTS: Record<string, string | number> = {
-  "ui.language": "en-US",
-  "ocr.provider": "glm",
-  "ocr.apiKey": "",
-  "ocr.apiUrl": "https://open.bigmodel.cn/api/paas/v4/layout_parsing",
-  "ocr.model": "glm-ocr",
-  "embedding.provider": "doubao",
-  "embedding.model": "doubao-embedding-vision-251215",
-  "embedding.apiKey": "",
-  "embedding.apiUrl": "https://ark.cn-beijing.volces.com/api/v3/embeddings/multimodal",
-  "rag.chunkSize": 512,
-  "rag.chunkOverlap": 64,
-  "rag.topK": 5,
-};
-
 function getSetting(key: string): any {
-  const val = Zotero.Prefs.get(PREF_PREFIX + key, true);
-  return val === undefined || val === null ? SETTINGS_DEFAULTS[key] ?? null : val;
+  return getPref(key);
 }
 
 export const settingsHandlers = {
@@ -58,7 +41,7 @@ export const settingsHandlers = {
     if (!KNOWN_KEYS.has(params.key)) {
       throw { code: -32602, message: `Unknown setting: ${params.key}. Valid: ${SETTINGS_KEYS.join(", ")}` };
     }
-    Zotero.Prefs.set(PREF_PREFIX + params.key, params.value, true);
+    setPref(params.key, params.value);
     return { key: params.key, value: params.value };
   },
 
@@ -76,7 +59,7 @@ export const settingsHandlers = {
 
     const updated: Record<string, any> = {};
     for (const [key, value] of Object.entries(params)) {
-      Zotero.Prefs.set(PREF_PREFIX + key, value, true);
+      setPref(key, value);
       updated[key] = value;
     }
     return { updated };

@@ -4,7 +4,7 @@
 <groupbox>
   <hbox align="center">
     <label id="zotron-lang-label" value="Language:" style="width: 120px;" />
-    <menulist id="zotron-language" preference="ui.language">
+    <menulist id="zotron-language">
       <menupopup>
         <menuitem id="zotron-lang-en" label="English" value="en-US" />
         <menuitem id="zotron-lang-zh" label="Chinese" value="zh-CN" />
@@ -17,7 +17,7 @@
   <label><html:h2 id="zotron-ocr-title">OCR Settings</html:h2></label>
   <hbox align="center">
     <label id="zotron-ocr-provider-label" value="OCR Provider:" style="width: 120px;" />
-    <menulist id="zotron-ocr-provider" preference="ocr.provider">
+    <menulist id="zotron-ocr-provider">
       <menupopup>
         <menuitem label="GLM-OCR" value="glm" />
         <menuitem label="Qwen-VL-OCR" value="qwen" />
@@ -28,7 +28,7 @@
   <hbox align="center">
     <label id="zotron-ocr-key-label" value="API Key:" style="width: 120px;" />
     <html:input id="zotron-ocr-apikey" type="password"
-                preference="ocr.apiKey" placeholder="Leave empty until you configure a provider token"
+                placeholder="Leave empty until you configure a provider token"
                 style="flex: 1;"></html:input>
     <button id="zotron-ocr-test" label="Test" />
   </hbox>
@@ -36,13 +36,13 @@
   <hbox align="center">
     <label id="zotron-ocr-model-label" value="Model:" style="width: 120px;" />
     <html:input id="zotron-ocr-model" type="text"
-                preference="ocr.model" readonly="readonly"
+                readonly="readonly"
                 style="flex: 1; color: #888;"></html:input>
   </hbox>
   <hbox align="center">
     <label id="zotron-ocr-url-label" value="API URL:" style="width: 120px;" />
     <html:input id="zotron-ocr-apiurl" type="text"
-                preference="ocr.apiUrl" readonly="readonly"
+                readonly="readonly"
                 style="flex: 1; color: #888;"></html:input>
   </hbox>
 </groupbox>
@@ -51,7 +51,7 @@
   <label><html:h2 id="zotron-emb-title">Embedding Settings</html:h2></label>
   <hbox align="center">
     <label id="zotron-emb-provider-label" value="Provider:" style="width: 120px;" />
-    <menulist id="zotron-emb-provider" preference="embedding.provider">
+    <menulist id="zotron-emb-provider">
       <menupopup>
         <menuitem label="Doubao" value="doubao" />
         <menuitem label="Ollama" value="ollama" />
@@ -69,7 +69,7 @@
   <hbox align="center">
     <label id="zotron-emb-key-label" value="API Key:" style="width: 120px;" />
     <html:input id="zotron-emb-apikey" type="password"
-                preference="embedding.apiKey" placeholder="Leave empty until you configure a provider token"
+                placeholder="Leave empty until you configure a provider token"
                 style="flex: 1;"></html:input>
     <button id="zotron-emb-test" label="Test" />
   </hbox>
@@ -77,13 +77,13 @@
   <hbox align="center">
     <label id="zotron-emb-model-label" value="Model:" style="width: 120px;" />
     <html:input id="zotron-emb-model" type="text"
-                preference="embedding.model" readonly="readonly"
+                readonly="readonly"
                 style="flex: 1; color: #888;"></html:input>
   </hbox>
   <hbox align="center">
     <label id="zotron-emb-url-label" value="API URL:" style="width: 120px;" />
     <html:input id="zotron-emb-apiurl" type="text"
-                preference="embedding.apiUrl" readonly="readonly"
+                readonly="readonly"
                 style="flex: 1; color: #888;"></html:input>
   </hbox>
 </groupbox>

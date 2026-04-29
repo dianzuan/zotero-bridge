@@ -6,7 +6,7 @@ describe("startup preference defaults", () => {
   afterEach(() => resetZotero());
 
   function installPrefs(initial: Record<string, any>) {
-    const store = new Map(Object.entries(initial).map(([key, value]) => [`extensions.zotron.${key}`, value]));
+    const store = new Map(Object.entries(initial).map(([key, value]) => [`zotron.${key}`, value]));
     const prefs = {
       get: sinon.stub().callsFake((key: string) => store.get(key)),
       set: sinon.stub().callsFake((key: string, value: any) => { store.set(key, value); }),
@@ -27,11 +27,11 @@ describe("startup preference defaults", () => {
 
     __test__.setPreferenceDefaults();
 
-    expect(prefs.store.get("extensions.zotron.ocr.provider")).to.equal("glm");
-    expect(prefs.store.get("extensions.zotron.embedding.provider")).to.equal("doubao");
-    expect(prefs.store.get("extensions.zotron.embedding.model")).to.equal("doubao-embedding-vision-251215");
-    expect(prefs.store.get("extensions.zotron.embedding.apiKey")).to.equal("");
-    expect(prefs.store.get("extensions.zotron.ui.language")).to.equal("en-US");
+    expect(prefs.store.get("zotron.ocr.provider")).to.equal("glm");
+    expect(prefs.store.get("zotron.embedding.provider")).to.equal("doubao");
+    expect(prefs.store.get("zotron.embedding.model")).to.equal("doubao-embedding-vision-251215");
+    expect(prefs.store.get("zotron.embedding.apiKey")).to.equal("");
+    expect(prefs.store.get("zotron.ui.language")).to.equal("en-US");
   });
 
   it("migrates only the untouched old Ollama default to Doubao", async () => {
@@ -45,10 +45,10 @@ describe("startup preference defaults", () => {
 
     __test__.setPreferenceDefaults();
 
-    expect(prefs.store.get("extensions.zotron.embedding.provider")).to.equal("doubao");
-    expect(prefs.store.get("extensions.zotron.embedding.model")).to.equal("doubao-embedding-vision-251215");
-    expect(prefs.store.get("extensions.zotron.embedding.apiUrl")).to.equal("https://ark.cn-beijing.volces.com/api/v3/embeddings/multimodal");
-    expect(prefs.store.get("extensions.zotron.embedding.apiKey")).to.equal("");
+    expect(prefs.store.get("zotron.embedding.provider")).to.equal("doubao");
+    expect(prefs.store.get("zotron.embedding.model")).to.equal("doubao-embedding-vision-251215");
+    expect(prefs.store.get("zotron.embedding.apiUrl")).to.equal("https://ark.cn-beijing.volces.com/api/v3/embeddings/multimodal");
+    expect(prefs.store.get("zotron.embedding.apiKey")).to.equal("");
   });
 
   it("does not migrate customized Ollama settings", async () => {
@@ -62,8 +62,49 @@ describe("startup preference defaults", () => {
 
     __test__.setPreferenceDefaults();
 
-    expect(prefs.store.get("extensions.zotron.embedding.provider")).to.equal("ollama");
-    expect(prefs.store.get("extensions.zotron.embedding.model")).to.equal("custom-ollama-model");
-    expect(prefs.store.get("extensions.zotron.embedding.apiUrl")).to.equal("http://localhost:11434");
+    expect(prefs.store.get("zotron.embedding.provider")).to.equal("ollama");
+    expect(prefs.store.get("zotron.embedding.model")).to.equal("custom-ollama-model");
+    expect(prefs.store.get("zotron.embedding.apiUrl")).to.equal("http://localhost:11434");
+  });
+
+  it("migrates legacy unprefixed API keys when current keys are empty", async () => {
+    const prefs = installPrefs({});
+    prefs.store.set("ocr.apiKey", "legacy-ocr-key");
+    prefs.store.set("embedding.apiKey", "legacy-embedding-key");
+    const { __test__ } = await loadHooks();
+
+    __test__.setPreferenceDefaults();
+
+    expect(prefs.store.get("zotron.ocr.apiKey")).to.equal("legacy-ocr-key");
+    expect(prefs.store.get("zotron.embedding.apiKey")).to.equal("legacy-embedding-key");
+  });
+
+  it("migrates legacy extensions.zotron settings into the Zotero add-on branch", async () => {
+    const prefs = installPrefs({});
+    prefs.store.set("extensions.zotron.ui.language", "zh-CN");
+    prefs.store.set("extensions.zotron.ocr.provider", "qwen");
+    prefs.store.set("extensions.zotron.ocr.apiKey", "old-ocr-key");
+    const { __test__ } = await loadHooks();
+
+    __test__.setPreferenceDefaults();
+
+    expect(prefs.store.get("zotron.ui.language")).to.equal("zh-CN");
+    expect(prefs.store.get("zotron.ocr.provider")).to.equal("qwen");
+    expect(prefs.store.get("zotron.ocr.apiKey")).to.equal("old-ocr-key");
+  });
+
+  it("does not overwrite current API keys with legacy values", async () => {
+    const prefs = installPrefs({
+      "ocr.apiKey": "current-ocr-key",
+      "embedding.apiKey": "current-embedding-key",
+    });
+    prefs.store.set("ocr.apiKey", "legacy-ocr-key");
+    prefs.store.set("embedding.apiKey", "legacy-embedding-key");
+    const { __test__ } = await loadHooks();
+
+    __test__.setPreferenceDefaults();
+
+    expect(prefs.store.get("zotron.ocr.apiKey")).to.equal("current-ocr-key");
+    expect(prefs.store.get("zotron.embedding.apiKey")).to.equal("current-embedding-key");
   });
 });

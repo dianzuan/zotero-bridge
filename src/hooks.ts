@@ -11,46 +11,65 @@ import "./handlers/notes";
 import "./handlers/export";
 import "./handlers/settings";
 import "./handlers/rag";
+import { getRawPref, PREF_DEFAULTS, setPref } from "./utils/prefs";
 
-const PREF = "extensions.zotron.";
-
-const DEFAULT_PREFS: Record<string, string> = {
-  "ocr.provider": "glm",
-  "ocr.apiKey": "",
-  "ocr.apiUrl": "https://open.bigmodel.cn/api/paas/v4/layout_parsing",
-  "ocr.model": "glm-ocr",
-  "embedding.provider": "doubao",
-  "embedding.model": "doubao-embedding-vision-251215",
-  "embedding.apiKey": "",
-  "embedding.apiUrl": "https://ark.cn-beijing.volces.com/api/v3/embeddings/multimodal",
-  "ui.language": "en-US",
-};
-
-function prefGet(key: string): any {
-  return Zotero.Prefs.get(PREF + key, true);
+function readLegacyPref(candidates: string[]): any {
+  for (const key of candidates) {
+    for (const global of [true, false]) {
+      const value = Zotero.Prefs.get(key, global);
+      if (value !== undefined && value !== null && value !== "") {
+        return value;
+      }
+    }
+  }
+  return undefined;
 }
 
-function prefSet(key: string, value: string): void {
-  Zotero.Prefs.set(PREF + key, value, true);
+function legacyCandidates(key: string): string[] {
+  return [
+    `extensions.zotron.${key}`,
+    key,
+    `extensions.zoteroBridge.${key}`,
+    `extensions.zotero-bridge.${key}`,
+    `extensions.zotero_bridge.${key}`,
+  ];
+}
+
+function migrateLegacyPrefs() {
+  for (const [target, defaultValue] of Object.entries(PREF_DEFAULTS)) {
+    const currentValue = getRawPref(target);
+    const legacyValue = readLegacyPref(legacyCandidates(target));
+    if (legacyValue === undefined) continue;
+    if (
+      currentValue === undefined
+      || currentValue === null
+      || currentValue === ""
+      || currentValue === defaultValue
+    ) {
+      setPref(target, legacyValue);
+    }
+  }
 }
 
 function setPreferenceDefaults() {
-  for (const [key, val] of Object.entries(DEFAULT_PREFS)) {
-    if (prefGet(key) === undefined) {
-      prefSet(key, val);
+  for (const [key, val] of Object.entries(PREF_DEFAULTS)) {
+    if (getRawPref(key) === undefined) {
+      setPref(key, val);
     }
   }
 
+  migrateLegacyPrefs();
+
   const hasUntouchedOldOllamaDefault =
-    prefGet("embedding.provider") === "ollama"
-    && prefGet("embedding.model") === "qwen3-embedding:4b"
-    && prefGet("embedding.apiUrl") === "http://localhost:11434"
-    && prefGet("embedding.apiKey") === "";
+    getRawPref("embedding.provider") === "ollama"
+    && getRawPref("embedding.model") === "qwen3-embedding:4b"
+    && getRawPref("embedding.apiUrl") === "http://localhost:11434"
+    && getRawPref("embedding.apiKey") === "";
 
   if (hasUntouchedOldOllamaDefault) {
-    prefSet("embedding.provider", DEFAULT_PREFS["embedding.provider"]);
-    prefSet("embedding.model", DEFAULT_PREFS["embedding.model"]);
-    prefSet("embedding.apiUrl", DEFAULT_PREFS["embedding.apiUrl"]);
+    setPref("embedding.provider", PREF_DEFAULTS["embedding.provider"]);
+    setPref("embedding.model", PREF_DEFAULTS["embedding.model"]);
+    setPref("embedding.apiUrl", PREF_DEFAULTS["embedding.apiUrl"]);
   }
 }
 

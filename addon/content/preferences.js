@@ -1,7 +1,7 @@
 // Zotron Preference Pane
 // Uses Zotero.HTTP.request() (not fetch!) for test buttons.
 
-var PREF = "extensions.zotron.";
+var PREF = "zotron.";
 
 var DEFAULT_OCR_PROVIDER = "glm";
 var DEFAULT_EMB_PROVIDER = "doubao";
@@ -73,12 +73,12 @@ var I18N = {
 };
 
 function sp(key, val) {
-  try { Zotero.Prefs.set(PREF + key, val, true); } catch(e) {}
+  try { Zotero.Prefs.set(PREF + key, val); } catch(e) {}
 }
 
 function gp(key) {
   try {
-    var v = Zotero.Prefs.get(PREF + key, true);
+    var v = Zotero.Prefs.get(PREF + key);
     return (v === undefined || v === null || v === "undefined") ? "" : v;
   } catch(e) {
     return "";
@@ -181,6 +181,7 @@ function testOCR() {
   var url = gp("ocr.apiUrl");
   var keyNode = el("zotron-ocr-apikey");
   var key = keyNode ? keyNode.value : gp("ocr.apiKey");
+  if (keyNode) sp("ocr.apiKey", key);
   if (!key) { setStatus("zotron-ocr-status", t("missingKey"), "#e74c3c"); return; }
   setStatus("zotron-ocr-status", t("testing"), "#f39c12");
   var model = gp("ocr.model") || OCR_CONFIGS[DEFAULT_OCR_PROVIDER].model;
@@ -205,6 +206,7 @@ function testEmb() {
   var url = gp("embedding.apiUrl");
   var keyNode = el("zotron-emb-apikey");
   var key = keyNode ? keyNode.value : gp("embedding.apiKey");
+  if (keyNode) sp("embedding.apiKey", key);
   var model = gp("embedding.model") || EMB_CONFIGS[provider].model;
   if (provider !== "ollama" && !key) { setStatus("zotron-emb-status", t("missingKey"), "#e74c3c"); return; }
   setStatus("zotron-emb-status", t("testing"), "#f39c12");
@@ -301,7 +303,10 @@ function init() {
       if (node) {
         var saved = gp(prefKey);
         if (saved) node.value = saved;
-        node.addEventListener("change", function() { sp(prefKey, node.value); });
+        var save = function() { sp(prefKey, node.value); };
+        node.addEventListener("input", save);
+        node.addEventListener("change", save);
+        node.addEventListener("blur", save);
       }
     })(b[0], b[1]);
   }

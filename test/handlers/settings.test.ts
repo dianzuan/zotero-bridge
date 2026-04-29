@@ -41,7 +41,7 @@ describe("settings handler", () => {
 
     it("returns single-pair {[key]: val} when key provided", async () => {
       installZotero({
-        Prefs: { get: sinon.stub().withArgs("extensions.zotron.ocr.provider", true).returns("openai") },
+        Prefs: { get: sinon.stub().withArgs("zotron.ocr.provider").returns("openai") },
       });
       const { settingsHandlers } = await import("../../src/handlers/settings");
       const result = await settingsHandlers.get({ key: "ocr.provider" });

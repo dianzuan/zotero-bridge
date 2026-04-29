@@ -1,0 +1,12 @@
+pref("extensions.zotero.zotron.ui.language", "en-US");
+pref("extensions.zotero.zotron.ocr.provider", "glm");
+pref("extensions.zotero.zotron.ocr.apiKey", "");
+pref("extensions.zotero.zotron.ocr.apiUrl", "https://open.bigmodel.cn/api/paas/v4/layout_parsing");
+pref("extensions.zotero.zotron.ocr.model", "glm-ocr");
+pref("extensions.zotero.zotron.embedding.provider", "doubao");
+pref("extensions.zotero.zotron.embedding.model", "doubao-embedding-vision-251215");
+pref("extensions.zotero.zotron.embedding.apiKey", "");
+pref("extensions.zotero.zotron.embedding.apiUrl", "https://ark.cn-beijing.volces.com/api/v3/embeddings/multimodal");
+pref("extensions.zotero.zotron.rag.chunkSize", 512);
+pref("extensions.zotero.zotron.rag.chunkOverlap", 64);
+pref("extensions.zotero.zotron.rag.topK", 5);

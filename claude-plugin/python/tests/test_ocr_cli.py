@@ -43,3 +43,50 @@ def test_legacy_collection_flags_still_process_collection(capsys):
 
     proc.process_collection.assert_called_once_with("旧接口", force=False)
     assert json.loads(capsys.readouterr().out)["skipped"] == 1
+
+
+def test_status_does_not_require_ocr_api_key(capsys):
+    rpc = MagicMock()
+    rpc.call.side_effect = [
+        [{"id": 3, "name": "测试集", "children": []}],
+        {"items": [{"id": 10}, {"id": 11}]},
+        [],
+        [{"tags": ["ocr"]}],
+        [{"title": "ITEM.zotron-chunks.jsonl"}],
+    ]
+
+    with patch("zotron.ocr.cli.load_config", return_value={"zotero": {"rpc_url": "http://rpc"}}), patch(
+        "zotron.ocr.cli.ZoteroRPC", return_value=rpc
+    ), patch("zotron.ocr.cli._make_processor") as make_processor:
+        _run_main(["status", "--collection", "测试集"])
+
+    make_processor.assert_not_called()
+    assert json.loads(capsys.readouterr().out) == {
+        "collection": "测试集",
+        "total": 2,
+        "has_ocr": 2,
+        "missing_ocr": 0,
+    }
+
+
+def test_status_counts_missing_when_no_note_or_artifact(capsys):
+    rpc = MagicMock()
+    rpc.call.side_effect = [
+        [{"id": 3, "name": "测试集", "children": []}],
+        {"items": [{"id": 10}]},
+        [{"tags": []}],
+        [],
+    ]
+
+    with patch("zotron.ocr.cli.load_config", return_value={"zotero": {"rpc_url": "http://rpc"}}), patch(
+        "zotron.ocr.cli.ZoteroRPC", return_value=rpc
+    ), patch("zotron.ocr.cli._make_processor") as make_processor:
+        _run_main(["status", "--collection", "测试集"])
+
+    make_processor.assert_not_called()
+    assert json.loads(capsys.readouterr().out) == {
+        "collection": "测试集",
+        "total": 1,
+        "has_ocr": 0,
+        "missing_ocr": 1,
+    }

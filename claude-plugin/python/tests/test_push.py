@@ -332,16 +332,11 @@ def test_wsl_path_translation_on_wsl(monkeypatch):
         assert cmd[:2] == ["wslpath", "-w"]
         return R()
 
-    monkeypatch.setattr("zotron.push.subprocess.run", fake_run)
+    monkeypatch.setattr("zotron.paths.subprocess.run", fake_run)
     assert _zotero_path(Path("/tmp/x.pdf")) == "\\\\wsl.localhost\\Ubuntu-24.04\\tmp\\x.pdf"
 
 
 def test_path_passthrough_on_non_wsl(monkeypatch):
     from zotron.push import _zotero_path
-    monkeypatch.delenv("WSL_DISTRO_NAME", raising=False)
-    # make _is_wsl() return False by pointing at a non-WSL /proc file
-    monkeypatch.setattr(
-        "builtins.open",
-        lambda p, *a, **kw: __import__("io").StringIO("5.15.0-generic"),
-    )
+    monkeypatch.setattr("zotron.paths.is_wsl", lambda: False)
     assert _zotero_path(Path("/tmp/x.pdf")) == "/tmp/x.pdf"

@@ -6,10 +6,12 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from zotron.config import load_config
 from zotron.rpc import ZoteroRPC
+from zotron.collections import find_by_name as _find_collection_by_name
+from zotron.ocr.artifacts import CHUNKS_SUFFIX
 from zotron.ocr.engine import create_engine
 from zotron.ocr.processor import OCRProcessor
 
@@ -31,17 +33,17 @@ def _make_processor(cfg: dict) -> OCRProcessor:
 
 def cmd_status(args: argparse.Namespace, cfg: dict) -> None:
     """Show OCR stats for a collection (JSON to stdout)."""
-    proc = _make_processor(cfg)
-    collection_id = proc.find_collection_id(args.collection)
+    rpc = ZoteroRPC(url=cfg["zotero"]["rpc_url"])
+    collection_id = _find_collection_by_name(rpc, args.collection)
     if collection_id is None:
         error_result = {"error": f"Collection not found: {args.collection!r}"}
         print(json.dumps(error_result, ensure_ascii=False))
         sys.exit(1)
 
-    raw = proc.rpc.call("collections.getItems", {"id": collection_id, "limit": 500}) or {}
+    raw = rpc.call("collections.getItems", {"id": collection_id, "limit": 500}) or {}
     items = raw.get("items", []) if isinstance(raw, dict) else raw
     total = len(items)
-    has_ocr = sum(1 for item in items if proc.has_ocr_note(item.get("id")))
+    has_ocr = sum(1 for item in items if _has_ocr_result(rpc, item.get("id")))
     status_result: dict[str, Any] = {
         "collection": args.collection,
         "total": total,
@@ -49,6 +51,20 @@ def cmd_status(args: argparse.Namespace, cfg: dict) -> None:
         "missing_ocr": total - has_ocr,
     }
     print(json.dumps(status_result, ensure_ascii=False))
+
+
+def _has_ocr_note(rpc: ZoteroRPC, item_id: int) -> bool:
+    notes = cast(list[dict[str, Any]], rpc.call("notes.get", {"parentId": item_id}) or [])
+    return any("ocr" in (note.get("tags") or []) for note in notes)
+
+
+def _has_ocr_artifact(rpc: ZoteroRPC, item_id: int) -> bool:
+    attachments = cast(list[dict[str, Any]], rpc.call("attachments.list", {"parentId": item_id}) or [])
+    return any(str(att.get("title") or "").endswith(CHUNKS_SUFFIX) for att in attachments)
+
+
+def _has_ocr_result(rpc: ZoteroRPC, item_id: int) -> bool:
+    return _has_ocr_artifact(rpc, item_id) or _has_ocr_note(rpc, item_id)
 
 
 def _process_item(proc: OCRProcessor, item_id: int, *, force: bool) -> dict:
