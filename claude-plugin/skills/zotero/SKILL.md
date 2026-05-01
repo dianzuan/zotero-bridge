@@ -16,8 +16,8 @@ Read-write bridge to the user's local Zotero library via the `zotron` CLI. Cover
 | Find / read papers, browse collections, get fulltext or annotations | search | [search.md](search.md) |
 | Add by DOI/URL/ISBN/file, update metadata, manage collections & tags, dedupe | manage | [manage.md](manage.md) |
 | Generate references in GB/T 7714, BibTeX, RIS, CSL-JSON | export | [export.md](export.md) |
-| OCR scanned/Chinese PDFs into Markdown notes (prep for RAG) | ocr | [ocr.md](ocr.md) |
-| Semantic search across an OCR'd collection (literature review, "前人研究怎么说") | rag | [rag.md](rag.md) |
+| OCR scanned/Chinese PDFs into Zotero-attached raw/block/chunk artifacts | ocr | [ocr.md](ocr.md) |
+| RAG retrieval hits for literature review / academic-zh span provenance | rag | [rag.md](rag.md) |
 
 A typical session chains them: `search` to locate papers → `manage` to organize → `ocr` + `rag` for literature review → `export` for citations.
 
@@ -34,6 +34,19 @@ zotron export bibtex 12345 12346
 ```
 
 See `zotron --help` for the full typed surface.
+
+**academic-zh retrieval hits** should be emitted as JSONL through the Zotero backend:
+
+```bash
+zotron-rag hits --zotero \
+  --collection "财务报表造假识别" \
+  --limit 50 \
+  --top-spans-per-item 3 \
+  --output jsonl \
+  "财务报表 舞弊 识别 风险"
+```
+
+Return one hit per line. Preserve `item_key`, `title`, `text`, `section_heading`, `chunk_id`, `block_ids`, `query`, `score`, and `zotero_uri`; downstream `academic-zh` builds paper cards and `citation_map` from those spans.
 
 **`rpc` escape hatch** covers all 77 RPC methods across 9 namespaces — use when no typed subcommand exists:
 

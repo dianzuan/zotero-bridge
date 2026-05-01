@@ -23,7 +23,7 @@ async function serializeAttachment(item: Zotero.Item): Promise<Record<string, an
 }
 
 export const attachmentsHandlers = {
-  async list(params: { parentId: number }) {
+  async list(params: { parentId: number | string }) {
     const parent = await requireItem(params.parentId);
     const attIDs = parent.getAttachments();
     if (attIDs.length === 0) return [];
@@ -31,7 +31,7 @@ export const attachmentsHandlers = {
     return Promise.all(atts.map(serializeAttachment));
   },
 
-  async getFulltext(params: { id: number }) {
+  async getFulltext(params: { id: number | string }) {
     const item = await requireItem(params.id);
     if (!item.isAttachment()) throw { code: -32602, message: `Not an attachment: ${params.id}` };
 
@@ -61,47 +61,73 @@ export const attachmentsHandlers = {
     };
   },
 
-  async add(params: { parentId: number; path: string; title?: string }) {
+  async add(params: {
+    parentId: number | string;
+    path: string;
+    title?: string;
+    renameFromParent?: boolean;
+  }) {
     const parent = await requireItem(params.parentId);
     const file = Zotero.File.pathToFile(params.path);
     if (!file.exists()) throw { code: -32602, message: `File not found: ${params.path}` };
     const attachment = await Zotero.Attachments.importFromFile({
       file,
-      parentItemID: params.parentId,
+      parentItemID: parent.id,
       title: params.title,
     });
+
+    // Honor Zotero's "Rename Files from Parent Metadata" template
+    // (attachmentRenameFormatString pref) so attachments don't end up with
+    // upstream-source names like cnki-export-bnhuaoo2.pdf in the user's
+    // storage/. Keep params.title untouched — that's the UI label, separate
+    // from the on-disk filename.
+    if (params.renameFromParent !== false) {
+      try {
+        const baseName: string = (Zotero.Attachments as any).getFileBaseNameFromItem(parent);
+        if (baseName) {
+          const leaf = file.leafName ?? "";
+          const dot = leaf.lastIndexOf(".");
+          const ext = dot > 0 ? leaf.slice(dot + 1) : "";
+          const newName = ext ? `${baseName}.${ext}` : baseName;
+          await (attachment as any).renameAttachmentFile(newName, false, true);
+        }
+      } catch (e) {
+        Zotero.debug(`zotron attachments.add: rename-from-parent failed: ${e}`);
+      }
+    }
+
     return serializeItem(attachment);
   },
 
-  async addByURL(params: { parentId: number; url: string; title?: string }) {
+  async addByURL(params: { parentId: number | string; url: string; title?: string }) {
     const parent = await requireItem(params.parentId);
     const attachment = await Zotero.Attachments.importFromURL({
       url: params.url,
-      parentItemID: params.parentId,
+      parentItemID: parent.id,
       title: params.title,
     });
     return serializeItem(attachment);
   },
 
-  async getPath(params: { id: number }) {
-    const item = await Zotero.Items.getAsync(params.id);
-    if (!item || !item.isAttachment()) {
+  async getPath(params: { id: number | string }) {
+    const item = await requireItem(params.id);
+    if (!item.isAttachment()) {
       throw { code: -32602, message: `Attachment ${params.id} not found` };
     }
     const path = await item.getFilePathAsync();
-    return { id: params.id, path: path || null };
+    return { id: item.id, path: path || null };
   },
 
-  async delete(params: { id: number }) {
-    const item = await Zotero.Items.getAsync(params.id);
-    if (!item || !item.isAttachment()) {
+  async delete(params: { id: number | string }) {
+    const item = await requireItem(params.id);
+    if (!item.isAttachment()) {
       throw { code: -32602, message: `Attachment ${params.id} not found` };
     }
     await item.eraseTx();
-    return { ok: true, id: params.id };
+    return { ok: true, id: item.id };
   },
 
-  async findPDF(params: { parentId: number }) {
+  async findPDF(params: { parentId: number | string }) {
     const parent = await requireItem(params.parentId);
     const attachment = await Zotero.Attachments.addAvailableFile(parent);
     return { attachment: attachment ? serializeItem(attachment) : null };

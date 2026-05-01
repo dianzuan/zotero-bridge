@@ -174,6 +174,135 @@ describe("attachments handler", () => {
     });
   });
 
+  describe("add renames from parent metadata (Zotero rename template)", () => {
+    function setup({
+      renameBase,
+      renameResult = true,
+      sourceLeafName = "cnki-export-bnhuaoo2.pdf",
+    }: {
+      renameBase: string;
+      renameResult?: boolean | -1 | -2;
+      sourceLeafName?: string;
+    }) {
+      const parent: any = { id: 1, key: "PARENT" };
+      const renameAttachmentFile = sinon.stub().resolves(renameResult);
+      const importedAttachment: any = {
+        id: 99, key: "A99", itemType: "attachment", itemTypeID: 3,
+        dateAdded: "", dateModified: "", deleted: false,
+        getField: () => "Full Text PDF",
+        isNote: () => false, isAttachment: () => true,
+        getCreators: () => [], getTags: () => [], getCollections: () => [], getRelations: () => ({}),
+        renameAttachmentFile,
+      };
+      const fakeFile = { exists: () => true, leafName: sourceLeafName, path: "/tmp/" + sourceLeafName };
+      const importFromFile = sinon.stub().resolves(importedAttachment);
+      const getFileBaseNameFromItem = sinon.stub().returns(renameBase);
+
+      installZotero({
+        Items: { getAsync: sinon.stub().withArgs(1).resolves(parent) },
+        File: { pathToFile: sinon.stub().withArgs(fakeFile.path).returns(fakeFile) },
+        Attachments: { importFromFile, getFileBaseNameFromItem },
+        ItemFields: { getItemTypeFields: () => [], getName: () => "" },
+        CreatorTypes: { getName: () => "author" },
+        debug: sinon.stub(),
+      });
+
+      return { parent, fakeFile, importFromFile, getFileBaseNameFromItem, renameAttachmentFile };
+    }
+
+    it("default: renames attachment file using getFileBaseNameFromItem + extension from source", async () => {
+      const { parent, fakeFile, getFileBaseNameFromItem, renameAttachmentFile } = setup({
+        renameBase: "史丹 - 2020 - 数字经济条件下产业发展趋势的演变",
+      });
+
+      delete require.cache[require.resolve("../../src/handlers/attachments")];
+      const { attachmentsHandlers } = await import("../../src/handlers/attachments");
+
+      await attachmentsHandlers.add({ parentId: 1, path: fakeFile.path, title: "Full Text PDF" });
+
+      expect(getFileBaseNameFromItem.calledOnceWith(parent)).to.equal(true);
+      expect(renameAttachmentFile.calledOnce).to.equal(true);
+      const [newName, overwrite, unique] = renameAttachmentFile.firstCall.args;
+      expect(newName).to.equal("史丹 - 2020 - 数字经济条件下产业发展趋势的演变.pdf");
+      expect(overwrite).to.equal(false);
+      expect(unique).to.equal(true);
+    });
+
+    it("renameFromParent=false: skips rename entirely", async () => {
+      const { fakeFile, getFileBaseNameFromItem, renameAttachmentFile } = setup({
+        renameBase: "should-not-be-used",
+      });
+
+      delete require.cache[require.resolve("../../src/handlers/attachments")];
+      const { attachmentsHandlers } = await import("../../src/handlers/attachments");
+
+      await attachmentsHandlers.add({
+        parentId: 1, path: fakeFile.path, title: "Full Text PDF", renameFromParent: false,
+      });
+
+      expect(getFileBaseNameFromItem.called).to.equal(false);
+      expect(renameAttachmentFile.called).to.equal(false);
+    });
+
+    it("empty getFileBaseNameFromItem result: keeps original name (no rename call)", async () => {
+      const { fakeFile, getFileBaseNameFromItem, renameAttachmentFile } = setup({
+        renameBase: "",
+      });
+
+      delete require.cache[require.resolve("../../src/handlers/attachments")];
+      const { attachmentsHandlers } = await import("../../src/handlers/attachments");
+
+      await attachmentsHandlers.add({ parentId: 1, path: fakeFile.path });
+
+      expect(getFileBaseNameFromItem.calledOnce).to.equal(true);
+      expect(renameAttachmentFile.called).to.equal(false);
+    });
+
+    it("rename throwing is non-fatal: attachment is still returned", async () => {
+      const parent: any = { id: 1 };
+      const importedAttachment: any = {
+        id: 7, key: "A7", itemType: "attachment", itemTypeID: 3,
+        dateAdded: "", dateModified: "", deleted: false,
+        getField: () => "Full Text PDF",
+        isNote: () => false, isAttachment: () => true,
+        getCreators: () => [], getTags: () => [], getCollections: () => [], getRelations: () => ({}),
+        renameAttachmentFile: sinon.stub().rejects(new Error("disk full")),
+      };
+      const fakeFile = { exists: () => true, leafName: "x.pdf", path: "/tmp/x.pdf" };
+      installZotero({
+        Items: { getAsync: sinon.stub().withArgs(1).resolves(parent) },
+        File: { pathToFile: sinon.stub().withArgs(fakeFile.path).returns(fakeFile) },
+        Attachments: {
+          importFromFile: sinon.stub().resolves(importedAttachment),
+          getFileBaseNameFromItem: sinon.stub().returns("foo"),
+        },
+        ItemFields: { getItemTypeFields: () => [], getName: () => "" },
+        CreatorTypes: { getName: () => "author" },
+        debug: sinon.stub(),
+      });
+
+      delete require.cache[require.resolve("../../src/handlers/attachments")];
+      const { attachmentsHandlers } = await import("../../src/handlers/attachments");
+
+      const result = await attachmentsHandlers.add({ parentId: 1, path: fakeFile.path });
+      expect(result.id).to.equal(7);
+    });
+
+    it("file with no extension: passes baseName through unchanged", async () => {
+      const { fakeFile, renameAttachmentFile } = setup({
+        renameBase: "Some Title",
+        sourceLeafName: "no_extension_file",
+      });
+
+      delete require.cache[require.resolve("../../src/handlers/attachments")];
+      const { attachmentsHandlers } = await import("../../src/handlers/attachments");
+
+      await attachmentsHandlers.add({ parentId: 1, path: fakeFile.path });
+
+      expect(renameAttachmentFile.firstCall.args[0]).to.equal("Some Title");
+    });
+  });
+
   describe("delete artifact attachments", () => {
     it("erases attachment items and rejects non-attachments", async () => {
       const eraseTx = sinon.stub().resolves();

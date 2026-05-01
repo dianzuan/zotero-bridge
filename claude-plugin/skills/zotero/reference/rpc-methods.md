@@ -8,6 +8,8 @@ zotron rpc <namespace>.<method> '<json-params>'
 
 Or directly over HTTP at `POST http://localhost:23119/zotron/rpc` with a JSON-RPC 2.0 envelope.
 
+**ID or Key**: All methods that accept `id` or `parentId` also accept an 8-char alphanumeric item key string (e.g. `"YR5BUGHG"`). Use whichever you have — no key→ID conversion step needed.
+
 ## Namespace summary
 
 | Namespace | Methods | What it does |

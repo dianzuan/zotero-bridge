@@ -46,7 +46,7 @@ function serializeAnnotation(a: any): Record<string, any> {
 }
 
 export const notesHandlers = {
-  async get(params: { parentId: number }) {
+  async get(params: { parentId: number | string }) {
     const parent = await requireItem(params.parentId);
     const noteIDs = parent.getNotes();
     if (noteIDs.length === 0) return [];
@@ -54,11 +54,11 @@ export const notesHandlers = {
     return notes.map(serializeItem);
   },
 
-  async create(params: { parentId: number; content: string; tags?: string[] }) {
+  async create(params: { parentId: number | string; content: string; tags?: string[] }) {
     const parent = await requireItem(params.parentId);
     const note = new Zotero.Item("note");
     note.libraryID = parent.libraryID;
-    note.parentID = params.parentId;
+    note.parentID = parent.id;
     note.setNote(params.content);
     if (params.tags) {
       for (const tag of params.tags) note.addTag(tag);
@@ -67,9 +67,9 @@ export const notesHandlers = {
     return { id: note.id, key: note.key };
   },
 
-  async update(params: { id: number; content: string }) {
-    const note = await Zotero.Items.getAsync(params.id);
-    if (!note || !note.isNote()) throw { code: -32602, message: `Note ${params.id} not found` };
+  async update(params: { id: number | string; content: string }) {
+    const note = await requireItem(params.id);
+    if (!note.isNote()) throw { code: -32602, message: `Note ${params.id} not found` };
     note.setNote(params.content);
     await note.saveTx();
     return serializeItem(note);
@@ -93,7 +93,7 @@ export const notesHandlers = {
     return result;
   },
 
-  async getAnnotations(params: { parentId: number }) {
+  async getAnnotations(params: { parentId: number | string }) {
     const parent = await requireItem(params.parentId);
     const pdfItem = await resolvePDFAttachment(parent);
     const annotationsOrIDs: any[] = (pdfItem as any).getAnnotations(false, true) || [];
@@ -104,7 +104,7 @@ export const notesHandlers = {
   },
 
   async createAnnotation(params: {
-    parentId: number;
+    parentId: number | string;
     type: string;
     text?: string;
     comment?: string;

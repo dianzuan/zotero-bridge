@@ -23,7 +23,7 @@ function autoSplitCreator(c: { firstName: string; lastName: string; creatorType:
 }
 
 export const itemsHandlers = {
-  async get(params: { id: number }) {
+  async get(params: { id: number | string }) {
     const item = await requireItem(params.id);
     return serializeItem(item);
   },
@@ -71,7 +71,7 @@ export const itemsHandlers = {
   },
 
   async update(params: {
-    id: number;
+    id: number | string;
     fields?: Record<string, string>;
     creators?: Array<{ firstName: string; lastName: string; creatorType: string }>;
     tags?: string[];
@@ -113,24 +113,24 @@ export const itemsHandlers = {
     return serializeItem(item);
   },
 
-  async delete(params: { id: number }) {
+  async delete(params: { id: number | string }) {
     const item = await requireItem(params.id);
     await item.eraseTx();
-    return { deleted: true, id: params.id };
+    return { deleted: true, id: item.id };
   },
 
-  async trash(params: { id: number }) {
+  async trash(params: { id: number | string }) {
     const item = await requireItem(params.id);
     item.deleted = true;
     await item.saveTx();
-    return { trashed: true, id: params.id };
+    return { trashed: true, id: item.id };
   },
 
-  async restore(params: { id: number }) {
+  async restore(params: { id: number | string }) {
     const item = await requireItem(params.id);
     item.deleted = false;
     await item.saveTx();
-    return { restored: true, id: params.id };
+    return { restored: true, id: item.id };
   },
 
   async getTrash(params: { limit?: number; offset?: number }) {
@@ -274,7 +274,7 @@ export const itemsHandlers = {
     return serializeItem(master);
   },
 
-  async getRelated(params: { id: number }) {
+  async getRelated(params: { id: number | string }) {
     const item = await requireItem(params.id);
     const relatedKeys = item.relatedItems;
     const related = [];
@@ -285,10 +285,9 @@ export const itemsHandlers = {
     return related;
   },
 
-  async addRelated(params: { id: number; relatedId: number }) {
-    const item = await Zotero.Items.getAsync(params.id);
-    const related = await Zotero.Items.getAsync(params.relatedId);
-    if (!item || !related) throw { code: -32602, message: "Item not found" };
+  async addRelated(params: { id: number | string; relatedId: number | string }) {
+    const item = await requireItem(params.id);
+    const related = await requireItem(params.relatedId);
     item.addRelatedItem(related);
     await item.saveTx();
     related.addRelatedItem(item);
@@ -296,10 +295,9 @@ export const itemsHandlers = {
     return { added: true, id: params.id };
   },
 
-  async removeRelated(params: { id: number; relatedId: number }) {
-    const item = await Zotero.Items.getAsync(params.id);
-    const related = await Zotero.Items.getAsync(params.relatedId);
-    if (!item || !related) throw { code: -32602, message: "Item not found" };
+  async removeRelated(params: { id: number | string; relatedId: number | string }) {
+    const item = await requireItem(params.id);
+    const related = await requireItem(params.relatedId);
     item.removeRelatedItem(related);
     await item.saveTx();
     related.removeRelatedItem(item);
@@ -307,7 +305,7 @@ export const itemsHandlers = {
     return { removed: true, id: params.id };
   },
 
-  async citationKey(params: { id: number }) {
+  async citationKey(params: { id: number | string }) {
     const item = await requireItem(params.id);
     // Try Better BibTeX citation key if available
     const extra = item.getField("extra") as string;

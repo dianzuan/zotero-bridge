@@ -12,6 +12,7 @@ type SearchHitsParams = {
   collection?: string | number;
   collectionId?: number;
   itemIds?: number[];
+  itemKeys?: string[];
   limit?: number;
   top_spans_per_item?: number;
   include_fulltext_spans?: boolean;
@@ -137,9 +138,19 @@ async function resolveCollectionItems(params: SearchHitsParams): Promise<any[]> 
     return (Array.isArray(items) ? items : [items]).filter(Boolean);
   }
 
+  if (params.itemKeys?.length) {
+    const libraryID = Zotero.Libraries.userLibraryID;
+    const items = [];
+    for (const key of params.itemKeys) {
+      const item = await Zotero.Items.getByLibraryAndKeyAsync(libraryID, key);
+      if (item) items.push(item);
+    }
+    return items;
+  }
+
   const collectionRef = params.collectionId ?? params.collection;
   if (collectionRef === undefined || collectionRef === null || collectionRef === "") {
-    throw rpcError(INVALID_PARAMS, "rag.searchHits requires collection, collectionId, or itemIds");
+    throw rpcError(INVALID_PARAMS, "rag.searchHits requires collection, collectionId, itemIds, or itemKeys");
   }
 
   let collection: any = null;

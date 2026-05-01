@@ -41,20 +41,24 @@ Operators: `is`, `isNot`, `contains`, `doesNotContain`, `isAfter`, `isBefore`.
 
 ## Read paper content
 
-After finding a paper, get its full text or details:
+After finding a paper, get its full text or details. All methods accept either a numeric `id` or an 8-char item `key` string (e.g. `"YR5BUGHG"` from RAG hits):
 
 ```bash
-# Full metadata
-zotron rpc items.get '{"id":ITEM_ID}'
+# Full metadata (by numeric ID or key)
+zotron rpc items.get '{"id":12345}'
+zotron rpc items.get '{"id":"YR5BUGHG"}'
 
 # PDF full text (for AI reading)
-zotron rpc attachments.getFulltext '{"id":ITEM_ID}'
+zotron rpc attachments.getFulltext '{"id":12345}'
 
 # PDF annotations/highlights
-zotron rpc notes.getAnnotations '{"parentId":ITEM_ID}'
+zotron rpc notes.getAnnotations '{"parentId":"YR5BUGHG"}'
 
-# Notes attached to paper
-zotron rpc notes.get '{"parentId":ITEM_ID}'
+# Notes attached to paper (includes OCR preview notes)
+zotron rpc notes.get '{"parentId":"YR5BUGHG"}'
+
+# RAG chunks for specific items (returns OCR spans with provenance)
+zotron rpc rag.searchHits '{"query":"关键词","itemKeys":["YR5BUGHG","BF4I9QX4"]}'
 ```
 
 ## Browse collections
