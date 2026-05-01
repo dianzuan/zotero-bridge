@@ -2,9 +2,12 @@
 // Copyright (C) 2026 diamondrill
 export function serializeItem(item: Zotero.Item): Record<string, any> {
   const data: Record<string, any> = {
-    id: item.id, key: item.key, itemType: item.itemType,
+    key: item.key,
+    version: (item as any).version ?? 0,
+    itemType: item.itemType,
     title: item.getField("title") as string,
-    dateAdded: item.dateAdded, dateModified: item.dateModified, deleted: item.deleted,
+    dateAdded: item.dateAdded,
+    dateModified: item.dateModified,
   };
   const fields = Zotero.ItemFields.getItemTypeFields(item.itemTypeID);
   for (const fieldID of fields) {
@@ -18,11 +21,17 @@ export function serializeItem(item: Zotero.Item): Record<string, any> {
     data.note = item.getNote();
   }
   data.creators = item.getCreators().map((c: any) => ({
-    firstName: c.firstName || "", lastName: c.lastName || "",
-    creatorType: Zotero.CreatorTypes.getName(c.creatorTypeID), fieldMode: c.fieldMode,
+    firstName: c.firstName || "",
+    lastName: c.lastName || "",
+    creatorType: Zotero.CreatorTypes.getName(c.creatorTypeID),
   }));
   data.tags = item.getTags().map((t: any) => ({ tag: t.tag, type: t.type }));
-  data.collections = item.getCollections();
+  data.collections = item.getCollections()
+    .map((colId: number) => {
+      const col = Zotero.Collections.get(colId);
+      return col ? col.key : null;
+    })
+    .filter(Boolean);
   data.relations = item.getRelations();
   return data;
 }
