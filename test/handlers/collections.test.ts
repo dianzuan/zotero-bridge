@@ -13,7 +13,14 @@ describe("collections handler", () => {
 
       installZotero({
         Libraries: { userLibraryID: 1 },
-        Collections: { getByLibrary: getByLibraryStub },
+        Collections: {
+          getByLibrary: getByLibraryStub,
+          get: sinon.stub().callsFake((id: number) => {
+            if (id === 1) return root;
+            if (id === 2) return child;
+            return null;
+          }),
+        },
       });
 
       delete require.cache[require.resolve("../../src/handlers/collections")];
@@ -27,9 +34,39 @@ describe("collections handler", () => {
       expect(args[1]).to.equal(true); // recursive — was false, must now be true
       // Tree should have one root with one child nested
       expect(result).to.have.lengthOf(1);
-      expect(result[0].id).to.equal(1);
+      expect(result[0].key).to.equal("COL1");
       expect(result[0].children).to.have.lengthOf(1);
-      expect(result[0].children[0].id).to.equal(2);
+      expect(result[0].children[0].key).to.equal("COL2");
+    });
+  });
+
+  describe("serializeCollection key-first (P2)", () => {
+    it("serializeCollection returns key-first, no id, parentKey, children as keys", async () => {
+      const parent = fakeCollection({ id: 1, key: "PARENT01", name: "Root" });
+      const child = fakeCollection({ id: 2, key: "CHILD001", name: "Sub", parentID: 1 });
+      parent.getChildCollections = () => [child];
+
+      installZotero({
+        Libraries: { userLibraryID: 1 },
+        Collections: {
+          getByLibrary: sinon.stub().returns([parent]),
+          get: sinon.stub().callsFake((id: number) => {
+            if (id === 1) return parent;
+            return null;
+          }),
+        },
+      });
+
+      delete require.cache[require.resolve("../../src/handlers/collections")];
+      const { collectionsHandlers } = await import("../../src/handlers/collections");
+      const result = await collectionsHandlers.list();
+
+      expect(result[0]).to.not.have.property("id");
+      expect(result[0].key).to.equal("PARENT01");
+      expect(result[0]).to.have.property("version");
+      expect(result[0].parentKey).to.equal(null);
+      expect(result[0]).to.not.have.property("parentID");
+      expect(result[0].childCollections).to.deep.equal(["CHILD001"]);
     });
   });
 

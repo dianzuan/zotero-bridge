@@ -37,9 +37,15 @@ export function serializeItem(item: Zotero.Item): Record<string, any> {
 }
 
 export function serializeCollection(col: Zotero.Collection): Record<string, any> {
+  const parent = col.parentID
+    ? Zotero.Collections.get(col.parentID)
+    : null;
   return {
-    id: col.id, key: col.key, name: col.name, parentID: col.parentID || null,
-    childCollections: col.getChildCollections(false).map((c: any) => c.id),
+    key: col.key,
+    version: (col as any).version ?? 0,
+    name: col.name,
+    parentKey: parent ? parent.key : null,
+    childCollections: col.getChildCollections(false).map((c: any) => c.key),
     itemCount: col.getChildItems(false).length,
   };
 }
