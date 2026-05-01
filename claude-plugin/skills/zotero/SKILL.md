@@ -23,47 +23,45 @@ A typical session chains them: `search` to locate papers → `manage` to organiz
 
 ## CLI conventions
 
-All commands invoke the unified `zotron` CLI.
-
-**Typed subcommands** (preferred when available — clearer for AI, validated args):
+All commands use the `zotron` CLI with noun-verb structure:
 
 ```bash
-zotron search quick "数字经济 就业" --limit 10
+zotron <namespace> <verb> [args] [--flags]
+```
+
+**Typed subcommands** cover all operations — always prefer these over raw RPC:
+
+```bash
+zotron search quick "数字经济" --limit 10
+zotron items get 12345
+zotron items fulltext 12345
+zotron notes list --parent 12345
+zotron attachments list --parent 12345
+zotron annotations list --parent 12345
+zotron tags add 12345 --tag "已读"
 zotron collections tree
-zotron export bibtex 12345 12346
+zotron export bibtex 12345
+zotron settings list
+zotron system list-methods
 ```
 
-See `zotron --help` for the full typed surface.
+**IDs:** All item-scoped commands accept either a numeric ID (`12345`) or an 8-char item key (`YR5BUGHG`). Collections accept numeric ID or name (`"数字经济"`).
 
-**academic-zh retrieval hits** should be emitted as JSONL through the Zotero backend:
+**`--jq` filter** trims output to cut tokens:
 
 ```bash
-zotron-rag hits --zotero \
-  --collection "财务报表造假识别" \
-  --limit 50 \
-  --top-spans-per-item 3 \
-  --output jsonl \
-  "财务报表 舞弊 识别 风险"
+zotron items list --limit 50 --jq '.[].title'
+zotron collections tree --jq '.[] | {id, name}'
 ```
 
-Return one hit per line. Preserve `item_key`, `title`, `text`, `section_heading`, `chunk_id`, `block_ids`, `query`, `score`, and `zotero_uri`; downstream `academic-zh` builds paper cards and `citation_map` from those spans.
-
-**`rpc` escape hatch** covers all 77 RPC methods across 9 namespaces — use when no typed subcommand exists:
+**`rpc` escape hatch** for edge cases without a typed subcommand:
 
 ```bash
 zotron rpc <method.name> '<json-params>'
-# e.g.
-zotron rpc search.fulltext '{"query":"regression discontinuity","limit":10}'
-zotron rpc items.addByDOI '{"doi":"10.1016/j.jfineco.2024.01.001"}'
 ```
 
-**`--jq` filter** trims output to just the fields you need (cuts tokens):
-
-```bash
-zotron rpc items.getRecent '{"limit":50}' --jq '.[].title'
-zotron rpc collections.tree --jq '.[] | {id, name}'
-```
-
-## RPC method reference
-
-For the full 77-method list grouped by namespace, see [reference/rpc-methods.md](reference/rpc-methods.md). Read it on demand when you need a method that isn't documented in a workflow sub-file.
+**Discovery:**
+- `zotron --help` — list all namespaces
+- `zotron <namespace> --help` — list subcommands in a namespace
+- `zotron system list-methods` — list all RPC methods
+- `zotron system describe items.get` — describe a specific method's parameters

@@ -8,7 +8,7 @@ Usually you need to search first, then export:
 
 ```bash
 # 1. Find the papers
-zotron rpc search.quick '{"query":"数字经济","limit":10}'
+zotron search quick "数字经济" --limit 10
 
 # 2. Note the IDs from results, then export
 zotron export bibliography 10 13 16
@@ -18,10 +18,10 @@ zotron export bibliography 10 13 16
 
 | Format | When to use | Command |
 |--------|------------|---------|
-| **GB/T 7714** (default) | Chinese academic papers, 中文参考文献 | `export.bibliography` |
-| BibTeX | LaTeX users, .bib file | `export.bibtex` |
-| RIS | EndNote/other reference managers | `export.ris` |
-| CSL-JSON | Programmatic use | `export.cslJson` |
+| **GB/T 7714** (default) | Chinese academic papers, 中文参考文献 | `zotron export bibliography` |
+| BibTeX | LaTeX users, .bib file | `zotron export bibtex` |
+| RIS | EndNote/other reference managers | `zotron export ris` |
+| CSL-JSON | Programmatic use | `zotron export csl-json` |
 
 ## GB/T 7714 (中文学术默认)
 
@@ -31,9 +31,9 @@ zotron export bibliography 10 13 16
 
 Returns both `html` and `text` versions. Use `text` for plain output.
 
-For the author-date variant instead of the default numeric:
+For the author-date variant:
 ```bash
-zotron rpc export.bibliography '{"ids":[10],"style":"http://www.zotero.org/styles/gb-t-7714-2015-author-date"}'
+zotron export bibliography 10 --style apa
 ```
 
 ## BibTeX
@@ -44,10 +44,10 @@ zotron export bibtex 10 13 16
 
 ## Citation key
 
-Look up a paper's Better-BibTeX citation key (an `items.*` identity attribute) for building LaTeX `\cite{}` references:
+Look up a paper's Better-BibTeX citation key for LaTeX `\cite{}`:
 
 ```bash
-zotron rpc items.citationKey '{"id":10}'
+zotron items citation-key 10
 ```
 
 ## Present to user
