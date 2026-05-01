@@ -50,5 +50,33 @@ describe("guards", () => {
         expect(e.message).to.equal("Collection 99 not found");
       }
     });
+
+    it("requireCollection resolves 8-char key string", async () => {
+      const col: any = { id: 5, key: "COL12345", name: "Test" };
+      installZotero({
+        Collections: {
+          getAsync: sinon.stub().resolves(null),
+          getByLibraryAndKeyAsync: sinon.stub().withArgs(1, "COL12345").resolves(col),
+        },
+        Libraries: { userLibraryID: 1 },
+      });
+      delete require.cache[require.resolve("../../src/utils/guards")];
+      const { requireCollection } = await import("../../src/utils/guards");
+      const result = await requireCollection("COL12345");
+      expect(result.key).to.equal("COL12345");
+    });
+
+    it("requireCollection resolves numeric string as number", async () => {
+      const col: any = { id: 7, key: "C7" };
+      installZotero({
+        Collections: {
+          getAsync: sinon.stub().withArgs(7).resolves(col),
+        },
+      });
+      delete require.cache[require.resolve("../../src/utils/guards")];
+      const { requireCollection } = await import("../../src/utils/guards");
+      const result = await requireCollection("7");
+      expect(result).to.equal(col);
+    });
   });
 });
