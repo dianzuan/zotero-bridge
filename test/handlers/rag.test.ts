@@ -159,34 +159,4 @@ describe("rag handler", () => {
     });
   });
 
-  it("searchCards is a compatibility alias that preserves hits", async () => {
-    const item = makeItem();
-    const attachment = makeChunkAttachment();
-    installZotero({
-      Items: {
-        getAsync: sinon.stub().callsFake(async (id: number | number[]) => {
-          if (Array.isArray(id)) return [item];
-          return id === 42 ? item : attachment;
-        }),
-      },
-      File: {
-        getContentsAsync: sinon.stub().resolves(JSON.stringify({
-          item_key: "ITEM42",
-          title: "Title",
-          text: "matched text",
-          chunk_id: "ITEM42:c1",
-        })),
-      },
-    });
-
-    delete require.cache[require.resolve("../../src/handlers/rag")];
-    const { ragHandlers } = await import("../../src/handlers/rag");
-    const result = await ragHandlers.searchCards({
-      query: "matched",
-      itemIds: [42],
-    });
-
-    expect(result.total).to.equal(1);
-    expect(result.hits[0].text).to.equal("matched text");
-  });
 });

@@ -305,62 +305,6 @@ export const itemsHandlers = {
     return { removed: true, id: params.id };
   },
 
-  async getAttachments(params: { id: number | string }) {
-    const item = await requireItem(params.id);
-    const attIDs = item.getAttachments();
-    if (attIDs.length === 0) return [];
-    const atts = await Zotero.Items.getAsync(attIDs);
-    return atts.map(serializeItem);
-  },
-
-  async getNotes(params: { id: number | string }) {
-    const item = await requireItem(params.id);
-    const noteIDs = item.getNotes();
-    if (noteIDs.length === 0) return [];
-    const notes = await Zotero.Items.getAsync(noteIDs);
-    return notes.map(serializeItem);
-  },
-
-  async getFulltext(params: { id: number | string }) {
-    const item = await requireItem(params.id);
-
-    let pdfAttachment: Zotero.Item | null = null;
-    if (item.isAttachment()) {
-      pdfAttachment = item;
-    } else {
-      const attIDs = item.getAttachments();
-      const atts = await Zotero.Items.getAsync(attIDs);
-      pdfAttachment = atts.find(
-        (a: any) => a.attachmentContentType === "application/pdf",
-      ) ?? null;
-    }
-    if (!pdfAttachment) throw { code: -32602, message: `No PDF attachment for item ${params.id}` };
-
-    const cacheFile = Zotero.Fulltext.getItemCacheFile(pdfAttachment);
-    let content = "";
-    try {
-      content = (await Zotero.File.getContentsAsync(cacheFile.path) as string) ?? "";
-    } catch {
-      content = "";
-    }
-
-    const rows = (
-      (await Zotero.DB.queryAsync(
-        "SELECT indexedChars, totalChars FROM fulltextItems WHERE itemID=?",
-        [pdfAttachment.id],
-      )) as Array<{ indexedChars: number; totalChars: number }>
-    ) ?? [];
-    const meta = rows[0] ?? { indexedChars: 0, totalChars: 0 };
-
-    return {
-      id: item.id,
-      attachmentId: pdfAttachment.id,
-      content: content ?? "",
-      indexedChars: meta.indexedChars ?? 0,
-      totalChars: meta.totalChars ?? 0,
-    };
-  },
-
   async citationKey(params: { id: number | string }) {
     const item = await requireItem(params.id);
     // Try Better BibTeX citation key if available

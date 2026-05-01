@@ -282,10 +282,6 @@ export const ragHandlers = {
   async searchHits(params: SearchHitsParams) {
     return searchChunkArtifacts(params);
   },
-
-  async searchCards(params: SearchHitsParams) {
-    return searchChunkArtifacts(params);
-  },
 };
 
 registerHandlers("rag", ragHandlers);
