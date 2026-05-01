@@ -52,6 +52,21 @@ export const systemHandlers = {
       libraryId: col.libraryID,
     };
   },
+  async listMethods() {
+    return getRegisteredMethods();
+  },
+
+  async describe(params: { method?: string }) {
+    const methods = getRegisteredMethods();
+    if (params.method) {
+      if (!methods.includes(params.method)) {
+        throw { code: -32601, message: `Method not found: ${params.method}` };
+      }
+      return { name: params.method, description: `RPC method ${params.method}` };
+    }
+    return methods.map(name => ({ name, description: `RPC method ${name}` }));
+  },
+
   async reload() {
     // Self-reload bypasses scaffold's broken RDP path on WSL→Windows.
     // Delay so the HTTP response flushes before shutdown() tears down the endpoint.
