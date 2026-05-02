@@ -24,7 +24,7 @@ def mock_rpc():
 
 def test_attachments_list(mock_rpc):
     mock_rpc.call.return_value = {
-        "items": [{"id": 10, "title": "paper.pdf"}],
+        "items": [{"key": "KEY0010", "title": "paper.pdf", "version": 1}],
         "total": 1,
         "limit": 50,
         "offset": 0,
@@ -34,7 +34,7 @@ def test_attachments_list(mock_rpc):
     assert result.exit_code == 0, result.stdout
     data = json.loads(result.stdout)
     assert data["total"] == 1
-    assert data["items"][0]["id"] == 10
+    assert data["items"][0]["key"] == "KEY0010"
 
 
 def test_attachments_list_with_limit_offset(mock_rpc):
@@ -74,14 +74,15 @@ def test_attachments_list_connection_error(mock_rpc):
 
 def test_attachments_get(mock_rpc):
     mock_rpc.call.return_value = {
-        "id": 10,
+        "key": "KEY0010",
         "title": "paper.pdf",
         "contentType": "application/pdf",
+        "version": 1,
     }
     result = runner.invoke(app, ["attachments", "get", "10"])
     assert result.exit_code == 0, result.stdout
     data = json.loads(result.stdout)
-    assert data["id"] == 10
+    assert data["key"] == "KEY0010"
     assert data["contentType"] == "application/pdf"
 
 
@@ -98,15 +99,16 @@ def test_attachments_get_connection_error(mock_rpc):
 
 def test_attachments_fulltext(mock_rpc):
     mock_rpc.call.return_value = {
-        "id": 10,
+        "key": "KEY0010",
         "content": "This is the full text of the PDF.",
         "indexedChars": 5000,
         "totalChars": 5000,
+        "version": 1,
     }
     result = runner.invoke(app, ["attachments", "fulltext", "10"])
     assert result.exit_code == 0, result.stdout
     data = json.loads(result.stdout)
-    assert data["id"] == 10
+    assert data["key"] == "KEY0010"
     assert "content" in data
     assert data["indexedChars"] == 5000
 
@@ -127,9 +129,11 @@ def test_attachments_add(mock_rpc, tmp_path):
     pdf = tmp_path / "paper.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake content")
     mock_rpc.call.return_value = {
-        "id": 20,
+        "ok": True,
+        "key": "KEY0020",
         "title": "paper.pdf",
         "contentType": "application/pdf",
+        "version": 1,
     }
     result = runner.invoke(app, [
         "attachments", "add",
@@ -138,16 +142,18 @@ def test_attachments_add(mock_rpc, tmp_path):
     ])
     assert result.exit_code == 0, result.stdout
     data = json.loads(result.stdout)
-    assert data["id"] == 20
+    assert data["key"] == "KEY0020"
 
 
 def test_attachments_add_with_title(mock_rpc, tmp_path):
     pdf = tmp_path / "paper.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake content")
     mock_rpc.call.return_value = {
-        "id": 21,
+        "ok": True,
+        "key": "KEY0021",
         "title": "My Custom Title",
         "contentType": "application/pdf",
+        "version": 1,
     }
     result = runner.invoke(app, [
         "attachments", "add",
@@ -189,9 +195,11 @@ def test_attachments_add_missing_parent(mock_rpc, tmp_path):
 
 def test_attachments_add_by_url(mock_rpc):
     mock_rpc.call.return_value = {
-        "id": 30,
+        "ok": True,
+        "key": "KEY0030",
         "title": "Remote PDF",
         "url": "https://example.com/paper.pdf",
+        "version": 1,
     }
     result = runner.invoke(app, [
         "attachments", "add-by-url",
@@ -200,11 +208,11 @@ def test_attachments_add_by_url(mock_rpc):
     ])
     assert result.exit_code == 0, result.stdout
     data = json.loads(result.stdout)
-    assert data["id"] == 30
+    assert data["key"] == "KEY0030"
 
 
 def test_attachments_add_by_url_with_title(mock_rpc):
-    mock_rpc.call.return_value = {"id": 31, "title": "Custom Title"}
+    mock_rpc.call.return_value = {"ok": True, "key": "KEY0031", "title": "Custom Title", "version": 1}
     result = runner.invoke(app, [
         "attachments", "add-by-url",
         "--parent", "42",
@@ -245,13 +253,14 @@ def test_attachments_add_by_url_missing_url(mock_rpc):
 
 def test_attachments_path(mock_rpc):
     mock_rpc.call.return_value = {
-        "id": 10,
+        "key": "KEY0010",
         "path": "/home/user/Zotero/storage/ABC123/paper.pdf",
+        "version": 1,
     }
     result = runner.invoke(app, ["attachments", "path", "10"])
     assert result.exit_code == 0, result.stdout
     data = json.loads(result.stdout)
-    assert data["id"] == 10
+    assert data["key"] == "KEY0010"
     assert "path" in data
 
 
@@ -267,12 +276,12 @@ def test_attachments_path_connection_error(mock_rpc):
 # ---------------------------------------------------------------------------
 
 def test_attachments_delete(mock_rpc):
-    mock_rpc.call.return_value = {"ok": True, "id": 10}
+    mock_rpc.call.return_value = {"ok": True, "key": "KEY0010"}
     result = runner.invoke(app, ["attachments", "delete", "10"])
     assert result.exit_code == 0, result.stdout
     data = json.loads(result.stdout)
     assert data["ok"] is True
-    assert data["id"] == 10
+    assert data["key"] == "KEY0010"
 
 
 def test_attachments_delete_dry_run(mock_rpc):
@@ -301,14 +310,14 @@ def test_attachments_delete_rpc_error(mock_rpc):
 
 def test_attachments_find_pdf_found(mock_rpc):
     mock_rpc.call.return_value = {
-        "attachment": {"id": 50, "title": "Full Text PDF"},
+        "attachment": {"key": "KEY0050", "title": "Full Text PDF", "version": 1},
     }
     result = runner.invoke(app, [
         "attachments", "find-pdf", "--parent", "42",
     ])
     assert result.exit_code == 0, result.stdout
     data = json.loads(result.stdout)
-    assert data["attachment"]["id"] == 50
+    assert data["attachment"]["key"] == "KEY0050"
 
 
 def test_attachments_find_pdf_not_found(mock_rpc):

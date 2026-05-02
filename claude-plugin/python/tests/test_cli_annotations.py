@@ -21,8 +21,8 @@ def mock_rpc():
 def test_annotations_list(mock_rpc):
     """annotations list --parent <id> returns annotation array."""
     mock_rpc.call.return_value = [
-        {"id": 1, "type": "highlight", "text": "important point"},
-        {"id": 2, "type": "note", "comment": "my note"},
+        {"key": "KEY0001", "type": "highlight", "text": "important point", "version": 1},
+        {"key": "KEY0002", "type": "note", "comment": "my note", "version": 1},
     ]
     result = runner.invoke(app, ["annotations", "list", "--parent", "42"])
     assert result.exit_code == 0, result.stdout
@@ -34,14 +34,14 @@ def test_annotations_list(mock_rpc):
 
 def test_annotations_create(mock_rpc):
     """annotations create --parent <id> --type highlight returns {id, key}."""
-    mock_rpc.call.return_value = {"id": 99, "key": "ABCDEF12"}
+    mock_rpc.call.return_value = {"ok": True, "key": "ABCDEF12", "version": 1}
     result = runner.invoke(
         app,
         ["annotations", "create", "--parent", "42", "--type", "highlight"],
     )
     assert result.exit_code == 0, result.stdout
     data = json.loads(result.stdout)
-    assert data["id"] == 99
+    assert data["ok"] is True
     assert data["key"] == "ABCDEF12"
     call_args = mock_rpc.call.call_args
     assert call_args.args[0] == "annotations.create"
@@ -53,7 +53,7 @@ def test_annotations_create(mock_rpc):
 
 def test_annotations_create_with_optional_fields(mock_rpc):
     """create with --text, --comment, --color passes all fields."""
-    mock_rpc.call.return_value = {"id": 100, "key": "XYZ"}
+    mock_rpc.call.return_value = {"ok": True, "key": "XYZ", "version": 1}
     result = runner.invoke(
         app,
         [
@@ -94,12 +94,12 @@ def test_annotations_create_dry_run(mock_rpc):
 
 def test_annotations_delete(mock_rpc):
     """annotations delete <id> calls annotations.delete and returns {ok, id}."""
-    mock_rpc.call.return_value = {"ok": True, "id": 55}
+    mock_rpc.call.return_value = {"ok": True, "key": "KEY0055"}
     result = runner.invoke(app, ["annotations", "delete", "55"])
     assert result.exit_code == 0, result.stdout
     data = json.loads(result.stdout)
     assert data["ok"] is True
-    assert data["id"] == 55
+    assert data["key"] == "KEY0055"
     mock_rpc.call.assert_called_once_with("annotations.delete", {"id": "55"})
 
 

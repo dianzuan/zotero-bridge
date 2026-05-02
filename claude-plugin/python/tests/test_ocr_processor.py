@@ -78,7 +78,7 @@ def test_has_ocr_note_true():
     """Note with 'ocr' tag exists — returns True."""
     processor, rpc, _ = _make_processor()
     rpc.call.return_value = [
-        {"id": 100, "note": "<p>some content</p>", "tags": ["ocr", "imported"]},
+        {"key": "KEY0100", "note": "<p>some content</p>", "tags": ["ocr", "imported"], "version": 1},
     ]
     assert processor.has_ocr_note(42) is True
     rpc.call.assert_called_once_with("notes.get", {"parentId": 42})
@@ -88,7 +88,7 @@ def test_has_ocr_note_false():
     """Note exists but no 'ocr' tag — returns False."""
     processor, rpc, _ = _make_processor()
     rpc.call.return_value = [
-        {"id": 101, "note": "<p>manual note</p>", "tags": ["manual"]},
+        {"key": "KEY0101", "note": "<p>manual note</p>", "tags": ["manual"], "version": 1},
     ]
     assert processor.has_ocr_note(42) is False
 
@@ -188,15 +188,15 @@ def test_process_item_writes_zotero_artifact_pipeline(tmp_path):
         if method == "notes.get":
             return []
         if method == "items.get":
-            return {"id": 42, "key": "ITEM1", "title": "My Paper"}
+            return {"key": "ITEM1", "title": "My Paper", "version": 1}
         if method == "attachments.list":
-            return [{"id": 9, "key": "ATT1", "contentType": "application/pdf"}]
+            return [{"key": "ATT1", "contentType": "application/pdf", "version": 1}]
         if method == "attachments.getPath":
             return {"path": str(pdf_path)}
         if method == "attachments.add":
-            return {"id": 100 + len(rpc.call.call_args_list), "title": params["title"]}
+            return {"ok": True, "key": f"KEY{100 + len(rpc.call.call_args_list)}", "title": params["title"]}
         if method == "notes.create":
-            return {"id": 501}
+            return {"ok": True, "key": "KEY0501"}
         raise AssertionError(f"unexpected RPC method {method}")
 
     rpc.call.side_effect = call
@@ -233,11 +233,11 @@ def test_process_item_can_skip_preview_note_while_writing_artifacts(tmp_path):
         if method == "items.get":
             return {"key": "ITEM2"}
         if method == "attachments.list":
-            return [{"id": 10, "key": "ATT2", "contentType": "application/pdf"}]
+            return [{"key": "ATT2", "contentType": "application/pdf", "version": 1}]
         if method == "attachments.getPath":
             return str(pdf_path)
         if method == "attachments.add":
-            return {"id": 200, "title": params["title"]}
+            return {"ok": True, "key": "KEY0200", "title": params["title"]}
         raise AssertionError(f"unexpected RPC method {method}")
 
     rpc.call.side_effect = call

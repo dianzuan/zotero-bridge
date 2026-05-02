@@ -24,7 +24,7 @@ def mock_rpc():
 
 def test_notes_list_returns_envelope(mock_rpc):
     mock_rpc.call.return_value = {
-        "items": [{"id": 1, "content": "Note A"}, {"id": 2, "content": "Note B"}],
+        "items": [{"key": "KEY0001", "content": "Note A", "version": 1}, {"key": "KEY0002", "content": "Note B", "version": 1}],
         "total": 2, "limit": 50, "offset": 0, "hasMore": False,
     }
     result = runner.invoke(app, ["notes", "list", "--parent", "12345"])
@@ -39,7 +39,7 @@ def test_notes_list_returns_envelope(mock_rpc):
 
 def test_notes_list_with_pagination(mock_rpc):
     mock_rpc.call.return_value = {
-        "items": [{"id": 5, "content": "Note"}],
+        "items": [{"key": "KEY0005", "content": "Note", "version": 1}],
         "total": 100, "limit": 10, "offset": 20, "hasMore": True,
     }
     result = runner.invoke(
@@ -72,11 +72,11 @@ def test_notes_list_rpc_error(mock_rpc):
 # ---------------------------------------------------------------------------
 
 def test_notes_get_returns_note(mock_rpc):
-    mock_rpc.call.return_value = {"id": 42, "content": "<p>My note</p>", "parentId": 10}
+    mock_rpc.call.return_value = {"key": "KEY0042", "content": "<p>My note</p>", "parentKey": "KEY0010", "version": 1}
     result = runner.invoke(app, ["notes", "get", "42"])
     assert result.exit_code == 0
     data = json.loads(result.stdout)
-    assert data["id"] == 42
+    assert data["key"] == "KEY0042"
     assert data["content"] == "<p>My note</p>"
     mock_rpc.call.assert_called_once_with("notes.get", {"id": "42"})
 
@@ -94,20 +94,20 @@ def test_notes_get_connection_error(mock_rpc):
 # ---------------------------------------------------------------------------
 
 def test_notes_create_returns_note(mock_rpc):
-    mock_rpc.call.return_value = {"id": 55, "content": "Hello world", "parentId": "12345"}
+    mock_rpc.call.return_value = {"ok": True, "key": "KEY0055"}
     result = runner.invoke(
         app, ["notes", "create", "--parent", "12345", "--content", "Hello world"]
     )
     assert result.exit_code == 0
     data = json.loads(result.stdout)
-    assert data["id"] == 55
+    assert data["key"] == "KEY0055"
     mock_rpc.call.assert_called_once_with(
         "notes.create", {"parentId": "12345", "content": "Hello world"}
     )
 
 
 def test_notes_create_with_tags(mock_rpc):
-    mock_rpc.call.return_value = {"id": 56, "content": "Tagged note", "parentId": "99"}
+    mock_rpc.call.return_value = {"ok": True, "key": "KEY0056"}
     result = runner.invoke(
         app,
         ["notes", "create", "--parent", "99", "--content", "Tagged note",
@@ -150,7 +150,7 @@ def test_notes_create_connection_error(mock_rpc):
 # ---------------------------------------------------------------------------
 
 def test_notes_update_returns_note(mock_rpc):
-    mock_rpc.call.return_value = {"id": 42, "content": "Updated content", "parentId": 10}
+    mock_rpc.call.return_value = {"ok": True, "key": "KEY0042", "content": "Updated content", "version": 1}
     result = runner.invoke(
         app, ["notes", "update", "42", "--content", "Updated content"]
     )
@@ -187,12 +187,12 @@ def test_notes_update_connection_error(mock_rpc):
 # ---------------------------------------------------------------------------
 
 def test_notes_delete_returns_ok(mock_rpc):
-    mock_rpc.call.return_value = {"ok": True, "id": 42}
+    mock_rpc.call.return_value = {"ok": True, "key": "KEY0042"}
     result = runner.invoke(app, ["notes", "delete", "42"])
     assert result.exit_code == 0
     data = json.loads(result.stdout)
     assert data["ok"] is True
-    assert data["id"] == 42
+    assert data["key"] == "KEY0042"
     mock_rpc.call.assert_called_once_with("notes.delete", {"id": "42"})
 
 
@@ -220,7 +220,7 @@ def test_notes_delete_connection_error(mock_rpc):
 
 def test_notes_search_returns_envelope(mock_rpc):
     mock_rpc.call.return_value = {
-        "items": [{"id": 3, "content": "Found note"}],
+        "items": [{"key": "KEY0003", "content": "Found note", "version": 1}],
         "total": 1, "limit": 50, "offset": 0, "hasMore": False,
     }
     result = runner.invoke(app, ["notes", "search", "quantum entanglement"])

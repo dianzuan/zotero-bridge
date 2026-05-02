@@ -120,7 +120,7 @@ def test_items_add_by_doi(mock_rpc):
 
 
 def test_items_find_duplicates(mock_rpc):
-    mock_rpc.call.return_value = {"groups": [[1, 2], [3, 4, 5]], "totalGroups": 2}
+    mock_rpc.call.return_value = {"groups": [["K1", "K2"], ["K3", "K4", "K5"]], "totalGroups": 2}
     result = runner.invoke(app, ["items", "find-duplicates"])
     assert result.exit_code == 0
     assert json.loads(result.stdout)["totalGroups"] == 2

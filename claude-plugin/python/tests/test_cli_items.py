@@ -24,12 +24,12 @@ def mock_rpc():
 # ---------------------------------------------------------------------------
 
 def test_items_list_ok(mock_rpc):
-    mock_rpc.call.return_value = {"items": [{"id": 1, "title": "Paper A"}], "total": 1}
+    mock_rpc.call.return_value = {"items": [{"key": "KEY0001", "title": "Paper A", "version": 1}], "total": 1}
     result = runner.invoke(app, ["items", "list"])
     assert result.exit_code == 0
     data = json.loads(result.stdout)
     assert data["total"] == 1
-    assert data["items"][0]["id"] == 1
+    assert data["items"][0]["key"] == "KEY0001"
 
 
 def test_items_list_passes_params(mock_rpc):
@@ -54,14 +54,14 @@ def test_items_list_unavailable(mock_rpc):
 # ---------------------------------------------------------------------------
 
 def test_items_create_ok(mock_rpc):
-    mock_rpc.call.return_value = {"id": 42, "itemType": "journalArticle", "key": "ABCD1234"}
+    mock_rpc.call.return_value = {"ok": True, "key": "ABCD1234", "version": 1}
     result = runner.invoke(app, [
         "items", "create", "--type", "journalArticle",
         "--field", "title=My Paper", "--field", "year=2026",
     ])
     assert result.exit_code == 0
     data = json.loads(result.stdout)
-    assert data["id"] == 42
+    assert data["key"] == "ABCD1234"
 
 
 def test_items_create_dry_run(mock_rpc):
@@ -92,7 +92,7 @@ def test_items_create_invalid_field_format(mock_rpc):
 # ---------------------------------------------------------------------------
 
 def test_items_update_ok(mock_rpc):
-    mock_rpc.call.return_value = {"id": 42, "updated": True}
+    mock_rpc.call.return_value = {"ok": True, "key": "KEY0042", "updated": True}
     result = runner.invoke(app, [
         "items", "update", "42", "--field", "title=Updated Title",
     ])
@@ -115,7 +115,7 @@ def test_items_update_dry_run(mock_rpc):
 
 
 def test_items_update_accepts_string_id(mock_rpc):
-    mock_rpc.call.return_value = {"id": "ABCD1234", "updated": True}
+    mock_rpc.call.return_value = {"ok": True, "key": "ABCD1234", "updated": True}
     result = runner.invoke(app, ["items", "update", "ABCD1234", "--field", "title=X"])
     assert result.exit_code == 0
     call_args = mock_rpc.call.call_args
@@ -127,7 +127,7 @@ def test_items_update_accepts_string_id(mock_rpc):
 # ---------------------------------------------------------------------------
 
 def test_items_delete_ok(mock_rpc):
-    mock_rpc.call.return_value = {"deleted": True, "id": "42"}
+    mock_rpc.call.return_value = {"ok": True, "deleted": True, "key": "KEY0042"}
     result = runner.invoke(app, ["items", "delete", "42"])
     assert result.exit_code == 0
     data = json.loads(result.stdout)
@@ -149,7 +149,7 @@ def test_items_delete_dry_run(mock_rpc):
 # ---------------------------------------------------------------------------
 
 def test_items_list_trash_ok(mock_rpc):
-    mock_rpc.call.return_value = {"items": [{"id": 99, "title": "Old Paper"}], "total": 1}
+    mock_rpc.call.return_value = {"items": [{"key": "KEY0099", "title": "Old Paper", "version": 1}], "total": 1}
     result = runner.invoke(app, ["items", "list-trash"])
     assert result.exit_code == 0
     data = json.loads(result.stdout)
@@ -189,7 +189,7 @@ def test_items_batch_trash_dry_run(mock_rpc):
 # ---------------------------------------------------------------------------
 
 def test_items_recent_ok(mock_rpc):
-    mock_rpc.call.return_value = {"items": [{"id": 5}], "total": 1}
+    mock_rpc.call.return_value = {"items": [{"key": "KEY0005", "version": 1}], "total": 1}
     result = runner.invoke(app, ["items", "recent"])
     assert result.exit_code == 0
     data = json.loads(result.stdout)
@@ -237,11 +237,11 @@ def test_items_fulltext_unavailable(mock_rpc):
 def test_items_add_from_file_ok(mock_rpc, tmp_path):
     pdf = tmp_path / "paper.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake")
-    mock_rpc.call.return_value = {"id": 77, "key": "FAKEKEY1"}
+    mock_rpc.call.return_value = {"ok": True, "key": "FAKEKEY1", "version": 1}
     result = runner.invoke(app, ["items", "add-from-file", str(pdf)])
     assert result.exit_code == 0
     data = json.loads(result.stdout)
-    assert data["id"] == 77
+    assert data["key"] == "FAKEKEY1"
 
 
 def test_items_add_from_file_dry_run(mock_rpc, tmp_path):
@@ -276,11 +276,11 @@ def test_items_add_from_file_with_collection(mock_rpc, tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_items_related_ok(mock_rpc):
-    mock_rpc.call.return_value = [{"id": 10, "title": "Related Paper"}]
+    mock_rpc.call.return_value = [{"key": "KEY0010", "title": "Related Paper", "version": 1}]
     result = runner.invoke(app, ["items", "related", "12345"])
     assert result.exit_code == 0
     data = json.loads(result.stdout)
-    assert data[0]["id"] == 10
+    assert data[0]["key"] == "KEY0010"
 
 
 def test_items_related_unavailable(mock_rpc):
@@ -344,7 +344,7 @@ def test_items_remove_related_dry_run(mock_rpc):
 # ---------------------------------------------------------------------------
 
 def test_items_citation_key_ok(mock_rpc):
-    mock_rpc.call.return_value = {"citationKey": "Smith2026", "id": "12345"}
+    mock_rpc.call.return_value = {"citationKey": "Smith2026", "key": "KEY12345"}
     result = runner.invoke(app, ["items", "citation-key", "12345"])
     assert result.exit_code == 0
     data = json.loads(result.stdout)

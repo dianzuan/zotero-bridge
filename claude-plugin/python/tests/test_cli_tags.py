@@ -23,19 +23,19 @@ def mock_rpc():
 # ---------------------------------------------------------------------------
 
 def test_tags_add_single_tag(mock_rpc):
-    mock_rpc.call.return_value = {"ok": True, "id": 5}
+    mock_rpc.call.return_value = {"ok": True, "key": "KEY0005"}
     result = runner.invoke(app, ["tags", "add", "12345", "--tag", "已读"])
     assert result.exit_code == 0, result.stdout
     data = json.loads(result.stdout)
     assert data["ok"] is True
-    assert data["id"] == 5
+    assert data["key"] == "KEY0005"
     call_args = mock_rpc.call.call_args
     assert call_args.args[0] == "tags.add"
     assert call_args.args[1] == {"id": "12345", "tags": ["已读"]}
 
 
 def test_tags_add_multiple_tags(mock_rpc):
-    mock_rpc.call.return_value = {"ok": True, "id": 3}
+    mock_rpc.call.return_value = {"ok": True, "key": "KEY0003"}
     result = runner.invoke(app, ["tags", "add", "abcd1234", "--tag", "foo", "--tag", "bar"])
     assert result.exit_code == 0, result.stdout
     data = json.loads(result.stdout)
@@ -59,19 +59,19 @@ def test_tags_add_dry_run(mock_rpc):
 # ---------------------------------------------------------------------------
 
 def test_tags_remove_single_tag(mock_rpc):
-    mock_rpc.call.return_value = {"ok": True, "id": 7}
+    mock_rpc.call.return_value = {"ok": True, "key": "KEY0007"}
     result = runner.invoke(app, ["tags", "remove", "12345", "--tag", "已读"])
     assert result.exit_code == 0, result.stdout
     data = json.loads(result.stdout)
     assert data["ok"] is True
-    assert data["id"] == 7
+    assert data["key"] == "KEY0007"
     call_args = mock_rpc.call.call_args
     assert call_args.args[0] == "tags.remove"
     assert call_args.args[1] == {"id": "12345", "tags": ["已读"]}
 
 
 def test_tags_remove_multiple_tags(mock_rpc):
-    mock_rpc.call.return_value = {"ok": True, "id": 2}
+    mock_rpc.call.return_value = {"ok": True, "key": "KEY0002"}
     result = runner.invoke(app, ["tags", "remove", "99999", "--tag", "alpha", "--tag", "beta"])
     assert result.exit_code == 0, result.stdout
     data = json.loads(result.stdout)

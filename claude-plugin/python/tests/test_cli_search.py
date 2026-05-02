@@ -24,7 +24,7 @@ def mock_rpc():
 
 def test_search_advanced_single_condition(mock_rpc):
     mock_rpc.call.return_value = {
-        "items": [{"id": 1, "title": "张三的论文"}],
+        "items": [{"key": "KEY0001", "title": "张三的论文", "version": 1}],
         "total": 1, "limit": 50, "offset": 0, "hasMore": False,
     }
     result = runner.invoke(app, [
@@ -109,7 +109,7 @@ def test_search_advanced_bad_condition_too_few_tokens(mock_rpc):
 
 def test_search_by_tag_basic(mock_rpc):
     mock_rpc.call.return_value = {
-        "items": [{"id": 5, "title": "A tagged item"}],
+        "items": [{"key": "KEY0005", "title": "A tagged item", "version": 1}],
         "total": 1, "limit": 50, "offset": 0, "hasMore": False,
     }
     result = runner.invoke(app, ["search", "by-tag", "乡村振兴"])
@@ -141,7 +141,7 @@ def test_search_by_tag_with_limit_offset(mock_rpc):
 
 def test_search_saved_searches(mock_rpc):
     mock_rpc.call.return_value = {
-        "items": [{"id": "abc", "name": "My Search"}],
+        "items": [{"key": "abc", "name": "My Search"}],
         "total": 1, "limit": 50, "offset": 0, "hasMore": False,
     }
     result = runner.invoke(app, ["search", "saved-searches"])
@@ -156,7 +156,7 @@ def test_search_saved_searches(mock_rpc):
 # ---------------------------------------------------------------------------
 
 def test_search_create_saved_basic(mock_rpc):
-    mock_rpc.call.return_value = {"id": 42, "key": "ABCD1234", "name": "张三论文"}
+    mock_rpc.call.return_value = {"ok": True, "key": "ABCD1234", "name": "张三论文"}
     result = runner.invoke(app, [
         "search", "create-saved", "张三论文",
         "--condition", "creator contains 张三",
@@ -164,7 +164,7 @@ def test_search_create_saved_basic(mock_rpc):
     assert result.exit_code == 0, result.stdout
     data = json.loads(result.stdout)
     assert data["name"] == "张三论文"
-    assert data["id"] == 42
+    assert data["key"] == "ABCD1234"
     mock_rpc.call.assert_called_once_with(
         "search.createSavedSearch",
         {
@@ -175,7 +175,7 @@ def test_search_create_saved_basic(mock_rpc):
 
 
 def test_search_create_saved_multiple_conditions(mock_rpc):
-    mock_rpc.call.return_value = {"id": 7, "key": "K7", "name": "Multi"}
+    mock_rpc.call.return_value = {"ok": True, "key": "K7", "name": "Multi"}
     result = runner.invoke(app, [
         "search", "create-saved", "Multi",
         "--condition", "tag contains AI",
@@ -211,7 +211,7 @@ def test_search_create_saved_dry_run(mock_rpc):
 # ---------------------------------------------------------------------------
 
 def test_search_delete_saved_basic(mock_rpc):
-    mock_rpc.call.return_value = {"ok": True, "id": "abc123"}
+    mock_rpc.call.return_value = {"ok": True, "key": "abc123"}
     result = runner.invoke(app, ["search", "delete-saved", "abc123"])
     assert result.exit_code == 0, result.stdout
     data = json.loads(result.stdout)

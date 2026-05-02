@@ -31,26 +31,26 @@ def test_zotero_artifact_store_filters_by_title_suffix_and_adds_attachment(tmp_p
     def call(method, params=None):
         if method == "attachments.list":
             return [
-                {"id": 1, "title": "ITEM.zotron-ocr.raw.zip"},
-                {"id": 2, "title": "ITEM.zotron-blocks.jsonl"},
-                {"id": 3, "title": "unrelated.pdf"},
+                {"key": "KEY0001", "title": "ITEM.zotron-ocr.raw.zip", "version": 1},
+                {"key": "KEY0002", "title": "ITEM.zotron-blocks.jsonl", "version": 1},
+                {"key": "KEY0003", "title": "unrelated.pdf", "version": 1},
             ]
         if method == "attachments.add":
-            return {"id": 99, "title": params["title"]}
+            return {"ok": True, "key": "KEY0099", "title": params["title"]}
         raise AssertionError(method)
 
     rpc.call.side_effect = call
     store = ZoteroArtifactStore(rpc)
 
     assert store.list_artifacts(parent_id=42, suffix=".zotron-blocks.jsonl") == [
-        {"id": 2, "title": "ITEM.zotron-blocks.jsonl"}
+        {"key": "KEY0002", "title": "ITEM.zotron-blocks.jsonl", "version": 1}
     ]
-    assert store.find_artifact(parent_id=42, suffix=".zotron-ocr.raw.zip")["id"] == 1
+    assert store.find_artifact(parent_id=42, suffix=".zotron-ocr.raw.zip")["key"] == "KEY0001"
 
     artifact = tmp_path / "ITEM.zotron-blocks.jsonl"
     artifact.write_text("{}\n", encoding="utf-8")
     added = store.add_artifact(parent_id=42, path=artifact, title=artifact.name)
-    assert added["id"] == 99
+    assert added["key"] == "KEY0099"
     rpc.call.assert_any_call(
         "attachments.add",
         {"parentId": 42, "path": str(artifact), "title": "ITEM.zotron-blocks.jsonl"},
