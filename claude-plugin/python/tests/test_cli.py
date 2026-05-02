@@ -476,7 +476,7 @@ def test_items_trash_dry_run(mock_rpc):
     assert result.exit_code == 0
     data = json.loads(result.stdout)
     assert data["wouldCall"] == "items.trash"
-    assert data["wouldCallParams"] == {"id": 12345}
+    assert data["wouldCallParams"] == {"id": "12345"}
 
 
 def test_push_dry_run_does_not_call_push_item(mock_rpc, tmp_path):

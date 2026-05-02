@@ -18,14 +18,14 @@ items_app = typer.Typer(
     epilog="Examples:\n\n    zotron items get 12345",
 )
 def items_get(
-    item_id: int = typer.Argument(...),
+    item: str = typer.Argument(...),
     url: str = typer.Option(DEFAULT_URL, "--url"),
     output: str = typer.Option("json", "--output", "-o",
         help="Output format: json (default) or table."),
     jq_filter: str | None = typer.Option(None, "--jq", help="jq filter expression"),
 ) -> None:
     """Print the full serialization of an item by id."""
-    emit_or_die(rpc_or_die(new_rpc(url), "items.get", {"id": item_id}),
+    emit_or_die(rpc_or_die(new_rpc(url), "items.get", {"id": item}),
                  output=output, jq_filter=jq_filter)
 
 
@@ -103,16 +103,16 @@ def items_add_by_url(
     epilog="Examples:\n\n    zotron items trash 12345",
 )
 def items_trash(
-    item_id: int = typer.Argument(...),
+    item: str = typer.Argument(...),
     url: str = typer.Option(DEFAULT_URL, "--url"),
     dry_run_flag: bool = typer.Option(False, "--dry-run",
         help="Print intended RPC call as JSON; do not execute."),
 ) -> None:
     """Move item to trash (reversible via `restore`)."""
     if dry_run_flag:
-        dry_run("items.trash", {"id": item_id})
+        dry_run("items.trash", {"id": item})
     typer.echo(json.dumps(rpc_or_die(new_rpc(url), "items.trash",
-                                      {"id": item_id})))
+                                      {"id": item})))
 
 
 @items_app.command(
@@ -120,16 +120,16 @@ def items_trash(
     epilog="Examples:\n\n    zotron items restore 12345",
 )
 def items_restore(
-    item_id: int = typer.Argument(...),
+    item: str = typer.Argument(...),
     url: str = typer.Option(DEFAULT_URL, "--url"),
     dry_run_flag: bool = typer.Option(False, "--dry-run",
         help="Print intended RPC call as JSON; do not execute."),
 ) -> None:
     """Restore a trashed item."""
     if dry_run_flag:
-        dry_run("items.restore", {"id": item_id})
+        dry_run("items.restore", {"id": item})
     typer.echo(json.dumps(rpc_or_die(new_rpc(url), "items.restore",
-                                      {"id": item_id})))
+                                      {"id": item})))
 
 
 @items_app.command(
@@ -150,7 +150,7 @@ def items_find_duplicates(
     epilog="Examples:\n\n    zotron items merge-duplicates 12345 12346 12347",
 )
 def items_merge_duplicates(
-    ids: list[int] = typer.Argument(..., help="First id is the master; rest merged into it."),
+    ids: list[str] = typer.Argument(..., help="First id is the master; rest merged into it."),
     url: str = typer.Option(DEFAULT_URL, "--url"),
     dry_run_flag: bool = typer.Option(False, "--dry-run",
         help="Print intended RPC call as JSON; do not execute."),

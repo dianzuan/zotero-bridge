@@ -128,7 +128,7 @@ def collections_delete(
 )
 def collections_add_items(
     collection: str = typer.Argument(..., help="Target collection name or ID."),
-    item_ids: list[int] = typer.Argument(..., help="Item IDs to add."),
+    item_ids: list[str] = typer.Argument(..., help="Item IDs to add."),
     url: str = typer.Option(DEFAULT_URL, "--url"),
     dry_run_flag: bool = typer.Option(False, "--dry-run",
         help="Print intended RPC call as JSON; do not execute."),
@@ -150,7 +150,7 @@ def collections_add_items(
 )
 def collections_remove_items(
     collection: str = typer.Argument(..., help="Collection name or ID."),
-    item_ids: list[int] = typer.Argument(..., help="Item IDs to remove from collection."),
+    item_ids: list[str] = typer.Argument(..., help="Item IDs to remove from collection."),
     url: str = typer.Option(DEFAULT_URL, "--url"),
     dry_run_flag: bool = typer.Option(False, "--dry-run",
         help="Print intended RPC call as JSON; do not execute."),

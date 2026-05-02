@@ -13,7 +13,7 @@ export_app = typer.Typer(
 )
 
 
-def _export_fmt(method: str, ids: list[int], url: str) -> None:
+def _export_fmt(method: str, ids: list[str], url: str) -> None:
     rpc = new_rpc(url)
     resp = rpc_or_die(rpc, method, {"ids": ids})
     if isinstance(resp, dict) and "content" in resp:
@@ -27,7 +27,7 @@ def _export_fmt(method: str, ids: list[int], url: str) -> None:
     epilog="Examples:\n\n    zotron export bibtex 12345 12346",
 )
 def export_bibtex(
-    ids: list[int] = typer.Argument(...),
+    ids: list[str] = typer.Argument(...),
     url: str = typer.Option(DEFAULT_URL, "--url"),
 ) -> None:
     """Print BibTeX for the given item ids."""
@@ -39,7 +39,7 @@ def export_bibtex(
     epilog="Examples:\n\n    zotron export ris 12345",
 )
 def export_ris(
-    ids: list[int] = typer.Argument(...),
+    ids: list[str] = typer.Argument(...),
     url: str = typer.Option(DEFAULT_URL, "--url"),
 ) -> None:
     """Print RIS for the given item ids."""
@@ -51,7 +51,7 @@ def export_ris(
     epilog="Examples:\n\n    zotron export csl-json 12345",
 )
 def export_csl_json(
-    ids: list[int] = typer.Argument(...),
+    ids: list[str] = typer.Argument(...),
     url: str = typer.Option(DEFAULT_URL, "--url"),
 ) -> None:
     """Print CSL-JSON for the given item ids."""
@@ -63,7 +63,7 @@ def export_csl_json(
     epilog='Examples:\n\n    zotron export bibliography 12345 --style apa\n\n    zotron export bibliography 12345 --html',
 )
 def export_bibliography(
-    ids: list[int] = typer.Argument(...),
+    ids: list[str] = typer.Argument(...),
     style: str = typer.Option(
         "http://www.zotero.org/styles/gb-t-7714-2015-numeric", "--style",
         help="CSL style URL or short name (e.g. apa, chicago-author-date).",
