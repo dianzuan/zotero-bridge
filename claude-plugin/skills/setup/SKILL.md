@@ -1,14 +1,15 @@
 ---
-description: Set up Zotron — verify the XPI plugin is reachable on localhost:23119; if missing, download the release XPI to Downloads and guide Zotero's native install dialog.
+name: setup
+description: Set up Zotron — verify the XPI plugin is reachable on localhost:23119; if missing, download the release XPI to Downloads and guide Zotero's native install dialog. Use when the user asks to install, configure, bootstrap, or verify Zotron.
 ---
 
-# /zotron:setup — Zotron bootstrap
+# Zotron Setup
 
-Run this when the user has just installed the `zotron` Claude Code plugin and needs to get the Zotero side wired up.
+Run this when the user has just installed the Zotron plugin or when `zotron ping` cannot reach Zotero.
 
 ## Goal
 
-End state: `system.ping` over `localhost:23119/zotron/rpc` succeeds and the user can ask Claude to do real Zotero work.
+End state: `zotron ping` succeeds and the agent can call `zotron`, `zotron-rag`, and `zotron-ocr`.
 
 ## Distribution model
 
@@ -28,13 +29,12 @@ Tools -> Plugins -> Zotron -> gear icon -> Check for Updates -> restart Zotero
 command -v uv >/dev/null || echo "MISSING_UV"
 ```
 
-2. Run the setup script.
+2. Resolve the plugin root and run the setup script.
 
 ```bash
-bash "$CLAUDE_PLUGIN_ROOT/scripts/setup-zotron.sh"
+PLUGIN_ROOT="${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
+bash "$PLUGIN_ROOT/scripts/setup-zotron.sh"
 ```
-
-For Codex, use `CODEX_PLUGIN_ROOT` instead of `CLAUDE_PLUGIN_ROOT`.
 
 3. If the bridge is live at the expected version, stop.
 
@@ -62,8 +62,8 @@ zotron system version
 ## Mirror Controls
 
 ```bash
-ZOTRON_XPI_URLS='https://mirror.example/zotron.xpi https://github.com/dianzuan/zotron/releases/download/v0.1.1/zotron.xpi' \
-  bash "$CLAUDE_PLUGIN_ROOT/scripts/setup-zotron.sh"
+ZOTRON_XPI_URLS='https://mirror.example/zotron.xpi https://github.com/dianzuan/zotron/releases/download/v0.1.5/zotron.xpi' \
+  bash "$PLUGIN_ROOT/scripts/setup-zotron.sh"
 ```
 
 Use `ZOTRON_XPI_PATH=/path/to/zotron.xpi` only when the file has already been downloaded through another channel.
