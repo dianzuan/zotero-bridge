@@ -9,10 +9,9 @@ import { validateAnnotationParams } from "../utils/annotation";
 export const annotationsHandlers = {
   async list(params: { parentId: number | string }) {
     const item = await requireItem(params.parentId);
-    const annIDs = item.getAnnotations ? item.getAnnotations() : [];
-    if (annIDs.length === 0) return [];
-    const anns = await Zotero.Items.getAsync(annIDs);
-    return anns.map((a: any) => {
+    const anns = item.getAnnotations ? item.getAnnotations() : [];
+    if (anns.length === 0) return [];
+    return (anns as any[]).map((a: any) => {
       const data = serializeItem(a);
       data.annotationType = a.annotationType;
       data.annotationText = a.annotationText || "";
