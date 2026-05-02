@@ -51,7 +51,7 @@ zotron system list-methods
 
 ```bash
 zotron items list --limit 50 --jq '.[].title'
-zotron collections tree --jq '.[] | {id, name}'
+zotron collections tree --jq '.[] | {key, name}'
 ```
 
 **`rpc` escape hatch** for edge cases without a typed subcommand:
