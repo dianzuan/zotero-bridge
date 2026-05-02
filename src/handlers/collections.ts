@@ -3,7 +3,7 @@
 // zotron/src/handlers/collections.ts
 import { registerHandlers } from "../server";
 import { serializeCollection, serializeItem } from "../utils/serialize";
-import { requireCollection } from "../utils/guards";
+import { requireCollection, resolveItems } from "../utils/guards";
 
 function buildTree(collections: Zotero.Collection[]): any[] {
   const map = new Map<number, any>();
@@ -81,7 +81,7 @@ export const collectionsHandlers = {
   async delete(params: { id: number }) {
     const col = await requireCollection(params.id);
     await col.eraseTx();
-    return { deleted: true, id: params.id };
+    return { ok: true, key: col.key };
   },
 
   async move(params: { id: number; newParentId: number | null }) {
@@ -91,20 +91,24 @@ export const collectionsHandlers = {
     return serializeCollection(col);
   },
 
-  async addItems(params: { id: number; itemIds: number[] }) {
+  async addItems(params: { id: number | string; itemIds: (number | string)[] }) {
     const col = await requireCollection(params.id);
+    const items = await resolveItems(params.itemIds);
+    const numericIds = items.map(i => i.id);
     await Zotero.DB.executeTransaction(async () => {
-      await col.addItems(params.itemIds);
+      await col.addItems(numericIds);
     });
-    return { added: params.itemIds.length, collectionId: params.id };
+    return { ok: true, key: col.key, count: numericIds.length };
   },
 
-  async removeItems(params: { id: number; itemIds: number[] }) {
+  async removeItems(params: { id: number | string; itemIds: (number | string)[] }) {
     const col = await requireCollection(params.id);
+    const items = await resolveItems(params.itemIds);
+    const numericIds = items.map(i => i.id);
     await Zotero.DB.executeTransaction(async () => {
-      await col.removeItems(params.itemIds);
+      await col.removeItems(numericIds);
     });
-    return { collectionId: params.id, removed: params.itemIds.length };
+    return { ok: true, key: col.key, count: numericIds.length };
   },
 
   async stats(params: { id: number }) {
@@ -112,7 +116,7 @@ export const collectionsHandlers = {
     const items = col.getChildItems(false);
     const subcols = col.getChildCollections(false);
     return {
-      id: params.id,
+      key: col.key,
       name: col.name,
       items: items.filter((i: any) => !i.isNote() && !i.isAttachment()).length,
       attachments: items.filter((i: any) => i.isAttachment()).length,

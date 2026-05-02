@@ -26,15 +26,15 @@ def _make_processor() -> tuple[OCRProcessor, MagicMock, MagicMock]:
 
 
 def test_find_collection_id():
-    """Flat tree — finds the collection by name and returns its id."""
+    """Flat tree — finds the collection by name and returns its key."""
     processor, rpc, _ = _make_processor()
     rpc.call.return_value = [
-        {"id": 1, "name": "Alpha", "children": []},
-        {"id": 2, "name": "Beta", "children": []},
-        {"id": 3, "name": "Gamma", "children": []},
+        {"key": "COL1", "name": "Alpha", "children": []},
+        {"key": "COL2", "name": "Beta", "children": []},
+        {"key": "COL3", "name": "Gamma", "children": []},
     ]
     result = processor.find_collection_id("Beta")
-    assert result == 2
+    assert result == "COL2"
     rpc.call.assert_called_once_with("collections.tree")
 
 
@@ -43,22 +43,22 @@ def test_find_collection_id_nested():
     processor, rpc, _ = _make_processor()
     rpc.call.return_value = [
         {
-            "id": 10,
+            "key": "COL10",
             "name": "Parent",
             "children": [
-                {"id": 11, "name": "Child A", "children": []},
+                {"key": "COL11", "name": "Child A", "children": []},
                 {
-                    "id": 12,
+                    "key": "COL12",
                     "name": "Child B",
                     "children": [
-                        {"id": 13, "name": "Grandchild", "children": []}
+                        {"key": "COL13", "name": "Grandchild", "children": []}
                     ],
                 },
             ],
         }
     ]
     result = processor.find_collection_id("Grandchild")
-    assert result == 13
+    assert result == "COL13"
 
 
 def test_find_collection_not_found():

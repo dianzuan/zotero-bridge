@@ -43,7 +43,7 @@ def cmd_status(args: argparse.Namespace, cfg: dict) -> None:
     raw = rpc.call("collections.getItems", {"id": collection_id, "limit": 500}) or {}
     items = raw.get("items", []) if isinstance(raw, dict) else raw
     total = len(items)
-    has_ocr = sum(1 for item in items if _has_ocr_result(rpc, item.get("id")))
+    has_ocr = sum(1 for item in items if _has_ocr_result(rpc, item.get("key")))
     status_result: dict[str, Any] = {
         "collection": args.collection,
         "total": total,
@@ -119,9 +119,8 @@ def main() -> None:
     status_p.add_argument(
         "--collection", required=True, help="Collection name"
     )
-    run_p = sub.add_parser("run", help="Process a collection and attach OCR artifacts")
-    _add_process_flags(run_p, collection=True, item=False)
-    run_p.set_defaults(item=None)
+    run_p = sub.add_parser("run", help="Process a collection or single item and attach OCR artifacts")
+    _add_process_flags(run_p, collection=True, item=True)
 
     rebuild_p = sub.add_parser("rebuild", help="Force rebuild artifacts for one item")
     _add_process_flags(rebuild_p, collection=False, item=True)

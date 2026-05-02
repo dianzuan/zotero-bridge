@@ -24,6 +24,17 @@ def test_run_subcommand_processes_collection(capsys):
     assert json.loads(capsys.readouterr().out)["ok"] == 1
 
 
+def test_run_subcommand_processes_single_item(capsys):
+    proc = MagicMock()
+    proc.rpc.call.return_value = {"title": "Paper"}
+    proc.process_item.return_value = "ok"
+    with patch("zotron.ocr.cli.load_config", return_value={}), patch("zotron.ocr.cli._make_processor", return_value=proc):
+        _run_main(["run", "--item", "5443"])
+
+    proc.process_item.assert_called_once_with(5443, "Paper", force=False)
+    assert json.loads(capsys.readouterr().out) == {"item_id": 5443, "status": "ok"}
+
+
 def test_rebuild_subcommand_forces_single_item(capsys):
     proc = MagicMock()
     proc.rpc.call.return_value = {"title": "Paper"}
@@ -48,8 +59,8 @@ def test_legacy_collection_flags_still_process_collection(capsys):
 def test_status_does_not_require_ocr_api_key(capsys):
     rpc = MagicMock()
     rpc.call.side_effect = [
-        [{"id": 3, "name": "测试集", "children": []}],
-        {"items": [{"id": 10}, {"id": 11}]},
+        [{"key": "COL3", "name": "测试集", "children": []}],
+        {"items": [{"key": "ITEM10"}, {"key": "ITEM11"}]},
         [],
         [{"tags": ["ocr"]}],
         [{"title": "ITEM.zotron-chunks.jsonl"}],
@@ -72,8 +83,8 @@ def test_status_does_not_require_ocr_api_key(capsys):
 def test_status_counts_missing_when_no_note_or_artifact(capsys):
     rpc = MagicMock()
     rpc.call.side_effect = [
-        [{"id": 3, "name": "测试集", "children": []}],
-        {"items": [{"id": 10}]},
+        [{"key": "COL3", "name": "测试集", "children": []}],
+        {"items": [{"key": "ITEM10"}]},
         [{"tags": []}],
         [],
     ]

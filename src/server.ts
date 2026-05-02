@@ -14,6 +14,32 @@ const INVALID_REQUEST = -32600;
 const METHOD_NOT_FOUND = -32601;
 const INTERNAL_ERROR = -32603;
 
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
+function findClosestMethod(input: string): string | null {
+  const methods = Object.keys(handlers);
+  let best = "";
+  let bestDist = Infinity;
+  for (const m of methods) {
+    const d = levenshtein(input.toLowerCase(), m.toLowerCase());
+    if (d < bestDist) { bestDist = d; best = m; }
+  }
+  return bestDist <= 5 ? best : null;
+}
+
 function jsonRpcError(id: any, code: number, message: string) {
   return JSON.stringify({ jsonrpc: "2.0", error: { code, message }, id });
 }
@@ -26,7 +52,13 @@ async function processRequest(req: any): Promise<string> {
     return jsonRpcError(req?.id ?? null, INVALID_REQUEST, "Invalid JSON-RPC 2.0 request");
   }
   const handler = handlers[req.method];
-  if (!handler) return jsonRpcError(req.id, METHOD_NOT_FOUND, `Method not found: ${req.method}`);
+  if (!handler) {
+    const suggestion = findClosestMethod(req.method);
+    const msg = suggestion
+      ? `Method not found: ${req.method}. Did you mean ${suggestion}?`
+      : `Method not found: ${req.method}`;
+    return jsonRpcError(req.id, METHOD_NOT_FOUND, msg);
+  }
   try {
     const result = await handler(req.params || {});
     return jsonRpcResult(req.id, result);

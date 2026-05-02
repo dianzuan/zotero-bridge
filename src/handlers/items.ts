@@ -5,7 +5,7 @@ import { registerHandlers } from "../server";
 import { splitChineseName, CJK_REGEX } from "../utils/chinese-name";
 import { serializeItem } from "../utils/serialize";
 import { extractYear } from "../utils/citation-key";
-import { requireItem } from "../utils/guards";
+import { requireItem, resolveItems } from "../utils/guards";
 
 /** Auto-split a creator's CJK name when firstName is empty and lastName
  *  contains 2+ CJK characters. Callers that pre-split (firstName set) pass
@@ -23,7 +23,7 @@ function autoSplitCreator(c: { firstName: string; lastName: string; creatorType:
 }
 
 export const itemsHandlers = {
-  async get(params: { id: number }) {
+  async get(params: { id: number | string }) {
     const item = await requireItem(params.id);
     return serializeItem(item);
   },
@@ -71,7 +71,7 @@ export const itemsHandlers = {
   },
 
   async update(params: {
-    id: number;
+    id: number | string;
     fields?: Record<string, string>;
     creators?: Array<{ firstName: string; lastName: string; creatorType: string }>;
     tags?: string[];
@@ -113,24 +113,24 @@ export const itemsHandlers = {
     return serializeItem(item);
   },
 
-  async delete(params: { id: number }) {
+  async delete(params: { id: number | string }) {
     const item = await requireItem(params.id);
     await item.eraseTx();
-    return { deleted: true, id: params.id };
+    return { ok: true, key: item.key };
   },
 
-  async trash(params: { id: number }) {
+  async trash(params: { id: number | string }) {
     const item = await requireItem(params.id);
     item.deleted = true;
     await item.saveTx();
-    return { trashed: true, id: params.id };
+    return { ok: true, key: item.key };
   },
 
-  async restore(params: { id: number }) {
+  async restore(params: { id: number | string }) {
     const item = await requireItem(params.id);
     item.deleted = false;
     await item.saveTx();
-    return { restored: true, id: params.id };
+    return { ok: true, key: item.key };
   },
 
   async getTrash(params: { limit?: number; offset?: number }) {
@@ -143,19 +143,19 @@ export const itemsHandlers = {
     return { items: items.map(serializeItem), total: trashedIDs.length, limit, offset };
   },
 
-  async batchTrash(params: { ids: number[] }) {
-    const items = await Zotero.Items.getAsync(params.ids);
-    const ids: number[] = [];
+  async batchTrash(params: { ids: (number | string)[] }) {
+    const items = await resolveItems(params.ids);
+    const keys: string[] = [];
     for (const item of items) {
       item.deleted = true;
     }
     await Zotero.DB.executeTransaction(async () => {
       for (const item of items) {
         await item.save();
-        ids.push(item.id);
+        keys.push(item.key);
       }
     });
-    return { trashed: ids.length, ids };
+    return { ok: true, keys, count: keys.length };
   },
 
   async getRecent(params: { limit?: number; offset?: number; type?: "added" | "modified" }) {
@@ -262,11 +262,11 @@ export const itemsHandlers = {
     return { groups, totalGroups: groups.length };
   },
 
-  async mergeDuplicates(params: { ids: number[] }) {
+  async mergeDuplicates(params: { ids: (number | string)[] }) {
     if (params.ids.length < 2) {
       throw { code: -32602, message: "Need at least 2 item IDs to merge" };
     }
-    const items = await Zotero.Items.getAsync(params.ids);
+    const items = await resolveItems(params.ids);
     const master = items[0];
     for (let i = 1; i < items.length; i++) {
       await Zotero.Items.merge(master, [items[i]]);
@@ -274,7 +274,7 @@ export const itemsHandlers = {
     return serializeItem(master);
   },
 
-  async getRelated(params: { id: number }) {
+  async getRelated(params: { id: number | string }) {
     const item = await requireItem(params.id);
     const relatedKeys = item.relatedItems;
     const related = [];
@@ -285,35 +285,33 @@ export const itemsHandlers = {
     return related;
   },
 
-  async addRelated(params: { id: number; relatedId: number }) {
-    const item = await Zotero.Items.getAsync(params.id);
-    const related = await Zotero.Items.getAsync(params.relatedId);
-    if (!item || !related) throw { code: -32602, message: "Item not found" };
+  async addRelated(params: { id: number | string; relatedId: number | string }) {
+    const item = await requireItem(params.id);
+    const related = await requireItem(params.relatedId);
     item.addRelatedItem(related);
     await item.saveTx();
     related.addRelatedItem(item);
     await related.saveTx();
-    return { added: true, id: params.id };
+    return { ok: true, key: item.key };
   },
 
-  async removeRelated(params: { id: number; relatedId: number }) {
-    const item = await Zotero.Items.getAsync(params.id);
-    const related = await Zotero.Items.getAsync(params.relatedId);
-    if (!item || !related) throw { code: -32602, message: "Item not found" };
+  async removeRelated(params: { id: number | string; relatedId: number | string }) {
+    const item = await requireItem(params.id);
+    const related = await requireItem(params.relatedId);
     item.removeRelatedItem(related);
     await item.saveTx();
     related.removeRelatedItem(item);
     await related.saveTx();
-    return { removed: true, id: params.id };
+    return { ok: true, key: item.key };
   },
 
-  async citationKey(params: { id: number }) {
+  async citationKey(params: { id: number | string }) {
     const item = await requireItem(params.id);
     // Try Better BibTeX citation key if available
     const extra = item.getField("extra") as string;
     const match = extra?.match(/Citation Key:\s*(\S+)/i);
     const key = match ? match[1] : `${item.getCreators()[0]?.lastName || "Unknown"}${extractYear(item)}`;
-    return { id: params.id, citationKey: key };
+    return { key: item.key, citationKey: key };
   },
 };
 

@@ -11,6 +11,7 @@ from typing import Any, cast
 from zotron.collections import find_by_name as _find_collection_by_name
 from zotron.config import load_config
 from zotron.rpc import ZoteroRPC
+from zotron._paginate import paginate
 from zotron.artifacts import (
     CHUNKS_SUFFIX,
     EMBEDDING_SUFFIX,
@@ -23,6 +24,7 @@ from zotron.artifacts import (
 from zotron.rag.chunker import chunk_text
 from zotron.rag.embedder import create_embedder
 from zotron.rag.search import VectorStore, results_to_hits
+from zotron.paths import linux_path, zotero_path
 
 
 # ---------------------------------------------------------------------------
@@ -199,13 +201,12 @@ def cmd_index(args: argparse.Namespace, cfg: dict[str, Any]) -> None:
 
     embedder = _build_embedder(cfg)
 
-    raw = rpc.call("collections.getItems", {"id": collection_id, "limit": 500}) or {}
-    items = raw.get("items", []) if isinstance(raw, dict) else raw
+    items = paginate(rpc, "collections.getItems", {"id": collection_id}, page_size=500)
     indexed = 0
     skipped = 0
 
     for item in items:
-        item_id = str(item.get("id") or item.get("itemID", ""))
+        item_id = str(item.get("key", ""))
         if not item_id:
             continue
 
@@ -297,6 +298,14 @@ def cmd_hits(args: argparse.Namespace, cfg: dict[str, Any]) -> None:
 
 
 def cmd_index_artifacts(args: argparse.Namespace, cfg: dict[str, Any]) -> None:
+    if getattr(args, "zotero", False):
+        _run_zotero_index_artifacts(args, cfg)
+        return
+
+    if not args.artifacts_dir:
+        print(json.dumps({"error": "--artifacts-dir is required unless --zotero is used"}), file=sys.stderr)
+        sys.exit(2)
+
     artifacts_dir = Path(args.artifacts_dir).expanduser()
     item_keys = _artifact_item_keys(artifacts_dir, args.item_key)
     if not item_keys:
@@ -331,6 +340,143 @@ def cmd_index_artifacts(args: argparse.Namespace, cfg: dict[str, Any]) -> None:
         "total_chunks": total_chunks,
         "embedding_path": written_paths[0] if len(written_paths) == 1 else None,
         "embedding_paths": written_paths,
+    }, ensure_ascii=False))
+
+
+def _item_key_from_info(item_id: int, item_info: dict[str, Any], chunks: list[dict[str, Any]]) -> str:
+    if chunks:
+        first_key = chunks[0].get("item_key")
+        if first_key:
+            return str(first_key)
+    return str(item_info.get("key") or item_info.get("itemKey") or item_id)
+
+
+def _attachment_path(rpc: ZoteroRPC, attachment: dict[str, Any]) -> Path:
+    path = attachment.get("path")
+    if not path:
+        result = rpc.call("attachments.getPath", {"id": attachment.get("key")})
+        path = result.get("path") if isinstance(result, dict) else result
+    if not path:
+        raise FileNotFoundError(f"Attachment path unavailable for {attachment.get('title')!r}")
+    return Path(linux_path(str(path))).expanduser()
+
+
+def _find_chunks_attachment(rpc: ZoteroRPC, item_id: int) -> dict[str, Any] | None:
+    attachments = cast(list[dict[str, Any]], rpc.call("attachments.list", {"parentId": item_id}) or [])
+    return _find_chunks_attachment_in(attachments)
+
+
+def _find_chunks_attachment_in(attachments: list[dict[str, Any]]) -> dict[str, Any] | None:
+    suffix = f".{CHUNKS_SUFFIX}"
+    return next(
+        (attachment for attachment in attachments if str(attachment.get("title") or "").endswith(suffix)),
+        None,
+    )
+
+
+def _zotero_item_ids_for_index(rpc: ZoteroRPC, args: argparse.Namespace) -> list[Any]:
+    if args.item is not None:
+        return [args.item]
+    if args.collection:
+        collection_id = _find_collection_id(rpc, args.collection)
+        if collection_id is None:
+            print(json.dumps({"error": f"Collection not found: {args.collection!r}"}), file=sys.stderr)
+            sys.exit(1)
+        items = paginate(rpc, "collections.getItems", {"id": collection_id}, page_size=500)
+        return [item["key"] for item in items if item.get("key") is not None]
+    print(json.dumps({"error": "--item or --collection is required when --zotero is used"}), file=sys.stderr)
+    sys.exit(2)
+
+
+def _index_zotero_item_artifact(
+    *,
+    rpc: ZoteroRPC,
+    item_id: int,
+    embedder: Any,
+    model: str,
+    output_dir: Path | None,
+) -> dict[str, Any]:
+    item_info = cast(dict[str, Any], rpc.call("items.get", {"id": item_id}) or {})
+    attachments = cast(list[dict[str, Any]], rpc.call("attachments.list", {"parentId": item_id}) or [])
+    chunks_attachment = _find_chunks_attachment_in(attachments)
+    if chunks_attachment is None:
+        return {"item_key": item_id, "status": "skipped", "reason": "missing chunks artifact"}
+
+    chunks_path = _attachment_path(rpc, chunks_attachment)
+    chunks = read_chunks_jsonl(chunks_path)
+    item_key = _item_key_from_info(item_id, item_info, chunks)
+    texts = [str(chunk.get("text", "")) for chunk in chunks]
+    vectors = embedder.embed_batch(texts) if texts else []
+
+    target_dir = output_dir or chunks_path.parent
+    embedding_path = Path(
+        write_embedding_npz(
+            target_dir,
+            item_key,
+            vectors=vectors,
+            metadata=metadata_for_chunks(chunks),
+            model=model,
+        ),
+    )
+    replaced = 0
+    for attachment in attachments:
+        if str(attachment.get("title") or "") != embedding_path.name:
+            continue
+        attachment_key = attachment.get("key")
+        if attachment_key is None:
+            continue
+        rpc.call("attachments.delete", {"id": attachment_key})
+        replaced += 1
+
+    attachment = rpc.call(
+        "attachments.add",
+        {
+            "parentId": item_id,
+            "path": zotero_path(embedding_path),
+            "title": embedding_path.name,
+        },
+    )
+
+    return {
+        "item_key": item_key,
+        "status": "ok",
+        "chunks": len(chunks),
+        "chunks_attachment_key": chunks_attachment.get("key"),
+        "embedding_title": embedding_path.name,
+        "embedding_path": str(embedding_path),
+        "embedding_attachment_key": attachment.get("key") if isinstance(attachment, dict) else None,
+        "replaced": replaced,
+    }
+
+
+def _run_zotero_index_artifacts(args: argparse.Namespace, cfg: dict[str, Any]) -> None:
+    rpc_url = cfg.get("zotero", {}).get("rpc_url", "http://localhost:23119/zotron/rpc")
+    rpc = ZoteroRPC(rpc_url)
+    item_ids = _zotero_item_ids_for_index(rpc, args)
+    output_dir = Path(args.artifacts_dir).expanduser() if args.artifacts_dir else None
+    if output_dir is not None:
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+    embedder = _build_embedder(cfg)
+    model = args.model or _embedding_model_from_cfg(cfg)
+    items = [
+        _index_zotero_item_artifact(
+            rpc=rpc,
+            item_id=item_id,
+            embedder=embedder,
+            model=model,
+            output_dir=output_dir,
+        )
+        for item_id in item_ids
+    ]
+    indexed = sum(1 for item in items if item["status"] == "ok")
+    print(json.dumps({
+        "status": "ok",
+        "indexed": indexed,
+        "attached": indexed,
+        "skipped": sum(1 for item in items if item["status"] == "skipped"),
+        "total_chunks": sum(int(item.get("chunks", 0)) for item in items),
+        "items": items,
     }, ensure_ascii=False))
 
 
@@ -472,8 +618,11 @@ def main() -> None:
         "index-artifacts",
         help="Embed Zotero-native OCR chunk artifacts into <item-key>.zotron-embed.npz",
     )
-    p_index_artifacts.add_argument("--artifacts-dir", required=True, help="Directory containing <item-key>.zotron-chunks.jsonl files")
+    p_index_artifacts.add_argument("--artifacts-dir", help="Directory containing <item-key>.zotron-chunks.jsonl files, or an output directory with --zotero")
     p_index_artifacts.add_argument("--item-key", help="Limit indexing to one Zotero item key")
+    p_index_artifacts.add_argument("--zotero", action="store_true", help="Read chunk artifacts from Zotero item attachments and attach embedding artifacts")
+    p_index_artifacts.add_argument("--item", help="Zotero item key to index when --zotero is used")
+    p_index_artifacts.add_argument("--collection", help="Zotero collection name to index when --zotero is used")
     p_index_artifacts.add_argument("--model", help="Embedding model label to store in the artifact")
 
     # search

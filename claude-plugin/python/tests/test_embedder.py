@@ -4,6 +4,7 @@ import httpx
 
 from zotron.rag.embedder import (
     BUILTIN_EMBEDDING_SPECS,
+    DoubaoMultimodalEmbedder,
     GeminiEmbedder,
     OllamaEmbedder,
     CloudEmbedder,
@@ -64,6 +65,12 @@ def test_create_new_embedding_providers_from_registry():
 
     gemini = create_embedder("gemini", "gemini-embedding-001", api_key="key123")
     assert isinstance(gemini, GeminiEmbedder)
+
+
+def test_create_doubao_embedder_uses_multimodal_adapter():
+    emb = create_embedder("doubao", "doubao-embedding-vision-251215", api_key="key123")
+    assert isinstance(emb, DoubaoMultimodalEmbedder)
+    assert emb.model == "doubao-embedding-vision-251215"
 
 
 def test_create_unknown_embedder():
@@ -240,6 +247,53 @@ def test_gemini_query_and_document_payloads_and_response_shape():
         "taskType": "RETRIEVAL_DOCUMENT",
         "content": {"parts": [{"text": "document text"}]},
     }
+
+
+def test_doubao_query_and_document_payloads_and_response_shapes(monkeypatch):
+    requests: list[dict] = []
+
+    class FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def post(self, url, *, json, headers, timeout):
+            requests.append(
+                {
+                    "url": url,
+                    "json": json,
+                    "headers": headers,
+                    "timeout": timeout,
+                }
+            )
+            request = httpx.Request("POST", url)
+            if len(requests) == 1:
+                return httpx.Response(200, json={"data": [{"embedding": [0.1, 0.2]}]}, request=request)
+            return httpx.Response(200, json={"data": {"embedding": [0.3, 0.4]}}, request=request)
+
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+    emb = DoubaoMultimodalEmbedder(
+        model="doubao-embedding-vision-251215",
+        api_key="key123",
+        api_url="https://example.test/embeddings",
+        concurrency=1,
+    )
+
+    assert emb.embed("query text") == [0.1, 0.2]
+    assert emb.embed_batch(["document text"]) == [[0.3, 0.4]]
+
+    assert requests[0]["url"] == "https://example.test/embeddings"
+    assert requests[0]["headers"] == {"Authorization": "Bearer key123"}
+    assert requests[0]["timeout"] == 60.0
+    assert requests[0]["json"]["model"] == "doubao-embedding-vision-251215"
+    assert requests[0]["json"]["input"] == [{"type": "text", "text": "query text"}]
+    assert "检索相关文章" in requests[0]["json"]["instructions"]
+
+    assert requests[1]["json"]["model"] == "doubao-embedding-vision-251215"
+    assert requests[1]["json"]["input"] == [{"type": "text", "text": "document text"}]
+    assert "Compress the text" in requests[1]["json"]["instructions"]
 
 
 def json_request(request: httpx.Request) -> dict:

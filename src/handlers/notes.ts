@@ -2,26 +2,17 @@
 // Copyright (C) 2026 diamondrill
 // zotron/src/handlers/notes.ts
 import { registerHandlers } from "../server";
-import { validateAnnotationParams } from "../utils/annotation";
 import { serializeItem } from "../utils/serialize";
 import { requireItem } from "../utils/guards";
 
-/**
- * If `item` is already a PDF attachment, return it. Otherwise look at
- * its child attachments and return the first PDF, or throw -32602 if
- * none exist. Used by both `getAnnotations` and `createAnnotation`.
- */
-async function resolvePDFAttachment(item: Zotero.Item): Promise<Zotero.Item> {
-  if (item.isAttachment()) return item;
-  const attIDs = item.getAttachments();
-  const atts = await Zotero.Items.getAsync(attIDs);
-  const pdf = atts.find((a: any) => a.attachmentContentType === "application/pdf");
-  if (!pdf) throw { code: -32602, message: "No PDF attachment found" };
-  return pdf;
-}
-
 export const notesHandlers = {
-  async get(params: { parentId: number }) {
+  async get(params: { id: number | string }) {
+    const note = await requireItem(params.id);
+    if (!note.isNote()) throw { code: -32602, message: `Item ${params.id} is not a note` };
+    return serializeItem(note);
+  },
+
+  async list(params: { parentId: number | string }) {
     const parent = await requireItem(params.parentId);
     const noteIDs = parent.getNotes();
     if (noteIDs.length === 0) return [];
@@ -29,22 +20,22 @@ export const notesHandlers = {
     return notes.map(serializeItem);
   },
 
-  async create(params: { parentId: number; content: string; tags?: string[] }) {
+  async create(params: { parentId: number | string; content: string; tags?: string[] }) {
     const parent = await requireItem(params.parentId);
     const note = new Zotero.Item("note");
     note.libraryID = parent.libraryID;
-    note.parentID = params.parentId;
+    note.parentID = parent.id;
     note.setNote(params.content);
     if (params.tags) {
       for (const tag of params.tags) note.addTag(tag);
     }
     await note.saveTx();
-    return { id: note.id, key: note.key };
+    return { key: note.key };
   },
 
-  async update(params: { id: number; content: string }) {
-    const note = await Zotero.Items.getAsync(params.id);
-    if (!note || !note.isNote()) throw { code: -32602, message: `Note ${params.id} not found` };
+  async update(params: { id: number | string; content: string }) {
+    const note = await requireItem(params.id);
+    if (!note.isNote()) throw { code: -32602, message: `Note ${params.id} not found` };
     note.setNote(params.content);
     await note.saveTx();
     return serializeItem(note);
@@ -68,47 +59,6 @@ export const notesHandlers = {
     return result;
   },
 
-  async getAnnotations(params: { parentId: number }) {
-    const parent = await requireItem(params.parentId);
-    const pdfItem = await resolvePDFAttachment(parent);
-    const annotationIDs: number[] = (pdfItem as any).getAnnotations(false, true);
-    const annotations = await Zotero.Items.getAsync(annotationIDs);
-    return annotations.map((a: any) => ({
-      id: a.id,
-      type: a.annotationType,
-      text: a.annotationText,
-      comment: a.annotationComment,
-      color: a.annotationColor,
-      pageLabel: a.annotationPageLabel,
-      position: a.annotationPosition,
-      dateAdded: a.dateAdded,
-      tags: a.getTags().map((t: any) => t.tag),
-    }));
-  },
-
-  async createAnnotation(params: {
-    parentId: number;
-    type: string;
-    text?: string;
-    comment?: string;
-    color?: string;
-    position: any;
-  }) {
-    const v = validateAnnotationParams(params as any);
-    if (!v.ok) throw { code: -32602, message: v.message };
-    const parent = await requireItem(params.parentId);
-    const pdfItem = await resolvePDFAttachment(parent);
-    const annotation = new Zotero.Item("annotation");
-    annotation.libraryID = pdfItem.libraryID;
-    annotation.parentID = pdfItem.id;
-    (annotation as any).annotationType = params.type;
-    if (params.text) annotation.annotationText = params.text;
-    if (params.comment) annotation.annotationComment = params.comment;
-    annotation.annotationColor = params.color || "#ffd400";
-    annotation.annotationPosition = JSON.stringify(params.position);
-    await annotation.saveTx();
-    return { id: annotation.id, key: annotation.key };
-  },
 };
 
 registerHandlers("notes", notesHandlers);

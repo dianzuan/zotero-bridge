@@ -181,7 +181,7 @@ class ArtifactBackedVectorStore(VectorStore):
         if model:
             self.model = model
 
-        item_id = str(metadata.get("item_id") or metadata.get("id") or item_key)
+        item_id = str(metadata.get("item_id") or metadata.get("key") or item_key)
         title = str(metadata.get("title") or "")
         authors = metadata.get("authors") or metadata.get("creators") or []
         item_provenance = {

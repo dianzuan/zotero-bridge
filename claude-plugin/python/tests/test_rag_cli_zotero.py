@@ -6,7 +6,10 @@ import json
 import sys
 from unittest.mock import MagicMock, patch
 
-from zotron.rag.cli import main as rag_main
+import numpy as np
+
+from zotron.artifacts import read_embedding_npz, write_chunks_jsonl
+from zotron.rag.cli import _zotero_item_ids_for_index, main as rag_main
 
 
 def test_rag_hits_zotero_backend_calls_search_hits_rpc(capsys):
@@ -87,3 +90,97 @@ def test_rag_hits_zotero_backend_requires_collection(capsys):
 
     rpc_cls.assert_not_called()
     assert "--collection is required" in capsys.readouterr().err
+
+
+def test_rag_index_artifacts_zotero_item_embeds_attached_chunks(tmp_path, capsys):
+    chunks = [
+        {
+            "item_key": "ITEM1",
+            "title": "Paper",
+            "text": "first Zotero span",
+            "chunk_id": "ITEM1:c1",
+            "block_ids": ["b1"],
+        },
+        {
+            "item_key": "ITEM1",
+            "title": "Paper",
+            "text": "second Zotero span",
+            "chunk_id": "ITEM1:c2",
+            "block_ids": ["b2"],
+        },
+    ]
+    chunks_path = write_chunks_jsonl(tmp_path, "ITEM1", chunks)
+
+    rpc = MagicMock()
+    rpc.call.side_effect = [
+        {"key": "ITEM1", "title": "Paper"},
+        [
+            {"key": "ATT9001", "title": "ITEM1.zotron-chunks.jsonl", "path": str(chunks_path)},
+            {"key": "ATT9002", "title": "ITEM1.zotron-embed.npz", "path": str(tmp_path / "old.npz")},
+        ],
+        {"ok": True, "key": "ATT9002"},
+        {"ok": True, "key": "ATT9100", "title": "ITEM1.zotron-embed.npz"},
+    ]
+    mock_embedder = MagicMock()
+    mock_embedder.embed_batch.return_value = [[1.0, 0.0], [0.0, 1.0]]
+
+    with patch("zotron.rag.cli.load_config", return_value={"zotero": {"rpc_url": "http://rpc"}}), \
+         patch("zotron.rag.cli.ZoteroRPC", return_value=rpc), \
+         patch("zotron.rag.cli._build_embedder", return_value=mock_embedder), \
+         patch("zotron.rag.cli.zotero_path", side_effect=lambda path: str(path)), \
+         patch.object(sys, "argv", [
+             "zotron-rag",
+             "index-artifacts",
+             "--zotero",
+             "--item",
+             "ITEM1",
+             "--model",
+             "test-embedding",
+         ]):
+        rag_main()
+
+    mock_embedder.embed_batch.assert_called_once_with(["first Zotero span", "second Zotero span"])
+    delete_call = rpc.call.call_args_list[-2]
+    assert delete_call.args == ("attachments.delete", {"id": "ATT9002"})
+
+    add_call = rpc.call.call_args_list[-1]
+    assert add_call.args[0] == "attachments.add"
+    add_params = add_call.args[1]
+    assert add_params["parentId"] == "ITEM1"
+    assert add_params["title"] == "ITEM1.zotron-embed.npz"
+
+    vectors, metadata, model = read_embedding_npz(add_params["path"])
+    np.testing.assert_allclose(vectors, np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32))
+    assert [row["chunk_id"] for row in metadata] == ["ITEM1:c1", "ITEM1:c2"]
+    assert model == "test-embedding"
+
+    out = json.loads(capsys.readouterr().out)
+    assert out["status"] == "ok"
+    assert out["indexed"] == 1
+    assert out["attached"] == 1
+    assert out["total_chunks"] == 2
+    assert out["items"][0]["item_key"] == "ITEM1"
+    assert out["items"][0]["embedding_title"] == "ITEM1.zotron-embed.npz"
+    assert out["items"][0]["replaced"] == 1
+
+
+def test_zotero_collection_index_uses_pagination():
+    rpc = MagicMock()
+    keys = [f"K{i}" for i in range(1, 502)]
+    rpc.call.side_effect = [
+        {"items": [{"key": k} for k in keys[:500]], "total": 501},
+        {"items": [{"key": keys[500]}], "total": 501},
+    ]
+    args = MagicMock(item=None, collection="test")
+
+    with patch("zotron.rag.cli._find_collection_id", return_value=69):
+        assert _zotero_item_ids_for_index(rpc, args) == keys
+
+    assert rpc.call.call_args_list[0].args == (
+        "collections.getItems",
+        {"id": 69, "offset": 0, "limit": 500},
+    )
+    assert rpc.call.call_args_list[1].args == (
+        "collections.getItems",
+        {"id": 69, "offset": 500, "limit": 500},
+    )

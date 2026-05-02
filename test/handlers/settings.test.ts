@@ -81,6 +81,38 @@ describe("settings handler", () => {
     });
   });
 
+
+  describe("API key propagation", () => {
+    it("round-trips configured OCR and embedding API keys without Zotero logging", async () => {
+      const store = new Map<string, any>();
+      const zoteroLog = sinon.stub();
+      installZotero({
+        log: zoteroLog,
+        Prefs: {
+          get: sinon.stub().callsFake((key: string) => store.get(key)),
+          set: sinon.stub().callsFake((key: string, value: any) => { store.set(key, value); }),
+        },
+      });
+      delete require.cache[require.resolve("../../src/handlers/settings")];
+      const { settingsHandlers } = await import("../../src/handlers/settings");
+
+      await settingsHandlers.setAll({
+        "ocr.apiKey": "test-ocr-secret",
+        "embedding.apiKey": "test-embedding-secret",
+      });
+
+      expect(await settingsHandlers.get({ key: "ocr.apiKey" })).to.deep.equal({ "ocr.apiKey": "test-ocr-secret" });
+      expect(await settingsHandlers.get({ key: "embedding.apiKey" })).to.deep.equal({
+        "embedding.apiKey": "test-embedding-secret",
+      });
+
+      const all = await settingsHandlers.getAll();
+      expect(all["ocr.apiKey"]).to.equal("test-ocr-secret");
+      expect(all["embedding.apiKey"]).to.equal("test-embedding-secret");
+      expect(zoteroLog.called).to.equal(false);
+    });
+  });
+
   describe("setAll Record echo (fix #39)", () => {
     it("returns {updated: Record<key,val>} echoing the applied pairs", async () => {
       installZotero({

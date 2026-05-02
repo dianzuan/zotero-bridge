@@ -3,26 +3,62 @@
 import { rpcError, INVALID_PARAMS } from "./errors";
 
 /**
- * Fetch an Item by ID and throw a structured -32602 error if it doesn't
- * exist. Replaces the `getAsync(id) → null check → throw` pattern that
- * appeared at ~19 sites across the handlers.
- *
- * Standard error message format: `Item ${id} not found` (matches the
- * dominant convention; pre-guard outliers like `Item not found: ${id}`
- * are normalized to this form when adopted).
+ * Fetch an Item by numeric ID or 8-char alphanumeric key.
+ * Accepts both `42` and `"YR5BUGHG"` so callers that have an item_key
+ * from RAG hits or search results can pass it directly.
  */
-export async function requireItem(id: number): Promise<Zotero.Item> {
-  const item = await Zotero.Items.getAsync(id);
-  if (!item) throw rpcError(INVALID_PARAMS, `Item ${id} not found`);
-  return item as Zotero.Item;
+export async function requireItem(idOrKey: number | string): Promise<Zotero.Item> {
+  let item: Zotero.Item | null = null;
+
+  if (typeof idOrKey === "number") {
+    item = await Zotero.Items.getAsync(idOrKey);
+  } else {
+    const parsed = Number(idOrKey);
+    if (Number.isFinite(parsed) && String(parsed) === idOrKey) {
+      item = await Zotero.Items.getAsync(parsed);
+    } else {
+      const libraryID = Zotero.Libraries.userLibraryID;
+      item = (await Zotero.Items.getByLibraryAndKeyAsync(libraryID, idOrKey)) as Zotero.Item | null;
+    }
+  }
+
+  if (!item) throw rpcError(INVALID_PARAMS, `Item ${idOrKey} not found`);
+  return item;
 }
 
 /**
- * Fetch a Collection by ID and throw a structured -32602 error if it
- * doesn't exist. Same pattern as `requireItem` but for collections.
+ * Fetch a Collection by numeric ID or 8-char alphanumeric key.
+ * Accepts both `42` and `"COL12345"` so callers that have a collection_key
+ * from RAG hits or search results can pass it directly.
  */
-export async function requireCollection(id: number): Promise<Zotero.Collection> {
-  const col = await Zotero.Collections.getAsync(id);
-  if (!col) throw rpcError(INVALID_PARAMS, `Collection ${id} not found`);
-  return col as Zotero.Collection;
+export async function requireCollection(idOrKey: number | string): Promise<Zotero.Collection> {
+  let col: Zotero.Collection | null = null;
+
+  if (typeof idOrKey === "number") {
+    col = await Zotero.Collections.getAsync(idOrKey);
+  } else {
+    const parsed = Number(idOrKey);
+    if (Number.isFinite(parsed) && String(parsed) === idOrKey) {
+      col = await Zotero.Collections.getAsync(parsed);
+    } else {
+      const libraryID = Zotero.Libraries.userLibraryID;
+      col = (await Zotero.Collections.getByLibraryAndKeyAsync(libraryID, idOrKey)) as Zotero.Collection | null;
+    }
+  }
+
+  if (!col) throw rpcError(INVALID_PARAMS, `Collection ${idOrKey} not found`);
+  return col;
+}
+
+/**
+ * Resolve a mixed array of numeric IDs and 8-char alphanumeric keys to Items.
+ * Delegates to `requireItem` for each entry, so callers can freely pass
+ * `[42, "YR5BUGHG", 7]` and get back `Zotero.Item[]`.
+ */
+export async function resolveItems(idsOrKeys: (number | string)[]): Promise<Zotero.Item[]> {
+  const items: Zotero.Item[] = [];
+  for (const idOrKey of idsOrKeys) {
+    items.push(await requireItem(idOrKey));
+  }
+  return items;
 }

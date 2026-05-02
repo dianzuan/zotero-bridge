@@ -4,18 +4,18 @@ Search and browse the user's Zotero library — find papers by keywords, read PD
 
 ## Choosing the right search
 
-| User wants | Method | When to use |
-|-----------|--------|-------------|
-| Find by title/author/year | `search.quick` | Most common, start here |
-| Search inside PDF text | `search.fulltext` | User asks "which paper mentions X" |
-| Multiple filters | `search.advanced` | Author + date range + journal |
-| Papers with a tag | `search.byTag` | User mentions a specific tag |
-| Browse by folder | `collections.tree` → `collections.getItems` | User says "what's in my X collection" |
+| User wants | Command | When to use |
+|-----------|---------|-------------|
+| Find by title/author/year | `zotron search quick` | Most common, start here |
+| Search inside PDF text | `zotron search fulltext` | User asks "which paper mentions X" |
+| Multiple filters | `zotron search advanced` | Author + date range + journal |
+| Papers with a tag | `zotron search by-tag` | User mentions a specific tag |
+| Browse by folder | `zotron collections tree` | User says "what's in my X collection" |
 
 ## Quick search (default)
 
 ```bash
-zotron rpc search.quick '{"query":"数字经济 就业","limit":10}'
+zotron search quick "数字经济 就业" --limit 10
 ```
 
 Returns: item ID, title, authors, date, journal, tags. Use the ID for follow-up operations.
@@ -25,46 +25,89 @@ Returns: item ID, title, authors, date, journal, tags. Use the ID for follow-up 
 When the user asks "which of my papers talks about X" — this searches inside PDF content, not just metadata.
 
 ```bash
-zotron rpc search.fulltext '{"query":"regression discontinuity","limit":10}'
+zotron search fulltext "regression discontinuity" --limit 10
 ```
 
 ## Advanced multi-field search
 
-Combine conditions with field/operator/value:
+Combine conditions with `--condition "field operator value"`:
 
 ```bash
-zotron rpc search.advanced '{"conditions":[{"field":"creator","op":"contains","value":"张三"},{"field":"date","op":"isAfter","value":"2020-01-01"}]}'
+zotron search advanced --condition "creator contains 张三" --condition "date isAfter 2020"
 ```
 
 Common fields: `title`, `creator`, `date`, `publicationTitle` (journal), `DOI`, `tag`.
 Operators: `is`, `isNot`, `contains`, `doesNotContain`, `isAfter`, `isBefore`.
 
+Use `--operator or` to match any condition (default is `and`).
+
+## Search by tag
+
+```bash
+zotron search by-tag "核心期刊" --limit 20
+```
+
+## Saved searches
+
+```bash
+# List saved searches
+zotron search saved-searches
+
+# Create a saved search
+zotron search create-saved "张三近5年" --condition "creator contains 张三" --condition "date isAfter 2020"
+
+# Delete
+zotron search delete-saved <search-id>
+```
+
 ## Read paper content
 
-After finding a paper, get its full text or details:
+After finding a paper, use its ID or 8-char key directly:
 
 ```bash
 # Full metadata
-zotron rpc items.get '{"id":ITEM_ID}'
+zotron items get 12345
+zotron items get YR5BUGHG
 
-# PDF full text (for AI reading)
-zotron rpc attachments.getFulltext '{"id":ITEM_ID}'
+# PDF full text — auto-finds the PDF attachment
+zotron items fulltext 12345
+
+# List attachments
+zotron attachments list --parent 12345
+
+# Get attachment file path
+zotron attachments path <attachment-id>
+
+# Notes (includes OCR markdown when OCR'd — filter for "ocr" tag)
+zotron notes list --parent YR5BUGHG
+
+# Read a specific note
+zotron notes get <note-id>
 
 # PDF annotations/highlights
-zotron rpc notes.getAnnotations '{"parentId":ITEM_ID}'
-
-# Notes attached to paper
-zotron rpc notes.get '{"parentId":ITEM_ID}'
+zotron annotations list --parent YR5BUGHG
 ```
+
+For searching relevant passages across a collection (not full text), see [rag.md](rag.md).
 
 ## Browse collections
 
 ```bash
 # See all collections as tree
-zotron rpc collections.tree
+zotron collections tree
 
 # List items in a collection
-zotron rpc collections.getItems '{"id":COLLECTION_ID,"limit":20}'
+zotron rpc collections.getItems '{"id":"COLLECTION_KEY","limit":20}'
+```
+
+## Browse recent items
+
+```bash
+# Recently added
+zotron items recent --limit 10
+
+# Recently modified
+zotron items recent --limit 10 --type modified
 ```
 
 ## Present results to user

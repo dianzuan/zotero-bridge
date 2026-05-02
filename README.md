@@ -6,7 +6,7 @@
 
 **Typed JSON-RPC 2.0 bridge for Zotero 8**
 
-*79 internal API methods over HTTP — for AI agents, CLIs, and external tools.*
+*81 internal API methods over HTTP — for AI agents, CLIs, and external tools.*
 
 [![License: AGPL-3.0-or-later](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 [![CI](https://github.com/dianzuan/zotron/actions/workflows/ci.yml/badge.svg)](https://github.com/dianzuan/zotron/actions/workflows/ci.yml)
@@ -27,16 +27,16 @@ Zotron is a [bootstrap-extension](https://www.zotero.org/support/dev/zotero_7_fo
 ┌──────────────────────────┐         ┌─────────────────────────────┐
 │  Your tool / agent       │         │  Zotero (with this plugin)  │
 │                          │         │                             │
-│  curl /zotron/rpc        │ ──HTTP─▶│  79 typed RPC methods       │
+│  curl /zotron/rpc        │ ──HTTP─▶│  81 typed RPC methods       │
 │  cnki-plugin push        │         │  • items.* (19)             │
 │  research agent          │         │  • collections.* (12)       │
-│  Better-BibTeX consumer  │         │  • attachments.* (6)        │
-│  …                       │         │  • notes.* (6)              │
+│  Better-BibTeX consumer  │         │  • attachments.* (8)        │
+│  …                       │         │  • notes.* (5)              │
 │                          │         │  • search.* (8)             │
 │                          │         │  • tags.* (6)               │
 │                          │         │  • export.* (5)             │
 │                          │         │  • settings.* (4)           │
-│                          │         │  • system.* (11)            │
+│                          │         │  • system.* (13)            │
 └──────────────────────────┘         └─────────────────────────────┘
 ```
 
@@ -59,7 +59,7 @@ But the Local API is read-heavy and schema-locked to what `api.zotero.org` expos
 | Compatible with `pyzotero` / Web-API clients out-of-box | ✅ | ❌ (custom RPC) |
 | Requires the "Allow other apps" checkbox | yes | **no** (plugin endpoints bypass that gate) |
 
-Zotron is a typed JSON-RPC bridge to Zotero's **internal JS API** — the same surface plugins themselves use, with no Web-API schema translation layer between you and the data. 79 methods across 10 namespaces (CRUD + search + export + tags + sync + RAG + system).
+Zotron is a typed JSON-RPC bridge to Zotero's **internal JS API** — the same surface plugins themselves use, with no Web-API schema translation layer between you and the data. 81 methods across 10 namespaces (CRUD + search + export + tags + sync + RAG + system).
 
 Pre-Zotero-7 alternatives — vendoring a SQLite reader (fragile, write-locked, schema-versioned), `eval`-ing JS through the debug-server backdoor (insecure, unsupported), or hand-rolling a one-off bootstrap plugin per project (rebuilds the wheel) — are all bad. Zotron replaces them with one stable typed surface.
 
@@ -120,7 +120,7 @@ uv tool install "git+https://github.com/dianzuan/zotron.git#subdirectory=claude-
 
 zotron ping
 zotron search quick "transformer attention" --limit 10
-zotron rpc items.get '{"id":12345}'    # escape hatch — covers all 79 methods
+zotron rpc items.get '{"id":"YR5BUGHG"}'  # escape hatch — covers all 81 methods
 ```
 
 `--jq` filters output (`gh api --jq` style); `--install-completion {bash|zsh|fish|powershell}` enables shell completion. SDK contract: [`docs/api-stability.md`](docs/api-stability.md).
@@ -145,21 +145,21 @@ curl -s -X POST http://localhost:23119/zotron/rpc \
 
 ## API surface
 
-79 methods across 10 namespaces. Full conventions: [docs/superpowers/specs/2026-04-23-xpi-api-prd.md](docs/superpowers/specs/2026-04-23-xpi-api-prd.md).
+81 methods across 10 namespaces. Full conventions: [docs/superpowers/specs/2026-04-23-xpi-api-prd.md](docs/superpowers/specs/2026-04-23-xpi-api-prd.md).
 
 | Namespace | Methods | What it does |
 |---|---|---|
 | `items.*` | 19 | CRUD on Zotero items, add by DOI/URL/ISBN/file, recent, trash, duplicates, related |
 | `collections.*` | 12 | List, create, rename, move, tree, items in collection |
-| `attachments.*` | 6 | List attachments, get fulltext (cache-file backed), get path, find PDF |
-| `notes.*` | 6 | Notes CRUD, annotations, search inside notes |
+| `attachments.*` | 8 | List, get single, fulltext (cache-file backed), add, add-by-URL, path, delete, find PDF |
+| `notes.*` | 5 | List by parent, get single, create, update, search |
 | `search.*` | 8 | Quick / fulltext / by-tag / by-identifier / advanced; saved searches |
 | `tags.*` | 6 | List, add, remove, rename, delete (cross-library) |
 | `export.*` | 5 | BibTeX / CSL-JSON / RIS / CSV / bibliography (CiteProc) |
 | `settings.*` | 4 | Plugin-side preferences (e.g. OCR provider, embedding model) |
-| `system.*` | 11 | Ping, version, libraries, switchLibrary, sync, currentCollection, **`system.reload`** (self-reload for dev) |
+| `system.*` | 13 | Ping, version, libraries, switchLibrary, sync, currentCollection, listMethods, describe, **`system.reload`** |
 
-**Conventions:** return shapes follow PRD §2 — `serializeItem(item)` for item-bearing returns, `{items, total, offset?, limit?}` envelope for pagination, lowercase `libraryId` on the wire. Errors are JSON-RPC 2.0 `{code, message}` (`-32602` caller error, `-32603` server error). `items.create` auto-splits Chinese full names — `欧阳修` → `{lastName: "欧阳", firstName: "修"}` — covering 70+ compound surnames.
+**Conventions:** Responses are **key-first** — item and collection objects use `key` (8-char alphanumeric, Zotero Web API v3 aligned) as the primary identifier; numeric `id` is not exposed. Items include a `version` field for sync. Mutation returns use `{ok: true, key}`. Pagination uses `{items, total, offset?, limit?}` envelope. Lowercase `libraryId` on the wire. All parameters that accept item/collection identifiers take either a numeric ID or a key string. Unknown method calls get fuzzy "Did you mean?" suggestions. Errors are JSON-RPC 2.0 `{code, message}` (`-32602` caller error, `-32603` server error). `items.create` auto-splits Chinese full names — `欧阳修` → `{lastName: "欧阳", firstName: "修"}` — covering 70+ compound surnames.
 
 ## RAG with citations
 
@@ -173,7 +173,7 @@ zotron-rag cite "how do transformers attend to long-range context?" --collection
 `--output json` is the AI-facing stable contract:
 
 ```json
-{ "itemKey": "ABC123", "attachmentId": 42, "title": "...", "authors": "...",
+{ "itemKey": "ABC123", "attachmentKey": "ATT42XY", "title": "...", "authors": "...",
   "section": "Section 3 — The Model", "chunkIndex": 7, "text": "...",
   "score": 0.87, "zoteroUri": "zotero://select/library/items/ABC123" }
 ```
@@ -194,7 +194,7 @@ Node 18+, Zotero 8 installed locally. (WSL recommended on Windows.)
 
 ```bash
 npm install
-npm test           # 99 mocha unit tests
+npm test           # 127 mocha unit tests
 npm run build      # type-check + bundle + emit XPI to .scaffold/build/
 ```
 

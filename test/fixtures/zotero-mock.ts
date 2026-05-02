@@ -44,6 +44,7 @@ export function fakeItem(data: {
   isAttachment?: boolean;
   isNote?: boolean;
   deleted?: boolean;
+  version?: number;
   parentItemID?: number | null;
   saveTx?: sinon.SinonStub;
   eraseTx?: sinon.SinonStub;
@@ -54,6 +55,7 @@ export function fakeItem(data: {
     itemType: data.itemType ?? "journalArticle",
     itemTypeID: 1,
     deleted: data.deleted ?? false,
+    version: data.version ?? 1,
     parentItemID: data.parentItemID ?? null,
     dateAdded: "2026-01-01T00:00:00Z",
     dateModified: "2026-01-01T00:00:00Z",
@@ -77,6 +79,7 @@ export function fakeCollection(data: {
   key?: string;
   name?: string;
   parentID?: number | null;
+  version?: number;
   childCollections?: any[];
   childItems?: any[];
 }): any {
@@ -85,6 +88,7 @@ export function fakeCollection(data: {
     key: data.key ?? `COL${data.id}`,
     name: data.name ?? `Collection ${data.id}`,
     parentID: data.parentID ?? null,
+    version: data.version ?? 1,
     libraryID: 1,
     getChildCollections: () => data.childCollections ?? [],
     getChildItems: () => data.childItems ?? [],

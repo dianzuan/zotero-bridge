@@ -38,7 +38,7 @@ describe("attachments handler", () => {
       expect(params).to.deep.equal([42]);
 
       expect(result).to.deep.equal({
-        id: 42,
+        key: "KEY42",
         content: "Hello world fulltext",
         indexedChars: 5000,
         totalChars: 5000,
@@ -59,7 +59,7 @@ describe("attachments handler", () => {
 
       const result = await attachmentsHandlers.getFulltext({ id: 99 });
       expect(result).to.deep.equal({
-        id: 99,
+        key: "KEY99",
         content: "",
         indexedChars: 0,
         totalChars: 0,
@@ -111,6 +111,7 @@ describe("attachments handler", () => {
         Items: { getAsync: getAsyncStub },
         ItemFields: { getItemTypeFields: () => [], getName: () => "" },
         CreatorTypes: { getName: () => "author" },
+        Collections: { get: () => null },
       });
 
       delete require.cache[require.resolve("../../src/handlers/attachments")];
@@ -119,7 +120,7 @@ describe("attachments handler", () => {
 
       expect(result).to.have.lengthOf(2);
       // serializeItem-shape — has the standard envelope keys
-      expect(result[0]).to.include.keys("id", "key", "itemType", "title", "dateAdded", "dateModified", "creators", "tags", "collections", "relations");
+      expect(result[0]).to.include.keys("key", "version", "itemType", "title", "dateAdded", "dateModified", "creators", "tags", "collections", "relations");
       expect(result[0]).to.include({
         contentType: "application/pdf",
         linkMode: 1,
@@ -148,6 +149,7 @@ describe("attachments handler", () => {
         Attachments: { addAvailableFile: sinon.stub().withArgs(parent).resolves(pdf) },
         ItemFields: { getItemTypeFields: () => [], getName: () => "" },
         CreatorTypes: { getName: () => "author" },
+        Collections: { get: () => null },
       });
 
       const { attachmentsHandlers } = await import("../../src/handlers/attachments");
@@ -155,7 +157,7 @@ describe("attachments handler", () => {
 
       expect(result).to.have.property("attachment");
       expect(result.attachment).to.not.be.null;
-      expect(result.attachment.id).to.equal(10);
+      expect(result.attachment.key).to.equal("P");
       // No `found` field — that was the discriminator we're dropping
       expect(result).to.not.have.property("found");
     });
@@ -174,6 +176,180 @@ describe("attachments handler", () => {
     });
   });
 
+  describe("add renames from parent metadata (Zotero rename template)", () => {
+    function setup({
+      renameBase,
+      renameResult = true,
+      sourceLeafName = "cnki-export-bnhuaoo2.pdf",
+    }: {
+      renameBase: string;
+      renameResult?: boolean | -1 | -2;
+      sourceLeafName?: string;
+    }) {
+      const parent: any = { id: 1, key: "PARENT" };
+      const renameAttachmentFile = sinon.stub().resolves(renameResult);
+      const importedAttachment: any = {
+        id: 99, key: "A99", itemType: "attachment", itemTypeID: 3,
+        dateAdded: "", dateModified: "", deleted: false,
+        getField: () => "Full Text PDF",
+        isNote: () => false, isAttachment: () => true,
+        getCreators: () => [], getTags: () => [], getCollections: () => [], getRelations: () => ({}),
+        renameAttachmentFile,
+      };
+      const fakeFile = { exists: () => true, leafName: sourceLeafName, path: "/tmp/" + sourceLeafName };
+      const importFromFile = sinon.stub().resolves(importedAttachment);
+      const getFileBaseNameFromItem = sinon.stub().returns(renameBase);
+
+      installZotero({
+        Items: { getAsync: sinon.stub().withArgs(1).resolves(parent) },
+        File: { pathToFile: sinon.stub().withArgs(fakeFile.path).returns(fakeFile) },
+        Attachments: { importFromFile, getFileBaseNameFromItem },
+        ItemFields: { getItemTypeFields: () => [], getName: () => "" },
+        CreatorTypes: { getName: () => "author" },
+        Collections: { get: () => null },
+        debug: sinon.stub(),
+      });
+
+      return { parent, fakeFile, importFromFile, getFileBaseNameFromItem, renameAttachmentFile };
+    }
+
+    it("default: renames attachment file using getFileBaseNameFromItem + extension from source", async () => {
+      const { parent, fakeFile, getFileBaseNameFromItem, renameAttachmentFile } = setup({
+        renameBase: "史丹 - 2020 - 数字经济条件下产业发展趋势的演变",
+      });
+
+      delete require.cache[require.resolve("../../src/handlers/attachments")];
+      const { attachmentsHandlers } = await import("../../src/handlers/attachments");
+
+      await attachmentsHandlers.add({ parentId: 1, path: fakeFile.path, title: "Full Text PDF" });
+
+      expect(getFileBaseNameFromItem.calledOnceWith(parent)).to.equal(true);
+      expect(renameAttachmentFile.calledOnce).to.equal(true);
+      const [newName, overwrite, unique] = renameAttachmentFile.firstCall.args;
+      expect(newName).to.equal("史丹 - 2020 - 数字经济条件下产业发展趋势的演变.pdf");
+      expect(overwrite).to.equal(false);
+      expect(unique).to.equal(true);
+    });
+
+    it("renameFromParent=false: skips rename entirely", async () => {
+      const { fakeFile, getFileBaseNameFromItem, renameAttachmentFile } = setup({
+        renameBase: "should-not-be-used",
+      });
+
+      delete require.cache[require.resolve("../../src/handlers/attachments")];
+      const { attachmentsHandlers } = await import("../../src/handlers/attachments");
+
+      await attachmentsHandlers.add({
+        parentId: 1, path: fakeFile.path, title: "Full Text PDF", renameFromParent: false,
+      });
+
+      expect(getFileBaseNameFromItem.called).to.equal(false);
+      expect(renameAttachmentFile.called).to.equal(false);
+    });
+
+    it("empty getFileBaseNameFromItem result: keeps original name (no rename call)", async () => {
+      const { fakeFile, getFileBaseNameFromItem, renameAttachmentFile } = setup({
+        renameBase: "",
+      });
+
+      delete require.cache[require.resolve("../../src/handlers/attachments")];
+      const { attachmentsHandlers } = await import("../../src/handlers/attachments");
+
+      await attachmentsHandlers.add({ parentId: 1, path: fakeFile.path });
+
+      expect(getFileBaseNameFromItem.calledOnce).to.equal(true);
+      expect(renameAttachmentFile.called).to.equal(false);
+    });
+
+    it("rename throwing is non-fatal: attachment is still returned", async () => {
+      const parent: any = { id: 1 };
+      const importedAttachment: any = {
+        id: 7, key: "A7", itemType: "attachment", itemTypeID: 3,
+        dateAdded: "", dateModified: "", deleted: false,
+        getField: () => "Full Text PDF",
+        isNote: () => false, isAttachment: () => true,
+        getCreators: () => [], getTags: () => [], getCollections: () => [], getRelations: () => ({}),
+        renameAttachmentFile: sinon.stub().rejects(new Error("disk full")),
+      };
+      const fakeFile = { exists: () => true, leafName: "x.pdf", path: "/tmp/x.pdf" };
+      installZotero({
+        Items: { getAsync: sinon.stub().withArgs(1).resolves(parent) },
+        File: { pathToFile: sinon.stub().withArgs(fakeFile.path).returns(fakeFile) },
+        Attachments: {
+          importFromFile: sinon.stub().resolves(importedAttachment),
+          getFileBaseNameFromItem: sinon.stub().returns("foo"),
+        },
+        ItemFields: { getItemTypeFields: () => [], getName: () => "" },
+        CreatorTypes: { getName: () => "author" },
+        Collections: { get: () => null },
+        debug: sinon.stub(),
+      });
+
+      delete require.cache[require.resolve("../../src/handlers/attachments")];
+      const { attachmentsHandlers } = await import("../../src/handlers/attachments");
+
+      const result = await attachmentsHandlers.add({ parentId: 1, path: fakeFile.path });
+      expect(result.key).to.equal("A7");
+    });
+
+    it("file with no extension: passes baseName through unchanged", async () => {
+      const { fakeFile, renameAttachmentFile } = setup({
+        renameBase: "Some Title",
+        sourceLeafName: "no_extension_file",
+      });
+
+      delete require.cache[require.resolve("../../src/handlers/attachments")];
+      const { attachmentsHandlers } = await import("../../src/handlers/attachments");
+
+      await attachmentsHandlers.add({ parentId: 1, path: fakeFile.path });
+
+      expect(renameAttachmentFile.firstCall.args[0]).to.equal("Some Title");
+    });
+  });
+
+  describe("get single attachment by id", () => {
+    it("returns a single attachment by id", async () => {
+      const att: any = {
+        id: 50, key: "ATT50", version: 1, itemType: "attachment", itemTypeID: 14,
+        dateAdded: "2026-01-01", dateModified: "2026-01-01", deleted: false,
+        getField: () => "", isNote: () => false, isAttachment: () => true,
+        attachmentContentType: "application/pdf", attachmentLinkMode: 0,
+        getFilePathAsync: sinon.stub().resolves("/path/to/file.pdf"),
+        getCreators: () => [], getTags: () => [], getCollections: () => [], getRelations: () => ({}),
+      };
+      installZotero({
+        Items: { getAsync: sinon.stub().withArgs(50).resolves(att) },
+        ItemFields: { getItemTypeFields: () => [], getName: () => "" },
+        CreatorTypes: { getName: () => "author" },
+        Collections: { get: () => null },
+      });
+      delete require.cache[require.resolve("../../src/handlers/attachments")];
+      const { attachmentsHandlers } = await import("../../src/handlers/attachments");
+      const result = await attachmentsHandlers.get({ id: 50 });
+      expect(result.key).to.equal("ATT50");
+      expect(result.contentType).to.equal("application/pdf");
+      expect(result.path).to.equal("/path/to/file.pdf");
+    });
+
+    it("rejects non-attachment items with -32602", async () => {
+      const article: any = {
+        id: 99, key: "ART99", isAttachment: () => false,
+      };
+      installZotero({
+        Items: { getAsync: sinon.stub().withArgs(99).resolves(article) },
+      });
+      delete require.cache[require.resolve("../../src/handlers/attachments")];
+      const { attachmentsHandlers } = await import("../../src/handlers/attachments");
+      try {
+        await attachmentsHandlers.get({ id: 99 });
+        expect.fail("should have thrown");
+      } catch (e: any) {
+        expect(e.code).to.equal(-32602);
+        expect(e.message).to.include("not an attachment");
+      }
+    });
+  });
+
   describe("delete artifact attachments", () => {
     it("erases attachment items and rejects non-attachments", async () => {
       const eraseTx = sinon.stub().resolves();
@@ -185,7 +361,7 @@ describe("attachments handler", () => {
       const { attachmentsHandlers } = await import("../../src/handlers/attachments");
       const result = await attachmentsHandlers.delete({ id: 44 });
 
-      expect(result).to.deep.equal({ ok: true, id: 44 });
+      expect(result).to.deep.equal({ ok: true, key: "KEY44" });
       expect(eraseTx.calledOnce).to.equal(true);
     });
   });

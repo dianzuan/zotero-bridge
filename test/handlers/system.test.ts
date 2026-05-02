@@ -112,15 +112,17 @@ describe("system handler", () => {
   });
 
   describe("currentCollection libraryID → libraryId (fix #41)", () => {
-    it("returns libraryId (camelCase) not libraryID when collection selected", async () => {
+    it("returns key (not id) and libraryId (camelCase) when collection selected", async () => {
       const col = { id: 1, key: "K", name: "Test", libraryID: 1 };
       installZotero({
         getActiveZoteroPane: () => ({ getSelectedCollection: () => col }),
       });
       const { systemHandlers } = await import("../../src/handlers/system");
       const result = await systemHandlers.currentCollection();
+      expect(result).to.have.property("key", "K");
       expect(result).to.have.property("libraryId", 1);
       expect(result).to.not.have.property("libraryID");
+      expect(result).to.not.have.property("id");
     });
   });
 });

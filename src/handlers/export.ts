@@ -3,9 +3,10 @@
 // zotron/src/handlers/export.ts
 import { registerHandlers } from "../server";
 import { wrapTranslatorError } from "../utils/translator-error";
+import { resolveItems } from "../utils/guards";
 
-async function exportItems(ids: number[], translatorID: string, format: string): Promise<string> {
-  const items = await Zotero.Items.getAsync(ids);
+async function exportItems(idsOrKeys: (number | string)[], translatorID: string, format: string): Promise<string> {
+  const items = await resolveItems(idsOrKeys);
   const translate = new Zotero.Translate.Export();
   translate.setItems(items);
   translate.setTranslator(translatorID);
@@ -27,27 +28,27 @@ const TRANSLATORS = {
 };
 
 export const exportHandlers = {
-  async bibtex(params: { ids: number[] }) {
+  async bibtex(params: { ids: (number | string)[] }) {
     const output = await exportItems(params.ids, TRANSLATORS.bibtex, "bibtex");
     return { format: "bibtex", content: output, count: params.ids.length };
   },
 
-  async cslJson(params: { ids: number[] }) {
+  async cslJson(params: { ids: (number | string)[] }) {
     const output = await exportItems(params.ids, TRANSLATORS.cslJson, "cslJson");
     return { format: "csl-json", content: JSON.parse(output), count: params.ids.length };
   },
 
-  async ris(params: { ids: number[] }) {
+  async ris(params: { ids: (number | string)[] }) {
     const output = await exportItems(params.ids, TRANSLATORS.ris, "ris");
     return { format: "ris", content: output, count: params.ids.length };
   },
 
-  async csv(params: { ids: number[]; fields?: string[] }) {
+  async csv(params: { ids: (number | string)[]; fields?: string[] }) {
     const output = await exportItems(params.ids, TRANSLATORS.csv, "csv");
     return { format: "csv", content: output, count: params.ids.length };
   },
 
-  async bibliography(params: { ids: number[]; style?: string }) {
+  async bibliography(params: { ids: (number | string)[]; style?: string }) {
     // We bypass Zotero.QuickCopy.getContentFromItems because in Zotero 8 its
     // internal path ended up calling style.getCiteProc on an object that
     // didn't have the method, surfacing as -32603. Going through

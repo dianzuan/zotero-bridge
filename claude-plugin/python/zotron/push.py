@@ -75,7 +75,7 @@ def resolve_collection(
     rpc: Any,
     name_or_id: str | int | None,
     library: str | int | None = None,
-) -> int:
+) -> int | str:
     """Resolve a user-supplied collection reference to a concrete Zotero ID.
 
     Priority:
@@ -102,16 +102,16 @@ def resolve_collection(
         # exact name
         exact = [c for c in collections if c.get("name") == target]
         if len(exact) == 1:
-            return int(exact[0]["id"])
+            return exact[0]["key"]
         # fuzzy: contains match on normalized strings
         needle = _normalize(target)
         fuzzy = [c for c in collections if needle in _normalize(c.get("name", ""))]
         if len(fuzzy) == 1:
-            return int(fuzzy[0]["id"])
+            return fuzzy[0]["key"]
         if len(fuzzy) > 1:
             raise CollectionAmbiguous(
                 f"Multiple collections match {target!r}",
-                candidates=[{"id": c["id"], "name": c["name"]} for c in fuzzy],
+                candidates=[{"key": c["key"], "name": c["name"]} for c in fuzzy],
             )
         raise CollectionNotFound(f"No collection named {target!r}")
     # name_or_id is None — try GUI-selected first, fall back to library root.
@@ -123,12 +123,12 @@ def resolve_collection(
         if "-32601" in str(e) or "Method not found" in str(e):
             return 0
         raise
-    if selected and selected.get("id") is not None:
-        return int(selected["id"])
+    if selected and selected.get("key") is not None:
+        return selected["key"]
     return 0
 
 
-def find_duplicate(rpc: Any, item_json: dict) -> int | None:
+def find_duplicate(rpc: Any, item_json: dict) -> int | str | None:
     """Look up an existing Zotero item ID that matches `item_json`.
 
     Priority (each step short-circuits on first hit):
@@ -153,18 +153,18 @@ def find_duplicate(rpc: Any, item_json: dict) -> int | None:
     if doi:
         hits = _items(rpc.call("search.byIdentifier", {"doi": doi}))
         if hits:
-            return int(hits[0]["id"])
+            return hits[0]["key"]
     issn = item_json.get("ISSN")
     if issn:
         hits = _items(rpc.call("search.byIdentifier", {"issn": issn}))
         if hits:
-            return int(hits[0]["id"])
+            return hits[0]["key"]
     title = item_json.get("title", "")
     if len(title) >= 10:
         hits = _items(rpc.call("search.quick", {"query": title, "limit": 5}))
         for h in hits:
             if h.get("title") == title:
-                return int(h["id"])
+                return h["key"]
     return None
 
 
@@ -271,7 +271,7 @@ def push_item(
         # into the user-requested target collection — otherwise the same
         # paper can't appear in a second collection via this CLI.
         # collections.addItems is idempotent on the XPI side.
-        if collection_id > 0:
+        if collection_id and collection_id != 0:
             rpc.call("collections.addItems", {
                 "id": collection_id,
                 "itemIds": [dup_id],
@@ -293,7 +293,7 @@ def push_item(
         )
 
     xpi_payload = _to_xpi_payload(item_json)
-    if collection_id > 0:
+    if collection_id and collection_id != 0:
         xpi_payload["collections"] = [collection_id]
 
     if dup_id is not None and on_duplicate == "update":
@@ -314,12 +314,12 @@ def push_item(
         status: Literal["updated", "created"] = "updated"
     else:
         created = rpc.call("items.create", xpi_payload)
-        if not created or "id" not in created:
+        if not created or "key" not in created:
             return PushResult(status="failed", error={
                 "code": "CREATE_FAILED",
                 "message": f"items.create returned unexpected shape: {created!r}",
             })
-        item_id = int(created["id"])
+        item_id = created["key"]
         status = "created"
 
     pdf_attached = False
@@ -334,7 +334,7 @@ def push_item(
 
     # For `update` path, collections weren't applied by items.update; add them now.
     # For `create`, they were embedded in the create payload so re-calling is unnecessary.
-    if status == "updated" and collection_id > 0:
+    if status == "updated" and collection_id and collection_id != 0:
         rpc.call("collections.addItems", {
             "id": collection_id,
             "itemIds": [item_id],

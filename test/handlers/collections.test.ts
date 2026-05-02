@@ -13,7 +13,14 @@ describe("collections handler", () => {
 
       installZotero({
         Libraries: { userLibraryID: 1 },
-        Collections: { getByLibrary: getByLibraryStub },
+        Collections: {
+          getByLibrary: getByLibraryStub,
+          get: sinon.stub().callsFake((id: number) => {
+            if (id === 1) return root;
+            if (id === 2) return child;
+            return null;
+          }),
+        },
       });
 
       delete require.cache[require.resolve("../../src/handlers/collections")];
@@ -27,9 +34,39 @@ describe("collections handler", () => {
       expect(args[1]).to.equal(true); // recursive — was false, must now be true
       // Tree should have one root with one child nested
       expect(result).to.have.lengthOf(1);
-      expect(result[0].id).to.equal(1);
+      expect(result[0].key).to.equal("COL1");
       expect(result[0].children).to.have.lengthOf(1);
-      expect(result[0].children[0].id).to.equal(2);
+      expect(result[0].children[0].key).to.equal("COL2");
+    });
+  });
+
+  describe("serializeCollection key-first (P2)", () => {
+    it("serializeCollection returns key-first, no id, parentKey, children as keys", async () => {
+      const parent = fakeCollection({ id: 1, key: "PARENT01", name: "Root" });
+      const child = fakeCollection({ id: 2, key: "CHILD001", name: "Sub", parentID: 1 });
+      parent.getChildCollections = () => [child];
+
+      installZotero({
+        Libraries: { userLibraryID: 1 },
+        Collections: {
+          getByLibrary: sinon.stub().returns([parent]),
+          get: sinon.stub().callsFake((id: number) => {
+            if (id === 1) return parent;
+            return null;
+          }),
+        },
+      });
+
+      delete require.cache[require.resolve("../../src/handlers/collections")];
+      const { collectionsHandlers } = await import("../../src/handlers/collections");
+      const result = await collectionsHandlers.list();
+
+      expect(result[0]).to.not.have.property("id");
+      expect(result[0].key).to.equal("PARENT01");
+      expect(result[0]).to.have.property("version");
+      expect(result[0].parentKey).to.equal(null);
+      expect(result[0]).to.not.have.property("parentID");
+      expect(result[0].childCollections).to.deep.equal(["CHILD001"]);
     });
   });
 
@@ -66,7 +103,7 @@ describe("collections handler", () => {
         })),
       };
       installZotero({
-        Collections: { getAsync: sinon.stub().resolves(collection) },
+        Collections: { getAsync: sinon.stub().resolves(collection), get: () => null },
         ItemFields: { getItemTypeFields: () => [], getName: () => "" },
         CreatorTypes: { getName: () => "author" },
       });
@@ -78,7 +115,7 @@ describe("collections handler", () => {
       expect(result).to.have.property("offset", 5);
       expect(result).to.have.property("total", 50);
       expect(result.items).to.have.lengthOf(10);
-      expect(result.items[0].id).to.equal(5); // offset
+      expect(result.items[0].key).to.equal("K5"); // offset
     });
 
     it("omits offset/limit when not provided", async () => {
@@ -87,7 +124,7 @@ describe("collections handler", () => {
         getChildItems: () => [],
       };
       installZotero({
-        Collections: { getAsync: sinon.stub().resolves(collection) },
+        Collections: { getAsync: sinon.stub().resolves(collection), get: () => null },
         ItemFields: { getItemTypeFields: () => [], getName: () => "" },
         CreatorTypes: { getName: () => "author" },
       });
@@ -108,16 +145,24 @@ describe("collections handler", () => {
         id: 1, key: "K", name: "Test",
         addItems: colAddItemsStub,
       };
+      const getAsyncStub = sinon.stub();
+      getAsyncStub.withArgs(10).resolves({ id: 10 });
+      getAsyncStub.withArgs(20).resolves({ id: 20 });
+      getAsyncStub.withArgs(30).resolves({ id: 30 });
       installZotero({
         Collections: { getAsync: sinon.stub().resolves(collection) },
+        Items: { getAsync: getAsyncStub },
         DB: { executeTransaction: executeTransactionStub },
       });
+      delete require.cache[require.resolve("../../src/utils/guards")];
+      delete require.cache[require.resolve("../../src/handlers/collections")];
       const { collectionsHandlers } = await import("../../src/handlers/collections");
       const result = await collectionsHandlers.addItems({ id: 1, itemIds: [10, 20, 30] });
       expect(executeTransactionStub.calledOnce).to.equal(true);
       expect(colAddItemsStub.calledOnceWith([10, 20, 30])).to.equal(true);
-      expect(result).to.have.property("added");
-      expect(result).to.have.property("collectionId", 1);
+      expect(result).to.have.property("count");
+      expect(result).to.have.property("key", "K");
+      expect(result.ok).to.equal(true);
     });
   });
 
@@ -129,16 +174,24 @@ describe("collections handler", () => {
         id: 1, key: "K", name: "Test",
         removeItems: colRemoveItemsStub,
       };
+      const getAsyncStub = sinon.stub();
+      getAsyncStub.withArgs(10).resolves({ id: 10 });
+      getAsyncStub.withArgs(20).resolves({ id: 20 });
+      getAsyncStub.withArgs(30).resolves({ id: 30 });
       installZotero({
         Collections: { getAsync: sinon.stub().resolves(collection) },
+        Items: { getAsync: getAsyncStub },
         DB: { executeTransaction: executeTransactionStub },
       });
+      delete require.cache[require.resolve("../../src/utils/guards")];
+      delete require.cache[require.resolve("../../src/handlers/collections")];
       const { collectionsHandlers } = await import("../../src/handlers/collections");
       const result = await collectionsHandlers.removeItems({ id: 1, itemIds: [10, 20, 30] });
       expect(executeTransactionStub.calledOnce).to.equal(true);
       expect(colRemoveItemsStub.calledOnceWith([10, 20, 30])).to.equal(true);
-      expect(result).to.have.property("removed");
-      expect(result).to.have.property("collectionId", 1);
+      expect(result).to.have.property("count");
+      expect(result).to.have.property("key", "K");
+      expect(result.ok).to.equal(true);
     });
   });
 });

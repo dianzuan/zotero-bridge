@@ -12,8 +12,8 @@ from __future__ import annotations
 from typing import Any
 
 
-def find_by_name(rpc: Any, name: str) -> int | None:
-    """Return the ID of the first collection named *name*, or None.
+def find_by_name(rpc: Any, name: str) -> int | str | None:
+    """Return the key of the first collection named *name*, or None.
 
     Traverses the full `collections.tree` recursively. Returns the first
     match found in depth-first order; does not disambiguate. Callers
@@ -23,10 +23,10 @@ def find_by_name(rpc: Any, name: str) -> int | None:
     return _search_tree(tree, name)
 
 
-def _search_tree(nodes: list[dict], name: str) -> int | None:
+def _search_tree(nodes: list[dict], name: str) -> int | str | None:
     for node in nodes:
         if node.get("name") == name:
-            return node.get("id")
+            return node.get("key")
         found = _search_tree(node.get("children") or [], name)
         if found is not None:
             return found

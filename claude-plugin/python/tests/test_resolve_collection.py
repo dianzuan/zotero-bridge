@@ -36,30 +36,30 @@ def test_str_numeric_converted():
 
 def test_exact_name_match():
     rpc = _rpc_with([
-        {"id": 10, "name": "Research"},
-        {"id": 11, "name": "研究生"},
+        {"key": "COL10", "name": "Research"},
+        {"key": "COL11", "name": "研究生"},
     ])
-    assert resolve_collection(rpc, "研究生") == 11
+    assert resolve_collection(rpc, "研究生") == "COL11"
 
 
 def test_fuzzy_case_insensitive():
     rpc = _rpc_with([
-        {"id": 10, "name": "Research Papers"},
+        {"key": "COL10", "name": "Research Papers"},
     ])
-    assert resolve_collection(rpc, "research papers") == 10
+    assert resolve_collection(rpc, "research papers") == "COL10"
 
 
 def test_fuzzy_whitespace_normalized():
     rpc = _rpc_with([
-        {"id": 10, "name": "My  Papers"},   # double space
+        {"key": "COL10", "name": "My  Papers"},   # double space
     ])
-    assert resolve_collection(rpc, "my papers") == 10
+    assert resolve_collection(rpc, "my papers") == "COL10"
 
 
 def test_ambiguous_raises():
     rpc = _rpc_with([
-        {"id": 10, "name": "Papers 2024"},
-        {"id": 11, "name": "Papers 2025"},
+        {"key": "COL10", "name": "Papers 2024"},
+        {"key": "COL11", "name": "Papers 2025"},
     ])
     with pytest.raises(CollectionAmbiguous) as excinfo:
         resolve_collection(rpc, "papers")
@@ -67,14 +67,14 @@ def test_ambiguous_raises():
 
 
 def test_not_found_raises():
-    rpc = _rpc_with([{"id": 10, "name": "Research"}])
+    rpc = _rpc_with([{"key": "COL10", "name": "Research"}])
     with pytest.raises(CollectionNotFound):
         resolve_collection(rpc, "nonexistent")
 
 
 def test_none_with_gui_selection():
-    rpc = _rpc_with([], selected={"id": 99, "name": "Current"})
-    assert resolve_collection(rpc, None) == 99
+    rpc = _rpc_with([], selected={"key": "COL99", "name": "Current"})
+    assert resolve_collection(rpc, None) == "COL99"
 
 
 def test_none_fallback_to_library_root():

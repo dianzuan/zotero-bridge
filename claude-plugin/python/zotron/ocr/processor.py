@@ -90,8 +90,8 @@ class OCRProcessor:
         for att in attachments:
             if att.get("contentType") != "application/pdf":
                 continue
-            att_id = att.get("id")
-            result = self.rpc.call("attachments.getPath", {"id": att_id})
+            att_key = att.get("key")
+            result = self.rpc.call("attachments.getPath", {"id": att_key})
             path_str = result.get("path") if isinstance(result, dict) else result
             if path_str:
                 return {**att, "path": self._to_linux_path(str(path_str))}
@@ -114,7 +114,6 @@ class OCRProcessor:
         return str(
             attachment.get("key")
             or attachment.get("itemKey")
-            or attachment.get("id")
             or f"item-{item_id}-pdf"
         )
 
@@ -305,14 +304,14 @@ class OCRProcessor:
         items = raw.get("items", []) if isinstance(raw, dict) else raw
 
         for item in items:
-            item_id = item.get("id")
+            item_key = item.get("key")
             title = item.get("title", "(untitled)")
-            status = self.process_item(item_id, title, force=force)
+            status = self.process_item(item_key, title, force=force)
             if status == "ok":
                 result["ok"] += 1
             elif status == "skipped":
                 result["skipped"] += 1
             else:
-                result["errors"].append(f"[{item_id}] {title}: {status}")
+                result["errors"].append(f"[{item_key}] {title}: {status}")
 
         return result

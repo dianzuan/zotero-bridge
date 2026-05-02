@@ -2,13 +2,13 @@ import { expect } from "chai";
 import sinon from "sinon";
 import { installZotero, resetZotero } from "../fixtures/zotero-mock";
 
-function makeItem() {
+function makeItem(attachmentIds = [4201]) {
   return {
     id: 42,
     key: "ITEM42",
     isNote: () => false,
     isAttachment: () => false,
-    getAttachments: () => [4201],
+    getAttachments: () => attachmentIds,
     getField: sinon.stub().callsFake((name: string) => ({
       title: "产业贸易中心性、贸易外向度与金融风险",
       date: "2022",
@@ -22,15 +22,27 @@ function makeItem() {
   };
 }
 
-function makeChunkAttachment() {
+function makeChunkAttachment(id = 4201) {
   return {
-    id: 4201,
+    id,
     key: "ATT42",
     isAttachment: () => true,
     getField: sinon.stub().callsFake((name: string) => (
       name === "title" ? "ITEM42.zotron-chunks.jsonl" : ""
     )),
     getFilePathAsync: sinon.stub().resolves("/tmp/ITEM42.zotron-chunks.jsonl"),
+  };
+}
+
+function makeEmbedAttachment() {
+  return {
+    id: 4202,
+    key: "EMB42",
+    isAttachment: () => true,
+    getField: sinon.stub().callsFake((name: string) => (
+      name === "title" ? "ITEM42.zotron-embed.npz" : ""
+    )),
+    getFilePathAsync: sinon.stub().resolves("/tmp/ITEM42.zotron-embed.npz"),
   };
 }
 
@@ -103,21 +115,24 @@ describe("rag handler", () => {
     expect(result.hits[0].score).to.be.greaterThan(0);
   });
 
-  it("searchCards is a compatibility alias that preserves hits", async () => {
-    const item = makeItem();
-    const attachment = makeChunkAttachment();
+  it("searchHits reports embedding artifact metadata while safely using lexical fallback", async () => {
+    const item = makeItem([4201, 4202]);
+    const chunkAttachment = makeChunkAttachment();
+    const embedAttachment = makeEmbedAttachment();
     installZotero({
       Items: {
         getAsync: sinon.stub().callsFake(async (id: number | number[]) => {
           if (Array.isArray(id)) return [item];
-          return id === 42 ? item : attachment;
+          if (id === 42) return item;
+          if (id === 4202) return embedAttachment;
+          return chunkAttachment;
         }),
       },
       File: {
         getContentsAsync: sinon.stub().resolves(JSON.stringify({
           item_key: "ITEM42",
           title: "Title",
-          text: "matched text",
+          text: "体育产业数字化机制检验",
           chunk_id: "ITEM42:c1",
         })),
       },
@@ -125,12 +140,23 @@ describe("rag handler", () => {
 
     delete require.cache[require.resolve("../../src/handlers/rag")];
     const { ragHandlers } = await import("../../src/handlers/rag");
-    const result = await ragHandlers.searchCards({
-      query: "matched",
+    const result = await ragHandlers.searchHits({
+      query: "体育产业数字化",
       itemIds: [42],
     });
 
     expect(result.total).to.equal(1);
-    expect(result.hits[0].text).to.equal("matched text");
+    expect(result.retrieval).to.deep.include({
+      mode: "lexical_fallback",
+      semantic_available: true,
+      semantic_used: false,
+      embedding_artifacts: 1,
+    });
+    expect(result.retrieval.reason).to.match(/NPZ parsing/);
+    expect(result.hits[0]).to.deep.include({
+      retrieval_mode: "lexical_fallback",
+      embedding_artifact_title: "ITEM42.zotron-embed.npz",
+    });
   });
+
 });

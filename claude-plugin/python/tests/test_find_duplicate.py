@@ -19,10 +19,10 @@ def _rpc_responses(**kwargs) -> MagicMock:
 
 def test_doi_hit():
     rpc = _rpc_responses(**{
-        "search.byIdentifier": [{"id": 500, "title": "X"}],
+        "search.byIdentifier": [{"key": "ITEM500", "title": "X"}],
     })
     item = {"DOI": "10.1234/foo", "title": "X"}
-    assert find_duplicate(rpc, item) == 500
+    assert find_duplicate(rpc, item) == "ITEM500"
 
 
 def test_doi_miss_issn_hit():
@@ -33,13 +33,13 @@ def test_doi_miss_issn_hit():
         if method == "search.byIdentifier" and params.get("doi"):
             return []
         if method == "search.byIdentifier" and params.get("issn"):
-            return [{"id": 42}]
+            return [{"key": "ITEM42"}]
         return None
 
     rpc = MagicMock()
     rpc.call.side_effect = call
     item = {"DOI": "10.x/nope", "ISSN": "1234-5678", "title": "X"}
-    assert find_duplicate(rpc, item) == 42
+    assert find_duplicate(rpc, item) == "ITEM42"
     # Verify we call with "issn" key, not "isbn"
     issn_call = [c for c in calls if c[1] and c[1].get("issn")]
     assert len(issn_call) == 1
@@ -51,15 +51,15 @@ def test_title_fallback_exact_match():
             return []
         if method == "search.quick":
             return [
-                {"id": 7, "title": "A very different title"},
-                {"id": 9, "title": "乡村振兴水平的时空演变分析"},
+                {"key": "ITEM7", "title": "A very different title"},
+                {"key": "ITEM9", "title": "乡村振兴水平的时空演变分析"},
             ]
         return None
 
     rpc = MagicMock()
     rpc.call.side_effect = call
     item = {"title": "乡村振兴水平的时空演变分析"}
-    assert find_duplicate(rpc, item) == 9
+    assert find_duplicate(rpc, item) == "ITEM9"
 
 
 def test_title_too_short_skips_fallback():

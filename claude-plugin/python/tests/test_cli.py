@@ -15,7 +15,7 @@ runner = CliRunner()
 def mock_rpc():
     """Patch ZoteroRPC at the module level. Returns the MagicMock instance
     so individual tests can configure .call responses."""
-    with patch("zotron.cli.ZoteroRPC") as mock_cls:
+    with patch("zotron._cli_base.ZoteroRPC") as mock_cls:
         instance = MagicMock()
         mock_cls.return_value = instance
         yield instance
@@ -38,8 +38,8 @@ def test_ping_unavailable(mock_rpc):
 
 def test_collections_list(mock_rpc):
     mock_rpc.call.return_value = [
-        {"id": 1, "name": "Research", "parentID": None},
-        {"id": 2, "name": "Teaching", "parentID": None},
+        {"key": "COL1", "name": "Research", "parentKey": None},
+        {"key": "COL2", "name": "Teaching", "parentKey": None},
     ]
     result = runner.invoke(app, ["collections", "list"])
     assert result.exit_code == 0
@@ -50,8 +50,8 @@ def test_collections_list(mock_rpc):
 
 def test_collections_tree(mock_rpc):
     mock_rpc.call.return_value = {
-        "id": 1, "name": "root",
-        "children": [{"id": 2, "name": "child", "children": []}],
+        "key": "COL1", "name": "root",
+        "children": [{"key": "COL2", "name": "child", "children": []}],
     }
     result = runner.invoke(app, ["collections", "tree"])
     assert result.exit_code == 0
@@ -60,20 +60,20 @@ def test_collections_tree(mock_rpc):
 
 
 def test_collections_rename_happy_path(mock_rpc):
-    """rename by existing name → resolve id → call rename RPC."""
+    """rename by existing name → resolve key → call rename RPC."""
     mock_rpc.call.side_effect = lambda method, params=None: {
-        "collections.list": [{"id": 42, "name": "typo-案例库"}],
-        "collections.rename": {"id": 42, "name": "案例库"},
+        "collections.list": [{"key": "COL42", "name": "typo-案例库"}],
+        "collections.rename": {"ok": True, "key": "COL42"},
     }.get(method)
     result = runner.invoke(app, ["collections", "rename",
                                  "typo-案例库", "案例库"])
     assert result.exit_code == 0, result.stdout
     data = json.loads(result.stdout)
-    assert data["name"] == "案例库"
+    assert data["ok"] is True
     rename_calls = [c for c in mock_rpc.call.call_args_list
                     if c.args[0] == "collections.rename"]
     assert len(rename_calls) == 1
-    assert rename_calls[0].args[1] == {"id": 42, "name": "案例库"}
+    assert rename_calls[0].args[1] == {"id": "COL42", "name": "案例库"}
 
 
 def test_collections_rename_not_found(mock_rpc):
@@ -87,9 +87,10 @@ def test_collections_rename_not_found(mock_rpc):
     assert "COLLECTION_NOT_FOUND" in (result.stdout + (result.stderr or ""))
 
 
+
 def test_collections_create(mock_rpc):
     mock_rpc.call.side_effect = lambda method, params=None: {
-        "collections.create": {"id": 100, "name": params["name"]},
+        "collections.create": {"ok": True, "key": "COL100", "name": params["name"]},
     }.get(method)
     result = runner.invoke(app, ["collections", "create", "NewColl"])
     assert result.exit_code == 0
@@ -98,24 +99,24 @@ def test_collections_create(mock_rpc):
 
 def test_collections_delete(mock_rpc):
     mock_rpc.call.side_effect = lambda method, params=None: {
-        "collections.list": [{"id": 200, "name": "Old"}],
-        "collections.delete": {"deleted": True, "id": 200},
+        "collections.list": [{"key": "COL200", "name": "Old"}],
+        "collections.delete": {"ok": True, "key": "COL200"},
     }.get(method)
     result = runner.invoke(app, ["collections", "delete", "Old"])
     assert result.exit_code == 0
-    assert json.loads(result.stdout)["deleted"] is True
+    assert json.loads(result.stdout)["ok"] is True
 
 
 def test_items_add_by_doi(mock_rpc):
     mock_rpc.call.side_effect = lambda method, params=None: {
-        "collections.list": [{"id": 7, "name": "Refs"}],
-        "items.addByDOI": [{"id": 999, "title": "Found by DOI"}],
+        "collections.list": [{"key": "COL7", "name": "Refs"}],
+        "items.addByDOI": [{"key": "ITEM999", "title": "Found by DOI"}],
     }.get(method)
     result = runner.invoke(app, ["items", "add-by-doi", "10.x/y",
                                  "--collection", "Refs"])
     assert result.exit_code == 0
     data = json.loads(result.stdout)
-    assert data[0]["id"] == 999
+    assert data[0]["key"] == "ITEM999"
 
 
 def test_items_find_duplicates(mock_rpc):
@@ -132,7 +133,7 @@ def test_items_merge_requires_two(mock_rpc):
 
 
 def test_search_quick(mock_rpc):
-    mock_rpc.call.return_value = {"items": [{"id": 1}], "total": 1}
+    mock_rpc.call.return_value = {"items": [{"key": "ITEM1"}], "total": 1}
     result = runner.invoke(app, ["search", "quick", "乡村振兴", "--limit", "10"])
     assert result.exit_code == 0
     assert json.loads(result.stdout)["total"] == 1
@@ -218,14 +219,14 @@ def test_push_from_file(mock_rpc, tmp_path):
         "search.byIdentifier": [],
         "search.quick": [],
         "collections.list": [],
-        "system.currentCollection": {"id": 0},
-        "items.create": {"id": 77, "key": "K", "version": 1},
+        "system.currentCollection": {"key": None},
+        "items.create": {"ok": True, "key": "K77", "version": 1},
     }.get(method)
     result = runner.invoke(app, ["push", str(item_file)])
     assert result.exit_code == 0
     data = json.loads(result.stdout)
     assert data["status"] == "created"
-    assert data["zotero_item_id"] == 77
+    assert data["zotero_item_id"] == "K77"
 
 
 def test_push_from_stdin(mock_rpc):
@@ -234,14 +235,14 @@ def test_push_from_stdin(mock_rpc):
         "search.byIdentifier": [],
         "search.quick": [],
         "collections.list": [],
-        "system.currentCollection": {"id": 0},
-        "items.create": {"id": 88},
+        "system.currentCollection": {"key": None},
+        "items.create": {"ok": True, "key": "K88"},
     }.get(method)
     result = runner.invoke(app, ["push", "-"], input=json.dumps(item))
     assert result.exit_code == 0
     data = json.loads(result.stdout)
     assert data["status"] == "created"
-    assert data["zotero_item_id"] == 88
+    assert data["zotero_item_id"] == "K88"
 
 
 def test_push_with_invalid_pdf(mock_rpc, tmp_path):
@@ -265,8 +266,8 @@ def test_push_collection_ambiguous(mock_rpc, tmp_path):
     item_file.write_text(json.dumps(item), encoding="utf-8")
     mock_rpc.call.side_effect = lambda method, params=None: {
         "collections.list": [
-            {"id": 1, "name": "Papers 2024"},
-            {"id": 2, "name": "Papers 2025"},
+            {"key": "COL1", "name": "Papers 2024"},
+            {"key": "COL2", "name": "Papers 2025"},
         ],
     }.get(method, [])
     result = runner.invoke(app, [
@@ -329,26 +330,26 @@ def test_find_pdfs_lists_items_missing_pdf(mock_rpc):
     """find-pdfs should enumerate items in collection, check attachments.list per item,
     and call attachments.findPDF for items lacking a PDF."""
     items_in_collection = [
-        {"id": 10, "title": "A"},   # no attachments → will be findPDF'd
-        {"id": 11, "title": "B"},   # has a PDF → skipped
+        {"key": "ITEM10", "title": "A"},   # no attachments → will be findPDF'd
+        {"key": "ITEM11", "title": "B"},   # has a PDF → skipped
     ]
     attachments_per_item = {
-        10: [],
-        11: [{"id": 20, "contentType": "application/pdf", "title": "Full Text PDF"}],
+        "ITEM10": [],
+        "ITEM11": [{"key": "ATT20", "contentType": "application/pdf", "title": "Full Text PDF"}],
     }
 
     def call(method, params=None):
         params = params or {}
         if method == "collections.list":
-            return [{"id": 1, "name": "Research"}]
+            return [{"key": "COL1", "name": "Research"}]
         if method == "collections.getItems":
             return {"items": items_in_collection, "total": len(items_in_collection)}
         if method == "attachments.list":
             return attachments_per_item.get(params["parentId"], [])
         if method == "attachments.findPDF":
-            if params["parentId"] == 10:
-                return {"found": True, "attachment": {"id": 99, "title": "Full Text PDF"}}
-            return {"found": False}
+            if params["parentId"] == "ITEM10":
+                return {"attachment": {"key": "ATT99", "title": "Full Text PDF"}}
+            return {"attachment": None}
         return None
 
     mock_rpc.call.side_effect = call
@@ -356,10 +357,10 @@ def test_find_pdfs_lists_items_missing_pdf(mock_rpc):
     assert result.exit_code == 0, result.stdout
     data = json.loads(result.stdout)
     assert data["scanned"] == 2
-    assert data["attempted"] == 1   # only item 10 needed a PDF
-    assert data["results"][0]["item_id"] == 10
+    assert data["attempted"] == 1   # only ITEM10 needed a PDF
+    assert data["results"][0]["item_key"] == "ITEM10"
     assert data["results"][0]["found"] is True
-    assert data["results"][0]["attachment_id"] == 99
+    assert data["results"][0]["attachment_key"] == "ATT99"
 
 
 def test_help_epilog_contains_examples():
@@ -384,13 +385,13 @@ def test_help_epilog_contains_examples():
 def test_collections_list_table_output(mock_rpc):
     """--output table renders headers + rows for list-of-dicts."""
     mock_rpc.call.return_value = [
-        {"id": 1, "name": "Research", "parentID": None},
-        {"id": 2, "name": "Teaching", "parentID": 1},
+        {"key": "COL1", "name": "Research", "parentKey": None},
+        {"key": "COL2", "name": "Teaching", "parentKey": "COL1"},
     ]
     result = runner.invoke(app, ["collections", "list", "--output", "table"])
     assert result.exit_code == 0
     # Headers
-    assert "id" in result.stdout and "name" in result.stdout
+    assert "key" in result.stdout and "name" in result.stdout
     # Rows
     assert "Research" in result.stdout and "Teaching" in result.stdout
     # Should NOT be JSON
@@ -399,18 +400,18 @@ def test_collections_list_table_output(mock_rpc):
 
 def test_collections_list_json_default(mock_rpc):
     """Default output remains json — no behavior change for existing callers."""
-    mock_rpc.call.return_value = [{"id": 1, "name": "Research"}]
+    mock_rpc.call.return_value = [{"key": "COL1", "name": "Research"}]
     result = runner.invoke(app, ["collections", "list"])
     assert result.exit_code == 0
     data = json.loads(result.stdout)
-    assert data == [{"id": 1, "name": "Research"}]
+    assert data == [{"key": "COL1", "name": "Research"}]
 
 
 def test_rpc_with_jq_filter(mock_rpc):
     """rpc --jq filters output server-side(ish), reducing tokens."""
     mock_rpc.call.return_value = [
-        {"id": 1, "title": "Paper A", "year": 2024},
-        {"id": 2, "title": "Paper B", "year": 2025},
+        {"key": "K1", "title": "Paper A", "year": 2024},
+        {"key": "K2", "title": "Paper B", "year": 2025},
     ]
     result = runner.invoke(
         app,
@@ -418,14 +419,14 @@ def test_rpc_with_jq_filter(mock_rpc):
     )
     assert result.exit_code == 0
     assert "Paper A" in result.stdout and "Paper B" in result.stdout
-    # `id` and `year` keys should not appear in filtered output
-    assert '"id"' not in result.stdout
+    # `key` and `year` keys should not appear in filtered output
+    assert '"key"' not in result.stdout
     assert '"year"' not in result.stdout
 
 
 def test_rpc_invalid_jq_emits_envelope(mock_rpc):
     """Invalid jq expression yields INVALID_JQ envelope."""
-    mock_rpc.call.return_value = [{"id": 1}]
+    mock_rpc.call.return_value = [{"key": "K1"}]
     result = runner.invoke(
         app,
         ["rpc", "items.list", "{}", "--jq", "[[[unbalanced"],
@@ -498,10 +499,10 @@ def test_push_dry_run_does_not_call_push_item(mock_rpc, tmp_path):
 
 def test_search_quick_invalid_jq_emits_envelope(mock_rpc):
     """A jq runtime error on a non-rpc command must surface via INVALID_JQ envelope."""
-    mock_rpc.call.return_value = {"items": [{"id": 1, "title": "x"}], "total": 1}
+    mock_rpc.call.return_value = {"items": [{"key": "K1", "title": "x"}], "total": 1}
     result = runner.invoke(
         app,
-        ["search", "quick", "test", "--jq", '[.[] | {id}]'],
+        ["search", "quick", "test", "--jq", '[.[] | {key}]'],
     )
     assert result.exit_code != 0
     data = json.loads(result.stdout)
@@ -510,7 +511,7 @@ def test_search_quick_invalid_jq_emits_envelope(mock_rpc):
 
 
 def test_collections_list_invalid_jq_emits_envelope(mock_rpc):
-    mock_rpc.call.return_value = [{"id": 1, "name": "x"}]
+    mock_rpc.call.return_value = [{"key": "COL1", "name": "x"}]
     result = runner.invoke(
         app,
         ["collections", "list", "--jq", "[[[broken"],
@@ -522,9 +523,9 @@ def test_collections_list_invalid_jq_emits_envelope(mock_rpc):
 
 def test_rpc_paginate_loops_until_short_page(mock_rpc):
     mock_rpc.call.side_effect = [
-        [{"id": 1}, {"id": 2}],      # full
-        [{"id": 3}, {"id": 4}],      # full
-        [{"id": 5}],                  # short — stop
+        [{"key": "K1"}, {"key": "K2"}],      # full
+        [{"key": "K3"}, {"key": "K4"}],      # full
+        [{"key": "K5"}],                      # short — stop
     ]
     result = runner.invoke(
         app,
@@ -532,7 +533,7 @@ def test_rpc_paginate_loops_until_short_page(mock_rpc):
     )
     assert result.exit_code == 0
     data = json.loads(result.stdout)
-    assert [r["id"] for r in data] == [1, 2, 3, 4, 5]
+    assert [r["key"] for r in data] == ["K1", "K2", "K3", "K4", "K5"]
     assert mock_rpc.call.call_count == 3
 
 

@@ -65,6 +65,57 @@ def test_rag_index_artifacts_writes_item_embedding_npz(tmp_path, capsys):
     assert "text" not in metadata[0]
 
 
+def test_rag_index_artifacts_indexes_all_item_chunk_artifacts(tmp_path, capsys):
+    write_chunks_jsonl(
+        tmp_path,
+        "ITEM1",
+        [{"item_key": "ITEM1", "text": "first item span", "chunk_id": "ITEM1:c1"}],
+    )
+    write_chunks_jsonl(
+        tmp_path,
+        "ITEM2",
+        [
+            {"item_key": "ITEM2", "text": "second item span", "chunk_id": "ITEM2:c1"},
+            {"item_key": "ITEM2", "text": "second item appendix", "chunk_id": "ITEM2:c2"},
+        ],
+    )
+
+    mock_embedder = MagicMock()
+    mock_embedder.embed_batch.side_effect = [
+        [[1.0, 0.0]],
+        [[0.0, 1.0], [0.5, 0.5]],
+    ]
+
+    with patch("zotron.rag.cli._build_embedder", return_value=mock_embedder), patch.object(
+        sys,
+        "argv",
+        [
+            "zotron-rag",
+            "index-artifacts",
+            "--artifacts-dir",
+            str(tmp_path),
+            "--model",
+            "test-embedding",
+        ],
+    ):
+        rag_main()
+
+    out = json.loads(capsys.readouterr().out)
+    assert out["status"] == "ok"
+    assert out["indexed"] == 2
+    assert out["total_chunks"] == 3
+    assert out["embedding_path"] is None
+    assert [path.split("/")[-1] for path in out["embedding_paths"]] == [
+        "ITEM1.zotron-embed.npz",
+        "ITEM2.zotron-embed.npz",
+    ]
+    assert mock_embedder.embed_batch.call_args_list[0].args[0] == ["first item span"]
+    assert mock_embedder.embed_batch.call_args_list[1].args[0] == [
+        "second item span",
+        "second item appendix",
+    ]
+
+
 def test_rag_hits_reads_artifact_chunks_and_embeddings_as_jsonl(tmp_path, capsys):
     chunks = [
         {

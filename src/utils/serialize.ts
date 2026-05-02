@@ -2,9 +2,12 @@
 // Copyright (C) 2026 diamondrill
 export function serializeItem(item: Zotero.Item): Record<string, any> {
   const data: Record<string, any> = {
-    id: item.id, key: item.key, itemType: item.itemType,
+    key: item.key,
+    version: (item as any).version ?? 0,
+    itemType: item.itemType,
     title: item.getField("title") as string,
-    dateAdded: item.dateAdded, dateModified: item.dateModified, deleted: item.deleted,
+    dateAdded: item.dateAdded,
+    dateModified: item.dateModified,
   };
   const fields = Zotero.ItemFields.getItemTypeFields(item.itemTypeID);
   for (const fieldID of fields) {
@@ -18,19 +21,31 @@ export function serializeItem(item: Zotero.Item): Record<string, any> {
     data.note = item.getNote();
   }
   data.creators = item.getCreators().map((c: any) => ({
-    firstName: c.firstName || "", lastName: c.lastName || "",
-    creatorType: Zotero.CreatorTypes.getName(c.creatorTypeID), fieldMode: c.fieldMode,
+    firstName: c.firstName || "",
+    lastName: c.lastName || "",
+    creatorType: Zotero.CreatorTypes.getName(c.creatorTypeID),
   }));
   data.tags = item.getTags().map((t: any) => ({ tag: t.tag, type: t.type }));
-  data.collections = item.getCollections();
+  data.collections = item.getCollections()
+    .map((colId: number) => {
+      const col = Zotero.Collections.get(colId);
+      return col ? col.key : null;
+    })
+    .filter(Boolean);
   data.relations = item.getRelations();
   return data;
 }
 
 export function serializeCollection(col: Zotero.Collection): Record<string, any> {
+  const parent = col.parentID
+    ? Zotero.Collections.get(col.parentID)
+    : null;
   return {
-    id: col.id, key: col.key, name: col.name, parentID: col.parentID || null,
-    childCollections: col.getChildCollections(false).map((c: any) => c.id),
+    key: col.key,
+    version: (col as any).version ?? 0,
+    name: col.name,
+    parentKey: parent ? parent.key : null,
+    childCollections: col.getChildCollections(false).map((c: any) => c.key),
     itemCount: col.getChildItems(false).length,
   };
 }
