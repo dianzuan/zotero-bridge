@@ -47,7 +47,7 @@ def test_results_to_hits_emits_minimum_and_recommended_fields():
 
 
 def test_vector_store_search_can_return_academic_zh_hits():
-    store = VectorStore(collection="test", collection_id=1, model="m")
+    store = VectorStore(collection="test", collection_id="1", model="m")
     store.add_chunk(
         item_id="legacy-id",
         title="Title",
@@ -74,7 +74,7 @@ def test_vector_store_search_can_return_academic_zh_hits():
 def test_rag_hits_cli_outputs_jsonl(tmp_path, capsys):
     from zotron.rag.cli import main as rag_main
 
-    store = VectorStore(collection="test", collection_id=1, model="m")
+    store = VectorStore(collection="test", collection_id="1", model="m")
     store.add_chunk(
         item_id="legacy-id", title="Title", authors="Author A", section="Methods",
         chunk_index=0, text="answer span", vector=[1.0, 0.0], item_key="ITEMKEY",
@@ -103,7 +103,7 @@ def test_rag_hits_cli_json_preserves_legacy_vector_store_contract(tmp_path, caps
     """Legacy JSON vector stores remain valid input for academic-zh hits."""
     from zotron.rag.cli import main as rag_main
 
-    store = VectorStore(collection="legacy", collection_id=1, model="m")
+    store = VectorStore(collection="legacy", collection_id="1", model="m")
     store.add_chunk(
         item_id="legacy-id",
         title="Legacy Title",

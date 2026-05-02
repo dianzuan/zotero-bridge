@@ -13,7 +13,7 @@ def test_cite_prints_json_array_of_citations(tmp_path, capsys):
 
     store_dir = tmp_path / "store"
     store_dir.mkdir()
-    store = VectorStore(collection="test", collection_id=1, model="m")
+    store = VectorStore(collection="test", collection_id="1", model="m")
     store.add_chunk(
         item_id="KEY1", title="T1", authors="A1", section="S1",
         chunk_index=0, text="answer text", vector=[1.0, 0.0], attachment_id=10,

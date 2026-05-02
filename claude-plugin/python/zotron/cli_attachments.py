@@ -65,7 +65,7 @@ def attachments_fulltext(
     url: str = typer.Option(DEFAULT_URL, "--url"),
     jq_filter: str | None = typer.Option(None, "--jq", help="jq filter expression"),
 ) -> None:
-    """Get full-text content of an attachment (returns id, content, indexedChars, totalChars)."""
+    """Get full-text content of an attachment (returns key, content, indexedChars, totalChars)."""
     rpc = new_rpc(url)
     result = rpc_or_die(rpc, "attachments.getFullText", {"id": id})
     emit_or_die(result, jq_filter=jq_filter)
@@ -124,7 +124,7 @@ def attachments_path(
     url: str = typer.Option(DEFAULT_URL, "--url"),
     jq_filter: str | None = typer.Option(None, "--jq", help="jq filter expression"),
 ) -> None:
-    """Get the local filesystem path of an attachment (returns id, path)."""
+    """Get the local filesystem path of an attachment (returns key, path)."""
     rpc = new_rpc(url)
     result = rpc_or_die(rpc, "attachments.getPath", {"id": id})
     emit_or_die(result, jq_filter=jq_filter)
@@ -140,7 +140,7 @@ def attachments_delete(
     dry_run_flag: bool = typer.Option(False, "--dry-run",
         help="Print intended RPC call as JSON; do not execute."),
 ) -> None:
-    """Delete an attachment (returns {ok: true, id: N})."""
+    """Delete an attachment (returns {ok: true, key: ...})."""
     if dry_run_flag:
         dry_run("attachments.delete", {"id": id})
     rpc = new_rpc(url)

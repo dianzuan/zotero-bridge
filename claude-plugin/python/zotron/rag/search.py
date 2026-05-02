@@ -10,7 +10,7 @@ from zotron.artifacts import is_metadata_stale, read_chunks_jsonl, read_embeddin
 
 
 class VectorStore:
-    def __init__(self, collection: str, collection_id: str | int, model: str):
+    def __init__(self, collection: str, collection_id: str, model: str):
         self.collection = collection
         self.collection_id = collection_id
         self.model = model
@@ -25,7 +25,7 @@ class VectorStore:
         chunk_index: int,
         text: str,
         vector: list[float],
-        attachment_id: str | int | None = None,
+        attachment_id: str | None = None,
         **provenance: object,
     ) -> None:
         row = {
@@ -111,7 +111,7 @@ class ArtifactBackedVectorStore(VectorStore):
         cls,
         *,
         collection: str,
-        collection_id: str | int,
+        collection_id: str,
         item_key: str,
         chunks_path: str | Path,
         embeddings_path: str | Path,
@@ -131,7 +131,7 @@ class ArtifactBackedVectorStore(VectorStore):
         cls,
         *,
         collection: str,
-        collection_id: str | int,
+        collection_id: str,
         items: Iterable[Mapping[str, Any]],
     ) -> "ArtifactBackedVectorStore":
         """Build one searchable store from multiple item artifact descriptors.

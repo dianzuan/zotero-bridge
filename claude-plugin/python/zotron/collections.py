@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 
-def find_by_name(rpc: Any, name: str) -> int | str | None:
+def find_by_name(rpc: Any, name: str) -> str | None:
     """Return the key of the first collection named *name*, or None.
 
     Traverses the full `collections.tree` recursively. Returns the first

@@ -63,7 +63,7 @@ def test_retrieve_with_citations_returns_citation_list(tmp_path):
     from zotron.rag.citation import Citation, retrieve_with_citations
     from zotron.rag.search import VectorStore
 
-    store = VectorStore(collection="test", collection_id=1, model="m")
+    store = VectorStore(collection="test", collection_id="1", model="m")
     store.add_chunk(
         item_id="K1", title="T1", authors="A1", section="S1",
         chunk_index=0, text="hello world", vector=[1.0, 0.0], attachment_id=10,

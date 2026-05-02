@@ -35,7 +35,7 @@ def _store_path(collection_name: str) -> Path:
     return Path("~/.local/share/zotron/rag").expanduser() / f"{collection_name}.json"
 
 
-def _find_collection_id(rpc: ZoteroRPC, name: str) -> str | int | None:
+def _find_collection_id(rpc: ZoteroRPC, name: str) -> str | None:
     """Search collections.tree recursively for a collection matching *name*."""
     return _find_collection_by_name(rpc, name)
 
@@ -120,7 +120,7 @@ def _read_item_embedding(path: Path) -> tuple[list[list[float]], list[dict[str, 
 
 def _artifact_vector_store(artifacts_dir: str | Path, item_key: str | None = None) -> VectorStore:
     directory = Path(artifacts_dir).expanduser()
-    store = VectorStore(collection="artifacts", collection_id=0, model="artifact")
+    store = VectorStore(collection="artifacts", collection_id="0", model="artifact")
 
     for key in _artifact_item_keys(directory, item_key):
         chunks_path = artifact_path(directory, key, CHUNKS_SUFFIX)
@@ -343,7 +343,7 @@ def cmd_index_artifacts(args: argparse.Namespace, cfg: dict[str, Any]) -> None:
     }, ensure_ascii=False))
 
 
-def _item_key_from_info(item_id: str | int, item_info: dict[str, Any], chunks: list[dict[str, Any]]) -> str:
+def _item_key_from_info(item_id: str, item_info: dict[str, Any], chunks: list[dict[str, Any]]) -> str:
     if chunks:
         first_key = chunks[0].get("item_key")
         if first_key:
@@ -361,7 +361,7 @@ def _attachment_path(rpc: ZoteroRPC, attachment: dict[str, Any]) -> Path:
     return Path(linux_path(str(path))).expanduser()
 
 
-def _find_chunks_attachment(rpc: ZoteroRPC, item_id: str | int) -> dict[str, Any] | None:
+def _find_chunks_attachment(rpc: ZoteroRPC, item_id: str) -> dict[str, Any] | None:
     attachments = cast(list[dict[str, Any]], rpc.call("attachments.list", {"parentId": item_id}) or [])
     return _find_chunks_attachment_in(attachments)
 
@@ -391,7 +391,7 @@ def _zotero_item_ids_for_index(rpc: ZoteroRPC, args: argparse.Namespace) -> list
 def _index_zotero_item_artifact(
     *,
     rpc: ZoteroRPC,
-    item_id: str | int,
+    item_id: str,
     embedder: Any,
     model: str,
     output_dir: Path | None,

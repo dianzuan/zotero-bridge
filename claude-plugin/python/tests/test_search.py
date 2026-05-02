@@ -2,7 +2,7 @@ from zotron.rag.search import VectorStore
 
 
 def make_store() -> VectorStore:
-    return VectorStore(collection="TestCol", collection_id=1, model="test-model")
+    return VectorStore(collection="TestCol", collection_id="1", model="test-model")
 
 
 def test_save_and_load(tmp_path):
@@ -15,7 +15,7 @@ def test_save_and_load(tmp_path):
 
     loaded = VectorStore.load(path)
     assert loaded.collection == "TestCol"
-    assert loaded.collection_id == 1
+    assert loaded.collection_id == "1"
     assert loaded.model == "test-model"
     assert len(loaded.chunks) == 2
     assert loaded.chunks[0]["item_id"] == "item1"
@@ -69,7 +69,7 @@ def test_clear_item():
 def test_search_includes_attachment_id_and_chunk_index():
     """Search results expose attachment_id and chunk_index for citation provenance."""
     from zotron.rag.search import VectorStore
-    store = VectorStore(collection="test", collection_id=1, model="m")
+    store = VectorStore(collection="test", collection_id="1", model="m")
     store.add_chunk(
         item_id="ITEM_A",
         title="Title A",
@@ -159,7 +159,7 @@ def test_artifact_backed_store_loads_chunks_and_embedding_npz(tmp_path):
 
     store = ArtifactBackedVectorStore.from_item_artifacts(
         collection="Artifacts",
-        collection_id=7,
+        collection_id="7",
         item_key="ITEM1",
         chunks_path=chunks_path,
         embeddings_path=embeddings_path,
@@ -215,7 +215,7 @@ def test_artifact_backed_store_rejects_stale_embedding_metadata(tmp_path):
     with pytest.raises(ValueError, match="stale embedding metadata"):
         ArtifactBackedVectorStore.from_item_artifacts(
             collection="Artifacts",
-            collection_id=7,
+            collection_id="7",
             item_key="ITEM1",
             chunks_path=chunks_path,
             embeddings_path=embeddings_path,

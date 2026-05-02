@@ -16,5 +16,5 @@ def test_all_subclass_base():
 
 
 def test_collection_ambiguous_carries_candidates():
-    err = CollectionAmbiguous("ambiguous", candidates=[{"id": 1, "name": "A"}, {"id": 2, "name": "B"}])
-    assert err.candidates == [{"id": 1, "name": "A"}, {"id": 2, "name": "B"}]
+    err = CollectionAmbiguous("ambiguous", candidates=[{"key": "COL1", "name": "A"}, {"key": "COL2", "name": "B"}])
+    assert err.candidates == [{"key": "COL1", "name": "A"}, {"key": "COL2", "name": "B"}]

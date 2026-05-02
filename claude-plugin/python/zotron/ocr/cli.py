@@ -53,21 +53,21 @@ def cmd_status(args: argparse.Namespace, cfg: dict) -> None:
     print(json.dumps(status_result, ensure_ascii=False))
 
 
-def _has_ocr_note(rpc: ZoteroRPC, item_id: str | int) -> bool:
+def _has_ocr_note(rpc: ZoteroRPC, item_id: str) -> bool:
     notes = cast(list[dict[str, Any]], rpc.call("notes.get", {"parentId": item_id}) or [])
     return any("ocr" in (note.get("tags") or []) for note in notes)
 
 
-def _has_ocr_artifact(rpc: ZoteroRPC, item_id: str | int) -> bool:
+def _has_ocr_artifact(rpc: ZoteroRPC, item_id: str) -> bool:
     attachments = cast(list[dict[str, Any]], rpc.call("attachments.list", {"parentId": item_id}) or [])
     return any(str(att.get("title") or "").endswith(CHUNKS_SUFFIX) for att in attachments)
 
 
-def _has_ocr_result(rpc: ZoteroRPC, item_id: str | int) -> bool:
+def _has_ocr_result(rpc: ZoteroRPC, item_id: str) -> bool:
     return _has_ocr_artifact(rpc, item_id) or _has_ocr_note(rpc, item_id)
 
 
-def _process_item(proc: OCRProcessor, item_id: str | int, *, force: bool) -> dict:
+def _process_item(proc: OCRProcessor, item_id: str, *, force: bool) -> dict:
     try:
         item_info = proc.rpc.call("items.get", {"id": item_id}) or {}
         title = item_info.get("title", "(untitled)")

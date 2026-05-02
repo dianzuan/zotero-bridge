@@ -17,7 +17,7 @@ from typing import Any
 @dataclass(frozen=True)
 class Citation:
     item_key: str
-    attachment_id: str | int | None
+    attachment_id: str | None
     title: str
     authors: str
     section: str

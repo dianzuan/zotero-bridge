@@ -44,7 +44,7 @@ def check_pdf_magic(path: Path) -> bool:
     return head == b"%PDF-"
 
 
-def _item_has_pdf_attachment(rpc: Any, item_id: str | int) -> bool:
+def _item_has_pdf_attachment(rpc: Any, item_id: str) -> bool:
     existing = rpc.call("attachments.list", {"parentId": item_id}) or []
     # Match on MIME type OR .pdf filename suffix. Zotero stores some
     # attachments with blank/octet-stream/x-pdf contentType depending
@@ -58,7 +58,7 @@ def _item_has_pdf_attachment(rpc: Any, item_id: str | int) -> bool:
     )
 
 
-def _attach_pdf(rpc: Any, item_id: str | int, pdf_path: Path) -> None:
+def _attach_pdf(rpc: Any, item_id: str, pdf_path: Path) -> None:
     rpc.call("attachments.add", {
         "parentId": item_id,
         "path": _zotero_path(pdf_path),
@@ -214,7 +214,7 @@ def _to_xpi_payload(item_json: dict) -> dict:
 class PushResult:
     """Outcome of a single push_item() call."""
     status: Literal["created", "updated", "skipped_duplicate", "failed"]
-    zotero_item_id: str | int | None = None
+    zotero_item_id: str | None = None
     pdf_attached: bool = False
     pdf_size_bytes: int = 0
     error: dict | None = None

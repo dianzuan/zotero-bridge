@@ -69,24 +69,24 @@ class ZoteroArtifactStore:
     def __init__(self, rpc: Any) -> None:
         self.rpc = rpc
 
-    def list_artifacts(self, parent_id: str | int, suffix: str | None = None) -> list[dict[str, Any]]:
+    def list_artifacts(self, parent_id: str, suffix: str | None = None) -> list[dict[str, Any]]:
         attachments = self.rpc.call("attachments.list", {"parentId": parent_id}) or []
         if suffix is None:
             return list(attachments)
         return [a for a in attachments if str(a.get("title") or "").endswith(suffix)]
 
-    def find_artifact(self, parent_id: str | int, suffix: str) -> dict[str, Any] | None:
+    def find_artifact(self, parent_id: str, suffix: str) -> dict[str, Any] | None:
         artifacts = self.list_artifacts(parent_id, suffix=suffix)
         return artifacts[0] if artifacts else None
 
-    def add_artifact(self, parent_id: str | int, path: str | Path, title: str | None = None) -> dict[str, Any]:
+    def add_artifact(self, parent_id: str, path: str | Path, title: str | None = None) -> dict[str, Any]:
         path = Path(path)
         return self.rpc.call(
             "attachments.add",
             {"parentId": parent_id, "path": str(path), "title": title or path.name},
         )
 
-    def delete_artifact(self, attachment_id: str | int) -> Any:
+    def delete_artifact(self, attachment_id: str) -> Any:
         return self.rpc.call("attachments.delete", {"id": attachment_id})
 
 
@@ -130,7 +130,7 @@ def _assert_safe_zip_member(name: str) -> None:
         raise ValueError(f"unsafe artifact member path: {name!r}")
 
 
-def list_artifacts(rpc: Any, *, parent_id: str | int, suffix: str | None = None) -> list[dict[str, Any]]:
+def list_artifacts(rpc: Any, *, parent_id: str, suffix: str | None = None) -> list[dict[str, Any]]:
     artifacts = rpc.call("attachments.list", {"parentId": parent_id}) or []
     artifacts = list(artifacts)
     setattr(rpc, "_zotron_last_artifacts", artifacts)
@@ -139,18 +139,18 @@ def list_artifacts(rpc: Any, *, parent_id: str | int, suffix: str | None = None)
     return [artifact for artifact in artifacts if str(artifact.get("title") or "").endswith(suffix)]
 
 
-def find_artifact_by_suffix(rpc: Any, *, parent_id: str | int, suffix: str) -> dict[str, Any] | None:
+def find_artifact_by_suffix(rpc: Any, *, parent_id: str, suffix: str) -> dict[str, Any] | None:
     cached = getattr(rpc, "_zotron_last_artifacts", None)
     artifacts = cached if cached is not None else list_artifacts(rpc, parent_id=parent_id)
     return next((artifact for artifact in artifacts if str(artifact.get("title") or "").endswith(suffix)), None)
 
 
-def add_artifact_file(rpc: Any, *, parent_id: str | int, path: str | Path, title: str | None = None) -> dict[str, Any]:
+def add_artifact_file(rpc: Any, *, parent_id: str, path: str | Path, title: str | None = None) -> dict[str, Any]:
     path = Path(path)
     return rpc.call("attachments.add", {"parentId": parent_id, "path": str(path), "title": title or path.name})
 
 
-def delete_artifact(rpc: Any, *, artifact_id: str | int) -> Any:
+def delete_artifact(rpc: Any, *, artifact_id: str) -> Any:
     return rpc.call("attachments.delete", {"id": artifact_id})
 
 

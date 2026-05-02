@@ -43,7 +43,7 @@ class OCRProcessor:
     # Collection helpers
     # ------------------------------------------------------------------
 
-    def find_collection_id(self, name: str) -> str | int | None:
+    def find_collection_id(self, name: str) -> str | None:
         """Search the collections tree recursively for a collection by name."""
         return _find_collection_by_name(self.rpc, name)
 
@@ -51,7 +51,7 @@ class OCRProcessor:
     # Note helpers
     # ------------------------------------------------------------------
 
-    def has_ocr_note(self, item_id: str | int) -> bool:
+    def has_ocr_note(self, item_id: str) -> bool:
         """Return True if the item already has a Note tagged 'ocr'."""
         notes = cast(list[dict[str, Any]], self.rpc.call("notes.get", {"parentId": item_id}) or [])
         for note in notes:
@@ -60,7 +60,7 @@ class OCRProcessor:
                 return True
         return False
 
-    def has_ocr_artifact(self, item_id: str | int) -> bool:
+    def has_ocr_artifact(self, item_id: str) -> bool:
         """Return True if the item has OCR/RAG chunk artifacts attached."""
         attachments = cast(
             list[dict[str, Any]],
@@ -68,7 +68,7 @@ class OCRProcessor:
         )
         return any(str(att.get("title") or "").endswith(CHUNKS_SUFFIX) for att in attachments)
 
-    def has_ocr_result(self, item_id: str | int) -> bool:
+    def has_ocr_result(self, item_id: str) -> bool:
         """Return True when either canonical artifacts or legacy OCR note exists."""
         return self.has_ocr_artifact(item_id) or self.has_ocr_note(item_id)
 
@@ -81,7 +81,7 @@ class OCRProcessor:
         """Convert a Windows path to a WSL Linux path if running under WSL."""
         return linux_path(win_path)
 
-    def get_pdf_attachment(self, item_id: str | int) -> dict[str, Any] | None:
+    def get_pdf_attachment(self, item_id: str) -> dict[str, Any] | None:
         """Return first PDF attachment with a resolved filesystem ``path``."""
         attachments = cast(
             list[dict[str, Any]],
@@ -97,12 +97,12 @@ class OCRProcessor:
                 return {**att, "path": self._to_linux_path(str(path_str))}
         return None
 
-    def get_pdf_path(self, item_id: str | int) -> Path | None:
+    def get_pdf_path(self, item_id: str) -> Path | None:
         """Return the filesystem path to the first PDF attachment, or None."""
         attachment = self.get_pdf_attachment(item_id)
         return Path(attachment["path"]) if attachment else None
 
-    def _item_key(self, item_id: str | int) -> str:
+    def _item_key(self, item_id: str) -> str:
         try:
             item = self.rpc.call("items.get", {"id": item_id}) or {}
         except Exception:  # noqa: BLE001 - item key is a best-effort filename aid
@@ -110,14 +110,14 @@ class OCRProcessor:
         return str(item.get("key") or item.get("itemKey") or item_id)
 
     @staticmethod
-    def _attachment_key(attachment: dict[str, Any], item_id: str | int) -> str:
+    def _attachment_key(attachment: dict[str, Any], item_id: str) -> str:
         return str(
             attachment.get("key")
             or attachment.get("itemKey")
             or f"item-{item_id}-pdf"
         )
 
-    def _attach_artifact(self, item_id: str | int, path: Path) -> None:
+    def _attach_artifact(self, item_id: str, path: Path) -> None:
         self.rpc.call(
             "attachments.add",
             {"parentId": item_id, "path": zotero_path(path), "title": path.name},
@@ -190,7 +190,7 @@ class OCRProcessor:
         self,
         *,
         directory: Path,
-        item_id: str | int,
+        item_id: str,
         item_key: str,
         attachment_key: str,
         pdf_path: Path,
@@ -232,7 +232,7 @@ class OCRProcessor:
     # ------------------------------------------------------------------
 
     def process_item(
-        self, item_id: str | int, title: str, force: bool = False
+        self, item_id: str, title: str, force: bool = False
     ) -> str:
         """OCR a single item, attach raw/block/chunk artifacts, and maybe a Note."""
         try:
