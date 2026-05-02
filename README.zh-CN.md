@@ -6,7 +6,7 @@
 
 **Zotero 8 的强类型 JSON-RPC 2.0 桥**
 
-*把 Zotero 内部 81 个 API 方法通过 HTTP 暴露给 AI 智能体、命令行和外部工具。*
+*把 Zotero 内部 86 个 API 方法通过 HTTP 暴露给 AI 智能体、命令行和外部工具。*
 
 [![License: AGPL-3.0-or-later](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 [![CI](https://github.com/dianzuan/zotron/actions/workflows/ci.yml/badge.svg)](https://github.com/dianzuan/zotron/actions/workflows/ci.yml)
@@ -27,11 +27,12 @@ Zotron 是一个 [bootstrap-extension](https://www.zotero.org/support/dev/zotero
 ┌──────────────────────────┐         ┌─────────────────────────────┐
 │  你的工具/智能体          │         │  Zotero（装了本插件）        │
 │                          │         │                             │
-│  curl /zotron/rpc │ ──HTTP─▶│  81 个强类型 RPC 方法        │
-│  cnki-plugin 推送         │         │  • items.* (19)             │
+│  curl /zotron/rpc │ ──HTTP─▶│  86 个强类型 RPC 方法        │
+│  cnki-plugin 推送         │         │  • items.* (21)             │
 │  研究 agent              │         │  • collections.* (12)       │
 │  Better-BibTeX 消费者    │         │  • attachments.* (8)        │
 │  …                       │         │  • notes.* (5)              │
+│                          │         │  • annotations.* (3)        │
 │                          │         │  • search.* (8)             │
 │                          │         │  • tags.* (6)               │
 │                          │         │  • export.* (5)             │
@@ -59,7 +60,7 @@ Zotero 7 上线了官方 [Local API](https://www.zotero.org/support/dev/web_api/
 | 跟 `pyzotero` / Web-API 客户端开箱即用 | ✅ | ❌（自定义 RPC） |
 | 需要勾选"允许其他应用通讯" | 是 | **否**（plugin 端点绕过这个 gate） |
 
-Zotron 是 Zotero **内部 JS API** 的强类型 JSON-RPC 桥——插件自己用的那套接口，你和数据之间没有 Web-API schema 翻译层。10 个命名空间共 81 个方法，覆盖 CRUD + 搜索 + 导出 + 标签 + 同步 + RAG + system。
+Zotron 是 Zotero **内部 JS API** 的强类型 JSON-RPC 桥——插件自己用的那套接口，你和数据之间没有 Web-API schema 翻译层。11 个命名空间共 86 个方法，覆盖 CRUD + 搜索 + 导出 + 标签 + 同步 + RAG + system。
 
 Zotero 7 之前的几条绕路——直接读 SQLite（脆弱、跟版本走、写锁）、debug-server 后门 eval JS（不安全、不支持）、每个项目自己写一次性 bootstrap 插件（重复造轮子）——全是坏路径。Zotron 用一套稳定 typed surface 把它们替掉。
 
@@ -120,7 +121,7 @@ uv tool install "git+https://github.com/dianzuan/zotron.git#subdirectory=claude-
 
 zotron ping
 zotron search quick "数字经济" --limit 10
-zotron rpc items.get '{"id":"YR5BUGHG"}'  # escape hatch —— 覆盖全部 81 个方法
+zotron rpc items.get '{"id":"YR5BUGHG"}'  # escape hatch —— 覆盖全部 86 个方法
 ```
 
 `--jq` 过滤输出（仿 `gh api --jq`）；`--install-completion {bash|zsh|fish|powershell}` 装 shell 补全。SDK 稳定契约见 [`docs/api-stability.md`](docs/api-stability.md)。
@@ -145,19 +146,20 @@ curl -s -X POST http://localhost:23119/zotron/rpc \
 
 ## API 一览
 
-10 个命名空间共 81 个方法。完整规范见 [docs/superpowers/specs/2026-04-23-xpi-api-prd.md](docs/superpowers/specs/2026-04-23-xpi-api-prd.md)。
+11 个命名空间共 86 个方法。完整规范见 [docs/superpowers/specs/2026-04-23-xpi-api-prd.md](docs/superpowers/specs/2026-04-23-xpi-api-prd.md)。
 
 | 命名空间 | 方法数 | 干啥的 |
 |---|---|---|
-| `items.*` | 19 | 条目 CRUD、按 DOI/URL/ISBN/文件添加、最近、回收站、查重、关联 |
-| `collections.*` | 12 | 集合列表、创建、改名、移动、树形、集合内条目 |
-| `attachments.*` | 8 | 列表、单条获取、全文（走 cache 文件）、添加、URL 添加、路径、删除、找 PDF |
+| `items.*` | 21 | 条目 CRUD、列表、全文、按 DOI/URL/ISBN/文件添加、最近、回收站、查重、关联、引用键 |
+| `collections.*` | 12 | 列表、获取、树形、创建、改名、移动、删除、条目、子集合、统计 |
+| `attachments.*` | 8 | 列表、单条获取、全文、添加、URL 添加、路径、删除、找 PDF |
 | `notes.*` | 5 | 按父条目列表、单条获取、创建、更新、搜索 |
+| `annotations.*` | 3 | 列表、创建、删除 PDF 注释 |
 | `search.*` | 8 | 快速 / 全文 / 按标签 / 按标识符 / 高级搜索；保存的搜索 |
-| `tags.*` | 6 | 标签列表、添加、移除、改名、删除（支持跨库） |
+| `tags.*` | 6 | 标签列表、添加、移除、改名、删除、批量更新 |
 | `export.*` | 5 | BibTeX / CSL-JSON / RIS / CSV / 参考文献（CiteProc） |
-| `settings.*` | 4 | 插件侧偏好（如 OCR 提供商、embedding 模型） |
-| `system.*` | 13 | ping、version、libraries、switchLibrary、sync、currentCollection、listMethods、describe、**`system.reload`** |
+| `settings.*` | 4 | 插件侧偏好（OCR 提供商、embedding 模型） |
+| `system.*` | 13 | ping、version、libraries、switchLibrary、sync、currentCollection、listMethods、describe、reload |
 
 **约定：** 响应遵循 **key-first** 原则——条目和集合对象以 `key`（8 位字母数字，对齐 Zotero Web API v3）为主标识符，不暴露数字 `id`。条目带 `version` 字段供同步用。变更类返回统一为 `{ok: true, key}`。分页用 `{items, total, offset?, limit?}` 信封。wire 上统一小写 `libraryId`。所有接受标识符的参数同时支持数字 ID 和 key 字符串。调用不存在的方法会得到模糊匹配建议（"Did you mean?"）。错误是 JSON-RPC 2.0 结构化的 `{code, message}`（`-32602` 调用方错误，`-32603` 服务端错误）。`items.create` 自动拆中文姓名——`欧阳修` → `{lastName: "欧阳", firstName: "修"}`——覆盖 70+ 复姓。
 

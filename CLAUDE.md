@@ -4,7 +4,7 @@
 
 Three layers: XPI plugin (TypeScript, `src/`) → Python CLI/SDK (`claude-plugin/python/`) → Claude Code plugin (`claude-plugin/skills/`).
 
-- XPI: JSON-RPC 2.0 server inside Zotero, 81 methods across 10 namespaces
+- XPI: JSON-RPC 2.0 server inside Zotero, 86 methods across 11 namespaces
 - Python CLI: typer-based, noun-verb subcommands (`zotron items get`, `zotron search quick`)
 - Plugin: skills + agents for Claude Code and Codex
 

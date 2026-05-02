@@ -1,7 +1,7 @@
 {
   "name": "zotron",
   "version": "0.1.5",
-  "description": "Typed JSON-RPC 2.0 bridge for Zotero 8 — exposes 81 internal API methods over HTTP for external tools, agents, and CLIs.",
+  "description": "Typed JSON-RPC 2.0 bridge for Zotero 8 — exposes 86 internal API methods over HTTP for external tools, agents, and CLIs.",
   "license": "AGPL-3.0-or-later",
   "author": "diamondrill",
   "homepage": "https://github.com/dianzuan/zotron",
