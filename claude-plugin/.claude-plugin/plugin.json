@@ -1,7 +1,7 @@
 {
   "name": "zotron",
   "description": "Zotero library skill for Claude Code — search, manage, export, OCR, and RAG over your Zotero papers",
-  "version": "0.1.0",
+  "version": "0.1.5",
   "author": { "name": "diamondrill" },
   "keywords": ["zotero", "academic", "citations", "bibliography"]
 }
