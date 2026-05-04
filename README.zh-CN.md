@@ -121,7 +121,7 @@ uv tool install "git+https://github.com/dianzuan/zotron.git#subdirectory=claude-
 
 zotron ping
 zotron search quick "数字经济" --limit 10
-zotron rpc items.get '{"id":"YR5BUGHG"}'  # escape hatch —— 覆盖全部 86 个方法
+zotron rpc items.get '{"key":"YR5BUGHG"}'  # escape hatch —— 覆盖全部 86 个方法
 ```
 
 `--jq` 过滤输出（仿 `gh api --jq`）；`--install-completion {bash|zsh|fish|powershell}` 装 shell 补全。SDK 稳定契约见 [`docs/api-stability.md`](docs/api-stability.md)。

@@ -10,9 +10,8 @@ const EMBEDDING_SUFFIX = ".zotron-embed.npz";
 type SearchHitsParams = {
   query: string;
   collection?: string | number;
-  collectionId?: number;
-  itemIds?: number[];
-  itemKeys?: string[];
+  collectionKey?: string | number;
+  keys?: (number | string)[];
   limit?: number;
   top_spans_per_item?: number;
   include_fulltext_spans?: boolean;
@@ -133,24 +132,24 @@ function itemVenue(item: any): string {
 }
 
 async function resolveCollectionItems(params: SearchHitsParams): Promise<any[]> {
-  if (params.itemIds?.length) {
-    const items = await Zotero.Items.getAsync(params.itemIds);
-    return (Array.isArray(items) ? items : [items]).filter(Boolean);
-  }
-
-  if (params.itemKeys?.length) {
-    const libraryID = Zotero.Libraries.userLibraryID;
-    const items = [];
-    for (const key of params.itemKeys) {
-      const item = await Zotero.Items.getByLibraryAndKeyAsync(libraryID, key);
-      if (item) items.push(item);
+  if (params.keys?.length) {
+    const resolved = [];
+    for (const k of params.keys) {
+      if (typeof k === "number") {
+        const item = await Zotero.Items.getAsync(k);
+        if (item) resolved.push(item);
+      } else {
+        const libraryID = Zotero.Libraries.userLibraryID;
+        const item = await Zotero.Items.getByLibraryAndKeyAsync(libraryID, k);
+        if (item) resolved.push(item);
+      }
     }
-    return items;
+    return resolved;
   }
 
-  const collectionRef = params.collectionId ?? params.collection;
+  const collectionRef = params.collectionKey ?? params.collection;
   if (collectionRef === undefined || collectionRef === null || collectionRef === "") {
-    throw rpcError(INVALID_PARAMS, "rag.searchHits requires collection, collectionId, itemIds, or itemKeys");
+    throw rpcError(INVALID_PARAMS, "rag.searchHits requires collection, collectionKey, or keys");
   }
 
   let collection: any = null;

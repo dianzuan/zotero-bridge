@@ -142,7 +142,7 @@ describe("rag handler", () => {
     const { ragHandlers } = await import("../../src/handlers/rag");
     const result = await ragHandlers.searchHits({
       query: "体育产业数字化",
-      itemIds: [42],
+      keys: [42],
     });
 
     expect(result.total).to.equal(1);

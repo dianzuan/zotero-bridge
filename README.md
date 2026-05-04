@@ -121,7 +121,7 @@ uv tool install "git+https://github.com/dianzuan/zotron.git#subdirectory=claude-
 
 zotron ping
 zotron search quick "transformer attention" --limit 10
-zotron rpc items.get '{"id":"YR5BUGHG"}'  # escape hatch — covers all 86 methods
+zotron rpc items.get '{"key":"YR5BUGHG"}'  # escape hatch — covers all 86 methods
 ```
 
 `--jq` filters output (`gh api --jq` style); `--install-completion {bash|zsh|fish|powershell}` enables shell completion. SDK contract: [`docs/api-stability.md`](docs/api-stability.md).

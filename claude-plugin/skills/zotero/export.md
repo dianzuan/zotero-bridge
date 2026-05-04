@@ -53,7 +53,7 @@ zotron items citation-key 10
 ## CSV (via RPC)
 
 ```bash
-zotron rpc export.csv '{"ids":["YR5BUGHG","ABC12345"]}'
+zotron rpc export.csv '{"keys":["YR5BUGHG","ABC12345"]}'
 ```
 
 ## Present to user

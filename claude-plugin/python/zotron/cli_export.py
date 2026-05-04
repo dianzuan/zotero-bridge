@@ -76,7 +76,7 @@ def export_bibliography(
 ) -> None:
     """Print a formatted bibliography (default GB/T 7714 numeric, plain text)."""
     rpc = new_rpc(url)
-    resp = rpc_or_die(rpc, "export.bibliography", {"ids": ids, "style": style})
+    resp = rpc_or_die(rpc, "export.bibliography", {"keys": ids, "style": style})
     if isinstance(resp, dict) and ("html" in resp or "text" in resp):
         typer.echo(resp["html"] if html else resp.get("text", ""))
     else:
