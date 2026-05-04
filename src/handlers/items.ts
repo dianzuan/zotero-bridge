@@ -5,7 +5,7 @@ import { registerHandlers } from "../server";
 import { splitChineseName, CJK_REGEX } from "../utils/chinese-name";
 import { serializeItem } from "../utils/serialize";
 import { extractYear } from "../utils/citation-key";
-import { requireItem, resolveItems } from "../utils/guards";
+import { requireItem, requireCollection, resolveItems } from "../utils/guards";
 
 /** Auto-split a creator's CJK name when firstName is empty and lastName
  *  contains 2+ CJK characters. Callers that pre-split (firstName set) pass
@@ -20,6 +20,15 @@ function autoSplitCreator(c: { firstName: string; lastName: string; creatorType:
   if (cjkChars.length < 2) return c;
   const split = splitChineseName(c.lastName);
   return { ...c, firstName: split.firstName, lastName: split.lastName };
+}
+
+/**
+ * Build a `Zotero.Search` scoped to the user library.
+ */
+function makeScopedSearch(): Zotero.Search {
+  const s = new Zotero.Search();
+  (s as any).libraryID = Zotero.Libraries.userLibraryID;
+  return s;
 }
 
 export const itemsHandlers = {
@@ -366,6 +375,170 @@ export const itemsHandlers = {
     const match = extra?.match(/Citation Key:\s*(\S+)/i);
     const key = match ? match[1] : `${item.getCreators()[0]?.lastName || "Unknown"}${extractYear(item)}`;
     return { key: item.key, citationKey: key };
+  },
+
+  async push(params: {
+    item: {
+      itemType?: string;
+      fields?: Record<string, string>;
+      creators?: Array<{ firstName: string; lastName: string; creatorType: string }>;
+      tags?: string[];
+    };
+    pdf?: string;
+    collection?: string | number;
+    onDuplicate?: "skip" | "update" | "create";
+  }) {
+    const onDuplicate = params.onDuplicate ?? "skip";
+    const item = params.item;
+
+    // 1. Resolve collection (by key, numeric ID, or name)
+    let collectionKey: string | null = null;
+    if (params.collection !== undefined && params.collection !== null && params.collection !== 0) {
+      const col = await requireCollection(params.collection);
+      collectionKey = col.key;
+    }
+
+    // 2. Find duplicate by DOI → ISSN → title
+    let dupKey: string | null = null;
+    const doi = item.fields?.DOI;
+    if (doi) {
+      const s = makeScopedSearch();
+      s.addCondition("DOI", "is", doi);
+      const ids = await s.search();
+      if (ids.length > 0) {
+        const found = await Zotero.Items.getAsync(ids[0]);
+        if (found) dupKey = (found as any).key;
+      }
+    }
+    if (!dupKey) {
+      const issn = item.fields?.ISSN;
+      if (issn) {
+        const s = makeScopedSearch();
+        s.addCondition("ISSN", "is", issn);
+        const ids = await s.search();
+        if (ids.length > 0) {
+          const found = await Zotero.Items.getAsync(ids[0]);
+          if (found) dupKey = (found as any).key;
+        }
+      }
+    }
+    if (!dupKey) {
+      const title = item.fields?.title;
+      if (title && title.length >= 10) {
+        const s = makeScopedSearch();
+        s.addCondition("quicksearch-titleCreatorYear", "contains", title);
+        const ids = await s.search();
+        for (const id of ids.slice(0, 5)) {
+          const candidate = await Zotero.Items.getAsync(id);
+          if (candidate && (candidate.getField("title") as string) === title) {
+            dupKey = (candidate as any).key;
+            break;
+          }
+        }
+      }
+    }
+
+    // 3. Handle duplicate
+    let itemKey: string;
+    let status: "created" | "updated" | "skipped_duplicate";
+    let pdfAttached = false;
+
+    if (dupKey && onDuplicate === "skip") {
+      itemKey = dupKey;
+      status = "skipped_duplicate";
+      // Still add to collection (idempotent)
+      if (collectionKey) {
+        const dupItem = await requireItem(dupKey);
+        dupItem.addToCollection((await requireCollection(collectionKey)).id);
+        await dupItem.saveTx();
+      }
+      // Attach PDF if dup has none
+      if (params.pdf) {
+        const dupItem = await requireItem(dupKey);
+        const attIDs = dupItem.getAttachments ? dupItem.getAttachments() : [];
+        let hasPdf = false;
+        for (const attID of attIDs) {
+          const att = await Zotero.Items.getAsync(attID);
+          if (att && (att as any).attachmentContentType === "application/pdf") { hasPdf = true; break; }
+        }
+        if (!hasPdf) {
+          const file = Zotero.File.pathToFile(params.pdf);
+          if (file.exists()) {
+            await Zotero.Attachments.importFromFile({ file, parentItemID: dupItem.id });
+            pdfAttached = true;
+          }
+        }
+      }
+    } else if (dupKey && onDuplicate === "update") {
+      const dupItem = await requireItem(dupKey);
+      if (item.fields) {
+        for (const [field, value] of Object.entries(item.fields)) {
+          dupItem.setField(field, value);
+        }
+      }
+      if (item.creators) {
+        dupItem.setCreators(item.creators.map(c => autoSplitCreator(c)) as any);
+      }
+      if (item.tags && item.tags.length > 0) {
+        for (const existing of dupItem.getTags()) dupItem.removeTag(existing.tag);
+        for (const tag of item.tags) dupItem.addTag(tag);
+      }
+      await dupItem.saveTx();
+      itemKey = dupKey;
+      status = "updated";
+      // Add to collection
+      if (collectionKey) {
+        dupItem.addToCollection((await requireCollection(collectionKey)).id);
+        await dupItem.saveTx();
+      }
+      // Attach PDF if dup has none
+      if (params.pdf) {
+        const attIDs = dupItem.getAttachments ? dupItem.getAttachments() : [];
+        let hasPdf = false;
+        for (const attID of attIDs) {
+          const att = await Zotero.Items.getAsync(attID);
+          if (att && (att as any).attachmentContentType === "application/pdf") { hasPdf = true; break; }
+        }
+        if (!hasPdf) {
+          const file = Zotero.File.pathToFile(params.pdf);
+          if (file.exists()) {
+            await Zotero.Attachments.importFromFile({ file, parentItemID: dupItem.id });
+            pdfAttached = true;
+          }
+        }
+      }
+    } else {
+      // Create new
+      const newItem = new Zotero.Item((item.itemType || "journalArticle") as any);
+      newItem.libraryID = Zotero.Libraries.userLibraryID;
+      if (item.fields) {
+        for (const [field, value] of Object.entries(item.fields)) {
+          newItem.setField(field, value);
+        }
+      }
+      if (item.creators) {
+        newItem.setCreators(item.creators.map(c => autoSplitCreator(c)) as any);
+      }
+      if (item.tags) {
+        for (const tag of item.tags) newItem.addTag(tag);
+      }
+      if (collectionKey) {
+        newItem.addToCollection((await requireCollection(collectionKey)).id);
+      }
+      await newItem.saveTx();
+      itemKey = newItem.key;
+      status = "created";
+      // Attach PDF
+      if (params.pdf) {
+        const file = Zotero.File.pathToFile(params.pdf);
+        if (file.exists()) {
+          await Zotero.Attachments.importFromFile({ file, parentItemID: newItem.id });
+          pdfAttached = true;
+        }
+      }
+    }
+
+    return { status, key: itemKey, pdfAttached };
   },
 };
 

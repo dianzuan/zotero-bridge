@@ -522,6 +522,97 @@ describe("items handler", () => {
     });
   });
 
+  describe("items.push compound method", () => {
+    it("creates a new item when no duplicate exists", async () => {
+      const searchStub = sinon.stub().resolves([]);  // No duplicates found
+      const savedItem = {
+        id: 99, key: "NEW99", libraryID: 1,
+        setField: sinon.stub(), setCreators: sinon.stub(),
+        addTag: sinon.stub(), addToCollection: sinon.stub(),
+        saveTx: sinon.stub().resolves(),
+        getField: () => "", isNote: () => false, isAttachment: () => false,
+        getCreators: () => [], getTags: () => [], getCollections: () => [], getRelations: () => ({}),
+        itemType: "journalArticle", itemTypeID: 1, dateAdded: "", dateModified: "", deleted: false,
+      };
+
+      class FakeSearch {
+        libraryID: any;
+        addCondition = sinon.stub();
+        search = searchStub;
+      }
+
+      installZotero({
+        Libraries: { userLibraryID: 1 },
+        Search: FakeSearch,
+        Items: { getAsync: sinon.stub().resolves(null) },
+        Item: function (itemType: string) {
+          Object.assign(this, savedItem);
+          (this as any).key = "NEW99";
+        } as any,
+      });
+
+      delete require.cache[require.resolve("../../src/handlers/items")];
+      delete require.cache[require.resolve("../../src/utils/guards")];
+      const { itemsHandlers } = await import("../../src/handlers/items");
+
+      const result = await itemsHandlers.push({
+        item: {
+          itemType: "journalArticle",
+          fields: { title: "A brand new paper title for testing" },
+          tags: ["test"],
+        },
+      });
+
+      expect(result.status).to.equal("created");
+      expect(result.key).to.equal("NEW99");
+      expect(result.pdfAttached).to.equal(false);
+    });
+
+    it("skips duplicate when onDuplicate=skip and DOI matches", async () => {
+      const existingItem: any = {
+        id: 50, key: "DUP50", libraryID: 1,
+        getField: (f: string) => f === "title" ? "Existing Paper" : "",
+        isNote: () => false, isAttachment: () => false,
+        getCreators: () => [], getTags: () => [], getCollections: () => [], getRelations: () => ({}),
+        getAttachments: () => [],
+        addToCollection: sinon.stub(), saveTx: sinon.stub().resolves(),
+        itemType: "journalArticle", itemTypeID: 1, dateAdded: "", dateModified: "", deleted: false,
+      };
+
+      const searchStub = sinon.stub().resolves([50]);  // DOI search finds item 50
+
+      class FakeSearch {
+        libraryID: any;
+        addCondition = sinon.stub();
+        search = searchStub;
+      }
+
+      const getAsyncStub = sinon.stub();
+      getAsyncStub.withArgs(50).resolves(existingItem);
+
+      installZotero({
+        Libraries: { userLibraryID: 1 },
+        Search: FakeSearch,
+        Items: { getAsync: getAsyncStub },
+      });
+
+      delete require.cache[require.resolve("../../src/handlers/items")];
+      delete require.cache[require.resolve("../../src/utils/guards")];
+      const { itemsHandlers } = await import("../../src/handlers/items");
+
+      const result = await itemsHandlers.push({
+        item: {
+          fields: { DOI: "10.1234/existing", title: "Existing Paper" },
+        },
+        onDuplicate: "skip",
+      });
+
+      expect(result.status).to.equal("skipped_duplicate");
+      expect(result.key).to.equal("DUP50");
+      expect(result.pdfAttached).to.equal(false);
+    });
+  });
+
   describe("citationKey on items namespace (fix #52 relocation)", () => {
     it("returns {citationKey, id} when called as items.citationKey", async () => {
       const item: any = {
