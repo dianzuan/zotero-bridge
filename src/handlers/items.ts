@@ -6,7 +6,7 @@ import { splitChineseName, CJK_REGEX } from "../utils/chinese-name";
 import { serializeItem } from "../utils/serialize";
 import { extractYear } from "../utils/citation-key";
 import { requireItem, requireCollection, resolveItems } from "../utils/guards";
-import { safePathToFile } from "../utils/safe-path";
+import { sanitizePath } from "../utils/safe-path";
 
 /** Auto-split a creator's CJK name when firstName is empty and lastName
  *  contains 2+ CJK characters. Callers that pre-split (firstName set) pass
@@ -101,9 +101,10 @@ async function tryAttachPdf(itemKey: string, pdfPath: string): Promise<boolean> 
     const att = await Zotero.Items.getAsync(attID);
     if (att && (att as any).attachmentContentType === "application/pdf") return false;
   }
-  const file = safePathToFile(pdfPath);
-  if (!file || !file.exists()) return false;
-  await Zotero.Attachments.importFromFile({ file, parentItemID: item.id });
+  const cleanPath = sanitizePath(pdfPath);
+  const file = Zotero.File.pathToFile(cleanPath);
+  if (!file.exists()) return false;
+  await Zotero.Attachments.importFromFile({ file: cleanPath, parentItemID: item.id });
   return true;
 }
 
@@ -313,8 +314,9 @@ export const itemsHandlers = {
   },
 
   async addFromFile(params: { path: string; collection?: number }) {
-    const file = safePathToFile(params.path);
-    if (!file || !file.exists()) {
+    const cleanPath = sanitizePath(params.path);
+    const file = Zotero.File.pathToFile(cleanPath);
+    if (!file.exists()) {
       throw { code: -32602, message: `File not found: ${params.path}` };
     }
     const libraryID = Zotero.Libraries.userLibraryID;

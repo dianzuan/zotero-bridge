@@ -4,7 +4,7 @@
 import { registerHandlers } from "../server";
 import { serializeItem } from "../utils/serialize";
 import { requireItem } from "../utils/guards";
-import { safePathToFile } from "../utils/safe-path";
+import { sanitizePath } from "../utils/safe-path";
 
 async function serializeAttachment(item: Zotero.Item): Promise<Record<string, any>> {
   const data = serializeItem(item);
@@ -75,8 +75,9 @@ export const attachmentsHandlers = {
     renameFromParent?: boolean;
   }) {
     const parent = await requireItem(params.parentKey);
-    const file = safePathToFile(params.path);
-    if (!file || !file.exists()) throw { code: -32602, message: `File not found: ${params.path}` };
+    const cleanPath = sanitizePath(params.path);
+    const file = Zotero.File.pathToFile(cleanPath);
+    if (!file.exists()) throw { code: -32602, message: `File not found: ${params.path}` };
     const attachment = await Zotero.Attachments.importFromFile({
       file,
       parentItemID: parent.id,
