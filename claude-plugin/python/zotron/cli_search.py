@@ -58,6 +58,9 @@ def search_by_identifier(
     isbn: str | None = typer.Option(None, "--isbn"),
     issn: str | None = typer.Option(None, "--issn"),
     url: str = typer.Option(DEFAULT_URL, "--url"),
+    output: str = typer.Option("json", "--output", "-o",
+        help="Output format: json (default) or table."),
+    jq_filter: str | None = typer.Option(None, "--jq", help="jq filter expression"),
 ) -> None:
     """Find an item by DOI / ISBN / ISSN."""
     params = {k: v for k, v in
@@ -65,8 +68,8 @@ def search_by_identifier(
               if v}
     if not params:
         die("INVALID_ARGS", "give at least one of --doi/--isbn/--issn", 2)
-    typer.echo(json.dumps(rpc_or_die(new_rpc(url),
-                                      "search.byIdentifier", params)))
+    emit_or_die(rpc_or_die(new_rpc(url), "search.byIdentifier", params),
+                output=output, jq_filter=jq_filter)
 
 
 def _parse_condition(raw: str) -> dict:
