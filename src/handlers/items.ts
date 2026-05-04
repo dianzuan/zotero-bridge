@@ -76,23 +76,6 @@ function applyFields(
   }
 }
 
-function resolvePdfPath(pdfPath: string): string {
-  // WSL: convert /mnt/c/... or /tmp/... POSIX paths to Windows paths
-  // so Zotero (running on Windows) can access the file.
-  try {
-    if (typeof Zotero.isWin !== "undefined" && !Zotero.isWin) return pdfPath;
-    if (/^[A-Z]:\\/i.test(pdfPath)) return pdfPath;
-    if (pdfPath.startsWith("/mnt/")) {
-      const drive = pdfPath.charAt(5).toUpperCase();
-      return `${drive}:${pdfPath.slice(6).replace(/\//g, "\\")}`;
-    }
-    // Absolute POSIX path on WSL — try wslpath-style conversion
-    // Zotero on Windows can access \\wsl$\ paths
-    const distro = (Zotero as any).wslDistroName;
-    if (distro) return `\\\\wsl$\\${distro}${pdfPath.replace(/\//g, "\\")}`;
-  } catch { /* fall through */ }
-  return pdfPath;
-}
 
 async function tryAttachPdf(itemKey: string, pdfPath: string): Promise<boolean> {
   const item = await requireItem(itemKey);
@@ -505,7 +488,7 @@ export const itemsHandlers = {
     }
 
     const pdfAttached = params.pdf
-      ? await tryAttachPdf(itemKey, resolvePdfPath(params.pdf))
+      ? await tryAttachPdf(itemKey, sanitizePath(params.pdf))
       : false;
 
     return { status, key: itemKey, pdfAttached };

@@ -4,24 +4,39 @@
 const ILLEGAL_WIN_CHARS = /[""«»]/g;
 
 /**
- * Sanitize a file path for Zotero.File.pathToFile / Zotero.Attachments.importFromFile.
+ * Sanitize and translate a file path for Zotero's file APIs.
  *
- * Zotero.File.pathToFile internally does `new FileUtils.File(path)` →
- * `nsIFile.initWithPath(path)`. initWithPath accepts full Unicode (AString),
- * so Chinese characters are fine. The real failure cases are:
- *   1. Smart quotes / typographic dashes in filenames (illegal on Windows NTFS)
- *   2. Path separators wrong for the OS
- *
- * All mainstream Zotero 8 plugins (jasminum, attanger) pass plain string paths
- * directly. We do the same — just clean up known problematic characters first.
+ * Handles two problems:
+ * 1. WSL: POSIX paths (/tmp/..., /mnt/c/...) need translation to Windows
+ *    paths because Zotero runs on the Windows side.
+ * 2. CNKI filenames may contain smart quotes or typographic characters
+ *    that are illegal on NTFS.
  */
 export function sanitizePath(rawPath: string): string {
   let p = rawPath;
-  // Normalize path separators on Windows
+
+  // On Windows Zotero, translate POSIX paths from WSL
   if (typeof Zotero !== "undefined" && (Zotero as any).isWin) {
-    p = p.replace(/\//g, "\\");
+    // Already a Windows path — leave it
+    if (/^[A-Z]:\\/i.test(p) || p.startsWith("\\\\")) {
+      // just strip illegal chars below
+    } else if (p.startsWith("/mnt/") && p.length > 6) {
+      // /mnt/c/Users/... → C:\Users\...
+      const drive = p.charAt(5).toUpperCase();
+      p = `${drive}:${p.slice(6).replace(/\//g, "\\")}`;
+    } else if (p.startsWith("/")) {
+      // /tmp/... or /home/... → \\wsl$\<distro>\...
+      // Zotero on Windows can access WSL filesystems via UNC path
+      try {
+        const distro = (Zotero as any).wslDistroName;
+        if (distro) {
+          p = `\\\\wsl$\\${distro}${p.replace(/\//g, "\\")}`;
+        }
+      } catch { /* fall through with original path */ }
+    }
   }
-  // Strip characters illegal on Windows NTFS that CNKI filenames sometimes contain
+
+  // Strip NTFS-illegal characters that CNKI filenames sometimes contain
   p = p.replace(ILLEGAL_WIN_CHARS, "");
   return p;
 }
