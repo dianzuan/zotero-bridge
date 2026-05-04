@@ -40,7 +40,7 @@ def cmd_status(args: argparse.Namespace, cfg: dict) -> None:
         print(json.dumps(error_result, ensure_ascii=False))
         sys.exit(1)
 
-    raw = rpc.call("collections.getItems", {"id": collection_id, "limit": 500}) or {}
+    raw = rpc.call("collections.getItems", {"key": collection_id, "limit": 500}) or {}
     items = raw.get("items", []) if isinstance(raw, dict) else raw
     total = len(items)
     has_ocr = sum(1 for item in items if _has_ocr_result(rpc, item.get("key")))
@@ -54,12 +54,12 @@ def cmd_status(args: argparse.Namespace, cfg: dict) -> None:
 
 
 def _has_ocr_note(rpc: ZoteroRPC, item_id: str) -> bool:
-    notes = cast(list[dict[str, Any]], rpc.call("notes.get", {"parentId": item_id}) or [])
+    notes = cast(list[dict[str, Any]], rpc.call("notes.get", {"parentKey": item_id}) or [])
     return any("ocr" in (note.get("tags") or []) for note in notes)
 
 
 def _has_ocr_artifact(rpc: ZoteroRPC, item_id: str) -> bool:
-    attachments = cast(list[dict[str, Any]], rpc.call("attachments.list", {"parentId": item_id}) or [])
+    attachments = cast(list[dict[str, Any]], rpc.call("attachments.list", {"parentKey": item_id}) or [])
     return any(str(att.get("title") or "").endswith(CHUNKS_SUFFIX) for att in attachments)
 
 
@@ -69,7 +69,7 @@ def _has_ocr_result(rpc: ZoteroRPC, item_id: str) -> bool:
 
 def _process_item(proc: OCRProcessor, item_id: str, *, force: bool) -> dict:
     try:
-        item_info = proc.rpc.call("items.get", {"id": item_id}) or {}
+        item_info = proc.rpc.call("items.get", {"key": item_id}) or {}
         title = item_info.get("title", "(untitled)")
     except Exception:
         title = "(untitled)"

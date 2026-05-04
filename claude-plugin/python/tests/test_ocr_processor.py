@@ -81,7 +81,7 @@ def test_has_ocr_note_true():
         {"key": "KEY0100", "note": "<p>some content</p>", "tags": ["ocr", "imported"], "version": 1},
     ]
     assert processor.has_ocr_note(42) is True
-    rpc.call.assert_called_once_with("notes.get", {"parentId": 42})
+    rpc.call.assert_called_once_with("notes.get", {"parentKey": 42})
 
 
 def test_has_ocr_note_false():
@@ -111,7 +111,7 @@ def test_has_ocr_result_prefers_chunk_artifacts():
     rpc.call.side_effect = call
 
     assert processor.has_ocr_result(42) is True
-    rpc.call.assert_called_once_with("attachments.list", {"parentId": 42})
+    rpc.call.assert_called_once_with("attachments.list", {"parentKey": 42})
 
 
 def test_process_item_skips_when_artifact_exists_without_preview_note():
@@ -258,7 +258,7 @@ def test_attach_artifact_converts_path_for_zotero(tmp_path):
     rpc.call.assert_called_once_with(
         "attachments.add",
         {
-            "parentId": 42,
+            "parentKey": 42,
             "path": "\\\\wsl.localhost\\Ubuntu\\tmp\\ITEM.zotron-chunks.jsonl",
             "title": "ITEM.zotron-chunks.jsonl",
         },

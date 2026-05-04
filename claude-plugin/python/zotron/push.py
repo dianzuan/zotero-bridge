@@ -45,7 +45,7 @@ def check_pdf_magic(path: Path) -> bool:
 
 
 def _item_has_pdf_attachment(rpc: Any, item_id: str) -> bool:
-    existing = rpc.call("attachments.list", {"parentId": item_id}) or []
+    existing = rpc.call("attachments.list", {"parentKey": item_id}) or []
     # Match on MIME type OR .pdf filename suffix. Zotero stores some
     # attachments with blank/octet-stream/x-pdf contentType depending
     # on the source (manual import, older plugin builds, browser save
@@ -60,7 +60,7 @@ def _item_has_pdf_attachment(rpc: Any, item_id: str) -> bool:
 
 def _attach_pdf(rpc: Any, item_id: str, pdf_path: Path) -> None:
     rpc.call("attachments.add", {
-        "parentId": item_id,
+        "parentKey": item_id,
         "path": _zotero_path(pdf_path),
         "title": "Full Text PDF",
     })
@@ -273,8 +273,8 @@ def push_item(
         # collections.addItems is idempotent on the XPI side.
         if collection_id and collection_id != 0:
             rpc.call("collections.addItems", {
-                "id": collection_id,
-                "itemIds": [dup_id],
+                "key": collection_id,
+                "keys": [dup_id],
             })
         # If we have a PDF and the dup has none, attach ours. Covers the
         # realistic workflow: first push was `--no-pdf`, now the user wants
@@ -302,7 +302,7 @@ def push_item(
         # collections.addItems so existing collection memberships aren't
         # clobbered (additive, not replace).
         update_params: dict[str, Any] = {
-            "id": dup_id,
+            "key": dup_id,
             "fields": xpi_payload["fields"],
         }
         if "creators" in xpi_payload:
@@ -336,8 +336,8 @@ def push_item(
     # For `create`, they were embedded in the create payload so re-calling is unnecessary.
     if status == "updated" and collection_id and collection_id != 0:
         rpc.call("collections.addItems", {
-            "id": collection_id,
-            "itemIds": [item_id],
+            "key": collection_id,
+            "keys": [item_id],
         })
 
     return PushResult(

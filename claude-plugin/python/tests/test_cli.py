@@ -73,7 +73,7 @@ def test_collections_rename_happy_path(mock_rpc):
     rename_calls = [c for c in mock_rpc.call.call_args_list
                     if c.args[0] == "collections.rename"]
     assert len(rename_calls) == 1
-    assert rename_calls[0].args[1] == {"id": "COL42", "name": "案例库"}
+    assert rename_calls[0].args[1] == {"key": "COL42", "name": "案例库"}
 
 
 def test_collections_rename_not_found(mock_rpc):
@@ -345,9 +345,9 @@ def test_find_pdfs_lists_items_missing_pdf(mock_rpc):
         if method == "collections.getItems":
             return {"items": items_in_collection, "total": len(items_in_collection)}
         if method == "attachments.list":
-            return attachments_per_item.get(params["parentId"], [])
+            return attachments_per_item.get(params["parentKey"], [])
         if method == "attachments.findPDF":
-            if params["parentId"] == "ITEM10":
+            if params["parentKey"] == "ITEM10":
                 return {"attachment": {"key": "ATT99", "title": "Full Text PDF"}}
             return {"attachment": None}
         return None
@@ -476,7 +476,7 @@ def test_items_trash_dry_run(mock_rpc):
     assert result.exit_code == 0
     data = json.loads(result.stdout)
     assert data["wouldCall"] == "items.trash"
-    assert data["wouldCallParams"] == {"id": "12345"}
+    assert data["wouldCallParams"] == {"key": "12345"}
 
 
 def test_push_dry_run_does_not_call_push_item(mock_rpc, tmp_path):

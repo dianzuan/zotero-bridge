@@ -48,7 +48,7 @@ def _get_item_text(rpc: ZoteroRPC, item_id: str) -> str | None:
     try:
         notes = cast(
             list[dict[str, Any]],
-            rpc.call("notes.get", {"parentId": item_id}) or [],
+            rpc.call("notes.get", {"parentKey": item_id}) or [],
         )
         for note in notes:
             tags = note.get("tags") or []
@@ -66,7 +66,7 @@ def _get_item_text(rpc: ZoteroRPC, item_id: str) -> str | None:
 
     # Fallback: fulltext
     try:
-        result = rpc.call("attachments.getFulltext", {"id": item_id})
+        result = rpc.call("attachments.getFulltext", {"key": item_id})
         if isinstance(result, str) and result.strip():
             return result
         if isinstance(result, dict):
@@ -201,7 +201,7 @@ def cmd_index(args: argparse.Namespace, cfg: dict[str, Any]) -> None:
 
     embedder = _build_embedder(cfg)
 
-    items = paginate(rpc, "collections.getItems", {"id": collection_id}, page_size=500)
+    items = paginate(rpc, "collections.getItems", {"key": collection_id}, page_size=500)
     indexed = 0
     skipped = 0
 
@@ -354,7 +354,7 @@ def _item_key_from_info(item_id: str, item_info: dict[str, Any], chunks: list[di
 def _attachment_path(rpc: ZoteroRPC, attachment: dict[str, Any]) -> Path:
     path = attachment.get("path")
     if not path:
-        result = rpc.call("attachments.getPath", {"id": attachment.get("key")})
+        result = rpc.call("attachments.getPath", {"key": attachment.get("key")})
         path = result.get("path") if isinstance(result, dict) else result
     if not path:
         raise FileNotFoundError(f"Attachment path unavailable for {attachment.get('title')!r}")
@@ -362,7 +362,7 @@ def _attachment_path(rpc: ZoteroRPC, attachment: dict[str, Any]) -> Path:
 
 
 def _find_chunks_attachment(rpc: ZoteroRPC, item_id: str) -> dict[str, Any] | None:
-    attachments = cast(list[dict[str, Any]], rpc.call("attachments.list", {"parentId": item_id}) or [])
+    attachments = cast(list[dict[str, Any]], rpc.call("attachments.list", {"parentKey": item_id}) or [])
     return _find_chunks_attachment_in(attachments)
 
 
@@ -382,7 +382,7 @@ def _zotero_item_ids_for_index(rpc: ZoteroRPC, args: argparse.Namespace) -> list
         if collection_id is None:
             print(json.dumps({"error": f"Collection not found: {args.collection!r}"}), file=sys.stderr)
             sys.exit(1)
-        items = paginate(rpc, "collections.getItems", {"id": collection_id}, page_size=500)
+        items = paginate(rpc, "collections.getItems", {"key": collection_id}, page_size=500)
         return [item["key"] for item in items if item.get("key") is not None]
     print(json.dumps({"error": "--item or --collection is required when --zotero is used"}), file=sys.stderr)
     sys.exit(2)
@@ -396,8 +396,8 @@ def _index_zotero_item_artifact(
     model: str,
     output_dir: Path | None,
 ) -> dict[str, Any]:
-    item_info = cast(dict[str, Any], rpc.call("items.get", {"id": item_id}) or {})
-    attachments = cast(list[dict[str, Any]], rpc.call("attachments.list", {"parentId": item_id}) or [])
+    item_info = cast(dict[str, Any], rpc.call("items.get", {"key": item_id}) or {})
+    attachments = cast(list[dict[str, Any]], rpc.call("attachments.list", {"parentKey": item_id}) or [])
     chunks_attachment = _find_chunks_attachment_in(attachments)
     if chunks_attachment is None:
         return {"item_key": item_id, "status": "skipped", "reason": "missing chunks artifact"}
@@ -425,13 +425,13 @@ def _index_zotero_item_artifact(
         attachment_key = attachment.get("key")
         if attachment_key is None:
             continue
-        rpc.call("attachments.delete", {"id": attachment_key})
+        rpc.call("attachments.delete", {"key": attachment_key})
         replaced += 1
 
     attachment = rpc.call(
         "attachments.add",
         {
-            "parentId": item_id,
+            "parentKey": item_id,
             "path": zotero_path(embedding_path),
             "title": embedding_path.name,
         },

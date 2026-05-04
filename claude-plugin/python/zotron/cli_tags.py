@@ -79,7 +79,7 @@ def tags_add(
     from zotron._cli_base import die
     if not tags:
         die("INVALID_ARGS", "--tag is required", 2)
-    params = {"id": id, "tags": list(tags)}
+    params = {"key": id, "tags": list(tags)}
     if dry_run_flag:
         dry_run("tags.add", params)
     typer.echo(json.dumps(rpc_or_die(new_rpc(url), "tags.add", params)))
@@ -100,7 +100,7 @@ def tags_remove(
     from zotron._cli_base import die
     if not tags:
         die("INVALID_ARGS", "--tag is required", 2)
-    params = {"id": id, "tags": list(tags)}
+    params = {"key": id, "tags": list(tags)}
     if dry_run_flag:
         dry_run("tags.remove", params)
     typer.echo(json.dumps(rpc_or_die(new_rpc(url), "tags.remove", params)))
@@ -124,7 +124,7 @@ def tags_batch_update(
     remove_list = list(remove_tags) if remove_tags else []
     if not add_list and not remove_list:
         die("INVALID_ARGS", "at least one of --add or --remove is required", 2)
-    params: dict = {"ids": list(ids)}
+    params: dict = {"keys": list(ids)}
     if add_list:
         params["add"] = add_list
     if remove_list:

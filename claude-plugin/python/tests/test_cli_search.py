@@ -218,7 +218,7 @@ def test_search_delete_saved_basic(mock_rpc):
     assert data["ok"] is True
     mock_rpc.call.assert_called_once_with(
         "search.deleteSavedSearch",
-        {"id": "abc123"},
+        {"key": "abc123"},
     )
 
 
@@ -231,5 +231,5 @@ def test_search_delete_saved_dry_run(mock_rpc):
     data = json.loads(result.stdout)
     assert data["dryRun"] is True
     assert data["wouldCall"] == "search.deleteSavedSearch"
-    assert data["wouldCallParams"] == {"id": "xyz789"}
+    assert data["wouldCallParams"] == {"key": "xyz789"}
     mock_rpc.call.assert_not_called()

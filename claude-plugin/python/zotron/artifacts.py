@@ -70,7 +70,7 @@ class ZoteroArtifactStore:
         self.rpc = rpc
 
     def list_artifacts(self, parent_id: str, suffix: str | None = None) -> list[dict[str, Any]]:
-        attachments = self.rpc.call("attachments.list", {"parentId": parent_id}) or []
+        attachments = self.rpc.call("attachments.list", {"parentKey": parent_id}) or []
         if suffix is None:
             return list(attachments)
         return [a for a in attachments if str(a.get("title") or "").endswith(suffix)]
@@ -83,11 +83,11 @@ class ZoteroArtifactStore:
         path = Path(path)
         return self.rpc.call(
             "attachments.add",
-            {"parentId": parent_id, "path": str(path), "title": title or path.name},
+            {"parentKey": parent_id, "path": str(path), "title": title or path.name},
         )
 
     def delete_artifact(self, attachment_id: str) -> Any:
-        return self.rpc.call("attachments.delete", {"id": attachment_id})
+        return self.rpc.call("attachments.delete", {"key": attachment_id})
 
 
 def _json_bytes(value: Any, *, pretty: bool = False) -> bytes:
@@ -131,7 +131,7 @@ def _assert_safe_zip_member(name: str) -> None:
 
 
 def list_artifacts(rpc: Any, *, parent_id: str, suffix: str | None = None) -> list[dict[str, Any]]:
-    artifacts = rpc.call("attachments.list", {"parentId": parent_id}) or []
+    artifacts = rpc.call("attachments.list", {"parentKey": parent_id}) or []
     artifacts = list(artifacts)
     setattr(rpc, "_zotron_last_artifacts", artifacts)
     if suffix is None:
@@ -147,11 +147,11 @@ def find_artifact_by_suffix(rpc: Any, *, parent_id: str, suffix: str) -> dict[st
 
 def add_artifact_file(rpc: Any, *, parent_id: str, path: str | Path, title: str | None = None) -> dict[str, Any]:
     path = Path(path)
-    return rpc.call("attachments.add", {"parentId": parent_id, "path": str(path), "title": title or path.name})
+    return rpc.call("attachments.add", {"parentKey": parent_id, "path": str(path), "title": title or path.name})
 
 
 def delete_artifact(rpc: Any, *, artifact_id: str) -> Any:
-    return rpc.call("attachments.delete", {"id": artifact_id})
+    return rpc.call("attachments.delete", {"key": artifact_id})
 
 
 

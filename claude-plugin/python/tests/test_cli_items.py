@@ -109,7 +109,7 @@ def test_items_update_dry_run(mock_rpc):
     data = json.loads(result.stdout)
     assert data["dryRun"] is True
     assert data["wouldCall"] == "items.update"
-    assert data["wouldCallParams"]["id"] == "ABCD1234"
+    assert data["wouldCallParams"]["key"] == "ABCD1234"
     assert data["wouldCallParams"]["fields"]["year"] == "2027"
     mock_rpc.call.assert_not_called()
 
@@ -119,7 +119,7 @@ def test_items_update_accepts_string_id(mock_rpc):
     result = runner.invoke(app, ["items", "update", "ABCD1234", "--field", "title=X"])
     assert result.exit_code == 0
     call_args = mock_rpc.call.call_args
-    assert call_args.args[1]["id"] == "ABCD1234"
+    assert call_args.args[1]["key"] == "ABCD1234"
 
 
 # ---------------------------------------------------------------------------
@@ -140,7 +140,7 @@ def test_items_delete_dry_run(mock_rpc):
     data = json.loads(result.stdout)
     assert data["dryRun"] is True
     assert data["wouldCall"] == "items.delete"
-    assert data["wouldCallParams"]["id"] == "42"
+    assert data["wouldCallParams"]["key"] == "42"
     mock_rpc.call.assert_not_called()
 
 
@@ -180,7 +180,7 @@ def test_items_batch_trash_dry_run(mock_rpc):
     data = json.loads(result.stdout)
     assert data["dryRun"] is True
     assert data["wouldCall"] == "items.batchTrash"
-    assert "10" in data["wouldCallParams"]["ids"]
+    assert "10" in data["wouldCallParams"]["keys"]
     mock_rpc.call.assert_not_called()
 
 
@@ -310,8 +310,8 @@ def test_items_add_related_dry_run(mock_rpc):
     data = json.loads(result.stdout)
     assert data["dryRun"] is True
     assert data["wouldCall"] == "items.addRelated"
-    assert data["wouldCallParams"]["id"] == "12345"
-    assert data["wouldCallParams"]["targetId"] == "67890"
+    assert data["wouldCallParams"]["key"] == "12345"
+    assert data["wouldCallParams"]["targetKey"] == "67890"
     mock_rpc.call.assert_not_called()
 
 
@@ -335,7 +335,7 @@ def test_items_remove_related_dry_run(mock_rpc):
     data = json.loads(result.stdout)
     assert data["dryRun"] is True
     assert data["wouldCall"] == "items.removeRelated"
-    assert data["wouldCallParams"]["targetId"] == "67890"
+    assert data["wouldCallParams"]["targetKey"] == "67890"
     mock_rpc.call.assert_not_called()
 
 
@@ -364,4 +364,4 @@ def test_items_citation_key_accepts_string_key(mock_rpc):
     result = runner.invoke(app, ["items", "citation-key", "ABCD1234"])
     assert result.exit_code == 0
     call_args = mock_rpc.call.call_args
-    assert call_args.args[1]["id"] == "ABCD1234"
+    assert call_args.args[1]["key"] == "ABCD1234"

@@ -28,7 +28,7 @@ def notes_list(
 ) -> None:
     """List notes attached to a parent item."""
     rpc = new_rpc(url)
-    data = rpc_or_die(rpc, "notes.list", {"parentId": parent, "limit": limit, "offset": offset})
+    data = rpc_or_die(rpc, "notes.list", {"parentKey": parent, "limit": limit, "offset": offset})
     emit_or_die(data, output=output, jq_filter=jq_filter)
 
 
@@ -45,7 +45,7 @@ def notes_get(
 ) -> None:
     """Get a single note by ID."""
     rpc = new_rpc(url)
-    data = rpc_or_die(rpc, "notes.get", {"id": note_id})
+    data = rpc_or_die(rpc, "notes.get", {"key": note_id})
     emit_or_die(data, output=output, jq_filter=jq_filter)
 
 
@@ -62,7 +62,7 @@ def notes_create(
         help="Print intended RPC call as JSON; do not execute."),
 ) -> None:
     """Create a note attached to a parent item."""
-    params: dict = {"parentId": parent, "content": content}
+    params: dict = {"parentKey": parent, "content": content}
     if tags:
         params["tags"] = list(tags)
     if dry_run_flag:
@@ -83,7 +83,7 @@ def notes_update(
         help="Print intended RPC call as JSON; do not execute."),
 ) -> None:
     """Update the content of an existing note."""
-    params: dict = {"id": note_id, "content": content}
+    params: dict = {"key": note_id, "content": content}
     if dry_run_flag:
         dry_run("notes.update", params)
     rpc = new_rpc(url)
@@ -101,7 +101,7 @@ def notes_delete(
         help="Print intended RPC call as JSON; do not execute."),
 ) -> None:
     """Delete a note by ID."""
-    params: dict = {"id": note_id}
+    params: dict = {"key": note_id}
     if dry_run_flag:
         dry_run("items.delete", params)
     rpc = new_rpc(url)

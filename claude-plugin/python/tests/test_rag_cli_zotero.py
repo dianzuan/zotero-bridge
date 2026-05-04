@@ -141,12 +141,12 @@ def test_rag_index_artifacts_zotero_item_embeds_attached_chunks(tmp_path, capsys
 
     mock_embedder.embed_batch.assert_called_once_with(["first Zotero span", "second Zotero span"])
     delete_call = rpc.call.call_args_list[-2]
-    assert delete_call.args == ("attachments.delete", {"id": "ATT9002"})
+    assert delete_call.args == ("attachments.delete", {"key": "ATT9002"})
 
     add_call = rpc.call.call_args_list[-1]
     assert add_call.args[0] == "attachments.add"
     add_params = add_call.args[1]
-    assert add_params["parentId"] == "ITEM1"
+    assert add_params["parentKey"] == "ITEM1"
     assert add_params["title"] == "ITEM1.zotron-embed.npz"
 
     vectors, metadata, model = read_embedding_npz(add_params["path"])
@@ -178,9 +178,9 @@ def test_zotero_collection_index_uses_pagination():
 
     assert rpc.call.call_args_list[0].args == (
         "collections.getItems",
-        {"id": 69, "offset": 0, "limit": 500},
+        {"key": 69, "offset": 0, "limit": 500},
     )
     assert rpc.call.call_args_list[1].args == (
         "collections.getItems",
-        {"id": 69, "offset": 500, "limit": 500},
+        {"key": 69, "offset": 500, "limit": 500},
     )

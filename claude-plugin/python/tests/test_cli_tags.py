@@ -31,7 +31,7 @@ def test_tags_add_single_tag(mock_rpc):
     assert data["key"] == "KEY0005"
     call_args = mock_rpc.call.call_args
     assert call_args.args[0] == "tags.add"
-    assert call_args.args[1] == {"id": "12345", "tags": ["已读"]}
+    assert call_args.args[1] == {"key": "12345", "tags": ["已读"]}
 
 
 def test_tags_add_multiple_tags(mock_rpc):
@@ -50,7 +50,7 @@ def test_tags_add_dry_run(mock_rpc):
     data = json.loads(result.stdout)
     assert data["dryRun"] is True
     assert data["wouldCall"] == "tags.add"
-    assert data["wouldCallParams"] == {"id": "12345", "tags": ["todo"]}
+    assert data["wouldCallParams"] == {"key": "12345", "tags": ["todo"]}
     mock_rpc.call.assert_not_called()
 
 
@@ -67,7 +67,7 @@ def test_tags_remove_single_tag(mock_rpc):
     assert data["key"] == "KEY0007"
     call_args = mock_rpc.call.call_args
     assert call_args.args[0] == "tags.remove"
-    assert call_args.args[1] == {"id": "12345", "tags": ["已读"]}
+    assert call_args.args[1] == {"key": "12345", "tags": ["已读"]}
 
 
 def test_tags_remove_multiple_tags(mock_rpc):
@@ -86,7 +86,7 @@ def test_tags_remove_dry_run(mock_rpc):
     data = json.loads(result.stdout)
     assert data["dryRun"] is True
     assert data["wouldCall"] == "tags.remove"
-    assert data["wouldCallParams"] == {"id": "12345", "tags": ["stale"]}
+    assert data["wouldCallParams"] == {"key": "12345", "tags": ["stale"]}
     mock_rpc.call.assert_not_called()
 
 
@@ -107,7 +107,7 @@ def test_tags_batch_update_add_and_remove(mock_rpc):
     call_args = mock_rpc.call.call_args
     assert call_args.args[0] == "tags.batchUpdate"
     params = call_args.args[1]
-    assert params["ids"] == ["111", "222", "333"]
+    assert params["keys"] == ["111", "222", "333"]
     assert params["add"] == ["已读"]
     assert params["remove"] == ["todo"]
 

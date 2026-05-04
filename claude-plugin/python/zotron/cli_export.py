@@ -15,7 +15,7 @@ export_app = typer.Typer(
 
 def _export_fmt(method: str, ids: list[str], url: str) -> None:
     rpc = new_rpc(url)
-    resp = rpc_or_die(rpc, method, {"ids": ids})
+    resp = rpc_or_die(rpc, method, {"keys": ids})
     if isinstance(resp, dict) and "content" in resp:
         typer.echo(resp["content"])
     else:

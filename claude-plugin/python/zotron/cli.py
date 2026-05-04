@@ -250,7 +250,7 @@ def find_pdfs(
     except CollectionNotFound as e:
         die("COLLECTION_NOT_FOUND", str(e))
 
-    resp = rpc.call("collections.getItems", {"id": coll_id}) or {}
+    resp = rpc.call("collections.getItems", {"key": coll_id}) or {}
     items = cast(list[dict], resp.get("items", []) if isinstance(resp, dict) else (resp or []))
 
     missing = []
@@ -258,7 +258,7 @@ def find_pdfs(
         item_key = it.get("key")
         if item_key is None:
             continue
-        attachments = cast(list[dict], rpc.call("attachments.list", {"parentId": item_key}) or [])
+        attachments = cast(list[dict], rpc.call("attachments.list", {"parentKey": item_key}) or [])
         has_pdf = any(
             (a.get("contentType") or "").lower() == "application/pdf"
             or (a.get("path") or "").lower().endswith(".pdf")
@@ -271,7 +271,7 @@ def find_pdfs(
 
     results = []
     for it in missing:
-        resp = rpc.call("attachments.findPDF", {"parentId": it["key"]}) or {}
+        resp = rpc.call("attachments.findPDF", {"parentKey": it["key"]}) or {}
         attachment_data = resp.get("attachment")
         found = attachment_data is not None
         results.append({

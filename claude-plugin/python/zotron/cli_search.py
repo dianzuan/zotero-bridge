@@ -199,7 +199,7 @@ def search_delete_saved(
         help="Print intended RPC call as JSON; do not execute."),
 ) -> None:
     """Delete a saved search by ID."""
-    params: dict = {"id": search_id}
+    params: dict = {"key": search_id}
     if dry_run_flag:
         dry_run("search.deleteSavedSearch", params)
     typer.echo(json.dumps(rpc_or_die(new_rpc(url),

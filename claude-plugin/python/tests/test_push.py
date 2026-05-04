@@ -94,7 +94,7 @@ def test_skip_duplicate_still_links_to_target_collection():
     add_calls = [c for c in rpc.call.call_args_list
                  if c.args[0] == "collections.addItems"]
     assert len(add_calls) == 1
-    assert add_calls[0].args[1] == {"id": 77, "itemIds": ["DUP999"]}
+    assert add_calls[0].args[1] == {"key": 77, "keys": ["DUP999"]}
 
 
 def test_skip_duplicate_no_collection_no_addItems():
@@ -119,7 +119,7 @@ def test_skip_duplicate_attaches_pdf_if_dup_has_none(tmp_path: Path):
     add_calls = [c for c in rpc.call.call_args_list
                  if c.args[0] == "attachments.add"]
     assert len(add_calls) == 1
-    assert add_calls[0].args[1]["parentId"] == "DUP999"
+    assert add_calls[0].args[1]["parentKey"] == "DUP999"
 
 
 def test_skip_duplicate_does_not_reattach_if_pdf_exists(tmp_path: Path):
@@ -234,7 +234,7 @@ def test_update_duplicate_attaches_pdf_if_missing(tmp_path: Path):
     add_calls = [c for c in rpc.call.call_args_list
                  if c.args[0] == "attachments.add"]
     assert len(add_calls) == 1
-    assert add_calls[0].args[1]["parentId"] == "DUP999"
+    assert add_calls[0].args[1]["parentKey"] == "DUP999"
 
 
 def test_update_passes_creators_and_tags():
@@ -256,7 +256,7 @@ def test_update_passes_creators_and_tags():
                     if c.args[0] == "items.update"]
     assert len(update_calls) == 1
     payload = update_calls[0].args[1]
-    assert payload["id"] == "DUP999"
+    assert payload["key"] == "DUP999"
     assert "fields" in payload
     assert payload["creators"] == [
         {"creatorType": "author", "lastName": "陈明昊", "firstName": ""},

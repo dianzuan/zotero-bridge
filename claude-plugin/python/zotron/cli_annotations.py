@@ -28,7 +28,7 @@ def annotations_list(
 ) -> None:
     """List annotations on a PDF attachment."""
     rpc = new_rpc(url)
-    data = rpc_or_die(rpc, "annotations.list", {"parentId": parent})
+    data = rpc_or_die(rpc, "annotations.list", {"parentKey": parent})
     emit_or_die(data, output=output, jq_filter=jq_filter)
 
 
@@ -56,7 +56,7 @@ def annotations_create(
         from zotron._cli_base import die
         die("INVALID_ARGS", f"--type must be highlight|note|underline, got {annotation_type!r}", 2)
 
-    params: dict = {"parentId": parent, "type": annotation_type, "color": color}
+    params: dict = {"parentKey": parent, "type": annotation_type, "color": color}
     if text is not None:
         params["text"] = text
     if comment is not None:
@@ -81,7 +81,7 @@ def annotations_delete(
     ),
 ) -> None:
     """Delete an annotation by ID."""
-    params = {"id": annotation_id}
+    params = {"key": annotation_id}
 
     if dry_run_flag:
         dry_run("annotations.delete", params)

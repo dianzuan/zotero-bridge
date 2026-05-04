@@ -34,7 +34,7 @@ def attachments_list(
 ) -> None:
     """List attachments belonging to a parent item."""
     rpc = new_rpc(url)
-    params: dict = {"parentId": parent, "limit": limit, "offset": offset}
+    params: dict = {"parentKey": parent, "limit": limit, "offset": offset}
     result = rpc_or_die(rpc, "attachments.list", params)
     emit_or_die(result, output=output, jq_filter=jq_filter)
 
@@ -52,7 +52,7 @@ def attachments_get(
 ) -> None:
     """Get a single attachment by ID."""
     rpc = new_rpc(url)
-    result = rpc_or_die(rpc, "attachments.get", {"id": id})
+    result = rpc_or_die(rpc, "attachments.get", {"key": id})
     emit_or_die(result, output=output, jq_filter=jq_filter)
 
 
@@ -67,7 +67,7 @@ def attachments_fulltext(
 ) -> None:
     """Get full-text content of an attachment (returns key, content, indexedChars, totalChars)."""
     rpc = new_rpc(url)
-    result = rpc_or_die(rpc, "attachments.getFullText", {"id": id})
+    result = rpc_or_die(rpc, "attachments.getFullText", {"key": id})
     emit_or_die(result, jq_filter=jq_filter)
 
 
@@ -84,7 +84,7 @@ def attachments_add(
         help="Print intended RPC call as JSON; do not execute."),
 ) -> None:
     """Attach a local file to an item."""
-    params: dict = {"parentId": parent, "path": path}
+    params: dict = {"parentKey": parent, "path": path}
     if title is not None:
         params["title"] = title
     if dry_run_flag:
@@ -106,7 +106,7 @@ def attachments_add_by_url(
         help="Print intended RPC call as JSON; do not execute."),
 ) -> None:
     """Attach a remote file (by URL) to an item."""
-    params: dict = {"parentId": parent, "url": url}
+    params: dict = {"parentKey": parent, "url": url}
     if title is not None:
         params["title"] = title
     if dry_run_flag:
@@ -126,7 +126,7 @@ def attachments_path(
 ) -> None:
     """Get the local filesystem path of an attachment (returns key, path)."""
     rpc = new_rpc(url)
-    result = rpc_or_die(rpc, "attachments.getPath", {"id": id})
+    result = rpc_or_die(rpc, "attachments.getPath", {"key": id})
     emit_or_die(result, jq_filter=jq_filter)
 
 
@@ -142,9 +142,9 @@ def attachments_delete(
 ) -> None:
     """Delete an attachment (returns {ok: true, key: ...})."""
     if dry_run_flag:
-        dry_run("attachments.delete", {"id": id})
+        dry_run("attachments.delete", {"key": id})
     rpc = new_rpc(url)
-    typer.echo(json.dumps(rpc_or_die(rpc, "attachments.delete", {"id": id}), ensure_ascii=False))
+    typer.echo(json.dumps(rpc_or_die(rpc, "attachments.delete", {"key": id}), ensure_ascii=False))
 
 
 @attachments_app.command(
@@ -158,5 +158,5 @@ def attachments_find_pdf(
 ) -> None:
     """Trigger Zotero's Find Available PDF for a parent item (returns {attachment: item | null})."""
     rpc = new_rpc(url)
-    result = rpc_or_die(rpc, "attachments.findPDF", {"parentId": parent})
+    result = rpc_or_die(rpc, "attachments.findPDF", {"parentKey": parent})
     emit_or_die(result, jq_filter=jq_filter)

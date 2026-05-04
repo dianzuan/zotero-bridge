@@ -29,7 +29,7 @@ def test_annotations_list(mock_rpc):
     data = json.loads(result.stdout)
     assert len(data) == 2
     assert data[0]["type"] == "highlight"
-    mock_rpc.call.assert_called_once_with("annotations.list", {"parentId": "42"})
+    mock_rpc.call.assert_called_once_with("annotations.list", {"parentKey": "42"})
 
 
 def test_annotations_create(mock_rpc):
@@ -46,7 +46,7 @@ def test_annotations_create(mock_rpc):
     call_args = mock_rpc.call.call_args
     assert call_args.args[0] == "annotations.create"
     params = call_args.args[1]
-    assert params["parentId"] == "42"
+    assert params["parentKey"] == "42"
     assert params["type"] == "highlight"
     assert params["color"] == "#ffd400"
 
@@ -87,7 +87,7 @@ def test_annotations_create_dry_run(mock_rpc):
     data = json.loads(result.stdout)
     assert data["dryRun"] is True
     assert data["wouldCall"] == "annotations.create"
-    assert data["wouldCallParams"]["parentId"] == "42"
+    assert data["wouldCallParams"]["parentKey"] == "42"
     assert data["wouldCallParams"]["type"] == "underline"
     mock_rpc.call.assert_not_called()
 
@@ -100,7 +100,7 @@ def test_annotations_delete(mock_rpc):
     data = json.loads(result.stdout)
     assert data["ok"] is True
     assert data["key"] == "KEY0055"
-    mock_rpc.call.assert_called_once_with("annotations.delete", {"id": "55"})
+    mock_rpc.call.assert_called_once_with("annotations.delete", {"key": "55"})
 
 
 def test_annotations_delete_dry_run(mock_rpc):
@@ -110,7 +110,7 @@ def test_annotations_delete_dry_run(mock_rpc):
     data = json.loads(result.stdout)
     assert data["dryRun"] is True
     assert data["wouldCall"] == "annotations.delete"
-    assert data["wouldCallParams"]["id"] == "55"
+    assert data["wouldCallParams"]["key"] == "55"
     mock_rpc.call.assert_not_called()
 
 

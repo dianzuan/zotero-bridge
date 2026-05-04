@@ -51,7 +51,7 @@ def test_attachments_list_with_limit_offset(mock_rpc):
     ])
     assert result.exit_code == 0, result.stdout
     call_args = mock_rpc.call.call_args
-    assert call_args.args[1]["parentId"] == "42"
+    assert call_args.args[1]["parentKey"] == "42"
     assert call_args.args[1]["limit"] == 10
     assert call_args.args[1]["offset"] == 20
 
@@ -292,7 +292,7 @@ def test_attachments_delete_dry_run(mock_rpc):
     data = json.loads(result.stdout)
     assert data["dryRun"] is True
     assert data["wouldCall"] == "attachments.delete"
-    assert data["wouldCallParams"]["id"] == "10"
+    assert data["wouldCallParams"]["key"] == "10"
     mock_rpc.call.assert_not_called()
 
 

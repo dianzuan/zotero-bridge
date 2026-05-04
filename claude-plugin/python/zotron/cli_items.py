@@ -25,7 +25,7 @@ def items_get(
     jq_filter: str | None = typer.Option(None, "--jq", help="jq filter expression"),
 ) -> None:
     """Print the full serialization of an item by id."""
-    emit_or_die(rpc_or_die(new_rpc(url), "items.get", {"id": item}),
+    emit_or_die(rpc_or_die(new_rpc(url), "items.get", {"key": item}),
                  output=output, jq_filter=jq_filter)
 
 
@@ -110,9 +110,9 @@ def items_trash(
 ) -> None:
     """Move item to trash (reversible via `restore`)."""
     if dry_run_flag:
-        dry_run("items.trash", {"id": item})
+        dry_run("items.trash", {"key": item})
     typer.echo(json.dumps(rpc_or_die(new_rpc(url), "items.trash",
-                                      {"id": item})))
+                                      {"key": item})))
 
 
 @items_app.command(
@@ -127,9 +127,9 @@ def items_restore(
 ) -> None:
     """Restore a trashed item."""
     if dry_run_flag:
-        dry_run("items.restore", {"id": item})
+        dry_run("items.restore", {"key": item})
     typer.echo(json.dumps(rpc_or_die(new_rpc(url), "items.restore",
-                                      {"id": item})))
+                                      {"key": item})))
 
 
 @items_app.command(
@@ -159,9 +159,9 @@ def items_merge_duplicates(
     if len(ids) < 2:
         die("INVALID_ARGS", "need at least 2 ids to merge", 2)
     if dry_run_flag:
-        dry_run("items.mergeDuplicates", {"ids": ids})
+        dry_run("items.mergeDuplicates", {"keys": ids})
     typer.echo(json.dumps(rpc_or_die(new_rpc(url), "items.mergeDuplicates",
-                                      {"ids": ids})))
+                                      {"keys": ids})))
 
 
 @items_app.command(
@@ -232,7 +232,7 @@ def items_update(
             die("INVALID_ARGS", f"--field must be key=value, got: {f!r}", 2)
         k, v = f.split("=", 1)
         field_dict[k] = v
-    params: dict = {"id": item_id}
+    params: dict = {"key": item_id}
     if field_dict:
         params["fields"] = field_dict
     if dry_run_flag:
@@ -252,8 +252,8 @@ def items_delete(
 ) -> None:
     """Permanently delete an item (bypasses trash)."""
     if dry_run_flag:
-        dry_run("items.delete", {"id": item_id})
-    typer.echo(json.dumps(rpc_or_die(new_rpc(url), "items.delete", {"id": item_id})))
+        dry_run("items.delete", {"key": item_id})
+    typer.echo(json.dumps(rpc_or_die(new_rpc(url), "items.delete", {"key": item_id})))
 
 
 @items_app.command(
@@ -286,8 +286,8 @@ def items_batch_trash(
 ) -> None:
     """Move multiple items to trash in one call."""
     if dry_run_flag:
-        dry_run("items.batchTrash", {"ids": ids})
-    typer.echo(json.dumps(rpc_or_die(new_rpc(url), "items.batchTrash", {"ids": ids})))
+        dry_run("items.batchTrash", {"keys": ids})
+    typer.echo(json.dumps(rpc_or_die(new_rpc(url), "items.batchTrash", {"keys": ids})))
 
 
 @items_app.command(
@@ -324,7 +324,7 @@ def items_fulltext(
     jq_filter: str | None = typer.Option(None, "--jq", help="jq filter expression"),
 ) -> None:
     """Retrieve the full-text content of an item's attachment."""
-    emit_or_die(rpc_or_die(new_rpc(url), "items.getFullText", {"id": item_id}),
+    emit_or_die(rpc_or_die(new_rpc(url), "items.getFullText", {"key": item_id}),
                  output=output, jq_filter=jq_filter)
 
 
@@ -364,7 +364,7 @@ def items_related(
     jq_filter: str | None = typer.Option(None, "--jq", help="jq filter expression"),
 ) -> None:
     """List items related to the given item."""
-    emit_or_die(rpc_or_die(new_rpc(url), "items.getRelated", {"id": item_id}),
+    emit_or_die(rpc_or_die(new_rpc(url), "items.getRelated", {"key": item_id}),
                  output=output, jq_filter=jq_filter)
 
 
@@ -380,7 +380,7 @@ def items_add_related(
         help="Print intended RPC call as JSON; do not execute."),
 ) -> None:
     """Add a related-item link between two items."""
-    params: dict = {"id": item_id, "targetId": target}
+    params: dict = {"key": item_id, "targetKey": target}
     if dry_run_flag:
         dry_run("items.addRelated", params)
     typer.echo(json.dumps(rpc_or_die(new_rpc(url), "items.addRelated", params)))
@@ -398,7 +398,7 @@ def items_remove_related(
         help="Print intended RPC call as JSON; do not execute."),
 ) -> None:
     """Remove a related-item link between two items."""
-    params: dict = {"id": item_id, "targetId": target}
+    params: dict = {"key": item_id, "targetKey": target}
     if dry_run_flag:
         dry_run("items.removeRelated", params)
     typer.echo(json.dumps(rpc_or_die(new_rpc(url), "items.removeRelated", params)))
@@ -414,5 +414,5 @@ def items_citation_key(
     jq_filter: str | None = typer.Option(None, "--jq", help="jq filter expression"),
 ) -> None:
     """Get the citation key (Better BibTeX or Zotero auto key) for an item."""
-    emit_or_die(rpc_or_die(new_rpc(url), "items.citationKey", {"id": item_id}),
+    emit_or_die(rpc_or_die(new_rpc(url), "items.citationKey", {"key": item_id}),
                  jq_filter=jq_filter)

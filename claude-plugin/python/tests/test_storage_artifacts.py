@@ -53,7 +53,7 @@ def test_zotero_artifact_store_filters_by_title_suffix_and_adds_attachment(tmp_p
     assert added["key"] == "KEY0099"
     rpc.call.assert_any_call(
         "attachments.add",
-        {"parentId": 42, "path": str(artifact), "title": "ITEM.zotron-blocks.jsonl"},
+        {"parentKey": 42, "path": str(artifact), "title": "ITEM.zotron-blocks.jsonl"},
     )
 
 

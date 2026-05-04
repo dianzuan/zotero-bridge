@@ -53,7 +53,7 @@ class OCRProcessor:
 
     def has_ocr_note(self, item_id: str) -> bool:
         """Return True if the item already has a Note tagged 'ocr'."""
-        notes = cast(list[dict[str, Any]], self.rpc.call("notes.get", {"parentId": item_id}) or [])
+        notes = cast(list[dict[str, Any]], self.rpc.call("notes.get", {"parentKey": item_id}) or [])
         for note in notes:
             tags = note.get("tags") or []
             if "ocr" in tags:
@@ -64,7 +64,7 @@ class OCRProcessor:
         """Return True if the item has OCR/RAG chunk artifacts attached."""
         attachments = cast(
             list[dict[str, Any]],
-            self.rpc.call("attachments.list", {"parentId": item_id}) or [],
+            self.rpc.call("attachments.list", {"parentKey": item_id}) or [],
         )
         return any(str(att.get("title") or "").endswith(CHUNKS_SUFFIX) for att in attachments)
 
@@ -85,13 +85,13 @@ class OCRProcessor:
         """Return first PDF attachment with a resolved filesystem ``path``."""
         attachments = cast(
             list[dict[str, Any]],
-            self.rpc.call("attachments.list", {"parentId": item_id}) or [],
+            self.rpc.call("attachments.list", {"parentKey": item_id}) or [],
         )
         for att in attachments:
             if att.get("contentType") != "application/pdf":
                 continue
             att_key = att.get("key")
-            result = self.rpc.call("attachments.getPath", {"id": att_key})
+            result = self.rpc.call("attachments.getPath", {"key": att_key})
             path_str = result.get("path") if isinstance(result, dict) else result
             if path_str:
                 return {**att, "path": self._to_linux_path(str(path_str))}
@@ -104,7 +104,7 @@ class OCRProcessor:
 
     def _item_key(self, item_id: str) -> str:
         try:
-            item = self.rpc.call("items.get", {"id": item_id}) or {}
+            item = self.rpc.call("items.get", {"key": item_id}) or {}
         except Exception:  # noqa: BLE001 - item key is a best-effort filename aid
             item = {}
         return str(item.get("key") or item.get("itemKey") or item_id)
@@ -120,7 +120,7 @@ class OCRProcessor:
     def _attach_artifact(self, item_id: str, path: Path) -> None:
         self.rpc.call(
             "attachments.add",
-            {"parentId": item_id, "path": zotero_path(path), "title": path.name},
+            {"parentKey": item_id, "path": zotero_path(path), "title": path.name},
         )
 
     # ------------------------------------------------------------------
@@ -278,7 +278,7 @@ class OCRProcessor:
                 self.rpc.call(
                     "notes.create",
                     {
-                        "parentId": item_id,
+                        "parentKey": item_id,
                         "content": html,
                         "tags": ["ocr"],
                     },
@@ -300,7 +300,7 @@ class OCRProcessor:
             )
             return result
 
-        raw = self.rpc.call("collections.getItems", {"id": collection_id, "limit": 500}) or {}
+        raw = self.rpc.call("collections.getItems", {"key": collection_id, "limit": 500}) or {}
         items = raw.get("items", []) if isinstance(raw, dict) else raw
 
         for item in items:

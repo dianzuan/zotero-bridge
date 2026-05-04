@@ -33,7 +33,7 @@ def test_notes_list_returns_envelope(mock_rpc):
     assert data["total"] == 2
     assert len(data["items"]) == 2
     mock_rpc.call.assert_called_once_with(
-        "notes.list", {"parentId": "12345", "limit": 50, "offset": 0}
+        "notes.list", {"parentKey": "12345", "limit": 50, "offset": 0}
     )
 
 
@@ -47,7 +47,7 @@ def test_notes_list_with_pagination(mock_rpc):
     )
     assert result.exit_code == 0
     mock_rpc.call.assert_called_once_with(
-        "notes.list", {"parentId": "abc8", "limit": 10, "offset": 20}
+        "notes.list", {"parentKey": "abc8", "limit": 10, "offset": 20}
     )
 
 
@@ -78,7 +78,7 @@ def test_notes_get_returns_note(mock_rpc):
     data = json.loads(result.stdout)
     assert data["key"] == "KEY0042"
     assert data["content"] == "<p>My note</p>"
-    mock_rpc.call.assert_called_once_with("notes.get", {"id": "42"})
+    mock_rpc.call.assert_called_once_with("notes.get", {"key": "42"})
 
 
 def test_notes_get_connection_error(mock_rpc):
@@ -102,7 +102,7 @@ def test_notes_create_returns_note(mock_rpc):
     data = json.loads(result.stdout)
     assert data["key"] == "KEY0055"
     mock_rpc.call.assert_called_once_with(
-        "notes.create", {"parentId": "12345", "content": "Hello world"}
+        "notes.create", {"parentKey": "12345", "content": "Hello world"}
     )
 
 
@@ -116,7 +116,7 @@ def test_notes_create_with_tags(mock_rpc):
     assert result.exit_code == 0
     mock_rpc.call.assert_called_once_with(
         "notes.create",
-        {"parentId": "99", "content": "Tagged note", "tags": ["research", "important"]},
+        {"parentKey": "99", "content": "Tagged note", "tags": ["research", "important"]},
     )
 
 
@@ -129,7 +129,7 @@ def test_notes_create_dry_run(mock_rpc):
     data = json.loads(result.stdout)
     assert data["dryRun"] is True
     assert data["wouldCall"] == "notes.create"
-    assert data["wouldCallParams"]["parentId"] == "12345"
+    assert data["wouldCallParams"]["parentKey"] == "12345"
     assert data["wouldCallParams"]["content"] == "Draft note"
     # Must NOT have called the real RPC
     mock_rpc.call.assert_not_called()
@@ -158,7 +158,7 @@ def test_notes_update_returns_note(mock_rpc):
     data = json.loads(result.stdout)
     assert data["content"] == "Updated content"
     mock_rpc.call.assert_called_once_with(
-        "notes.update", {"id": "42", "content": "Updated content"}
+        "notes.update", {"key": "42", "content": "Updated content"}
     )
 
 
@@ -170,7 +170,7 @@ def test_notes_update_dry_run(mock_rpc):
     data = json.loads(result.stdout)
     assert data["dryRun"] is True
     assert data["wouldCall"] == "notes.update"
-    assert data["wouldCallParams"] == {"id": "77", "content": "New text"}
+    assert data["wouldCallParams"] == {"key": "77", "content": "New text"}
     mock_rpc.call.assert_not_called()
 
 
@@ -193,7 +193,7 @@ def test_notes_delete_returns_ok(mock_rpc):
     data = json.loads(result.stdout)
     assert data["ok"] is True
     assert data["key"] == "KEY0042"
-    mock_rpc.call.assert_called_once_with("items.delete", {"id": "42"})
+    mock_rpc.call.assert_called_once_with("items.delete", {"key": "42"})
 
 
 def test_notes_delete_dry_run(mock_rpc):
@@ -202,7 +202,7 @@ def test_notes_delete_dry_run(mock_rpc):
     data = json.loads(result.stdout)
     assert data["dryRun"] is True
     assert data["wouldCall"] == "items.delete"
-    assert data["wouldCallParams"] == {"id": "99"}
+    assert data["wouldCallParams"] == {"key": "99"}
     mock_rpc.call.assert_not_called()
 
 

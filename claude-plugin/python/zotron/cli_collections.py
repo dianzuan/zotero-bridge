@@ -50,6 +50,60 @@ def collections_tree(
 
 
 @collections_app.command(
+    "get",
+    epilog='Examples:\n\n    zotron collections get "产业经济学年鉴"',
+)
+def collections_get(
+    name_or_id: str = typer.Argument(..., help="Collection name (fuzzy) or key."),
+    url: str = typer.Option(DEFAULT_URL, "--url"),
+    jq_filter: str | None = typer.Option(None, "--jq", help="jq filter expression"),
+) -> None:
+    """Get a single collection's metadata."""
+    rpc = new_rpc(url)
+    coll_id = resolve_or_die(rpc, name_or_id)
+    emit_or_die(rpc_or_die(rpc, "collections.get", {"key": coll_id}), jq_filter=jq_filter)
+
+
+@collections_app.command(
+    "get-items",
+    epilog='Examples:\n\n    zotron collections get-items "产业经济学年鉴" --limit 200',
+)
+def collections_get_items(
+    name_or_id: str = typer.Argument(..., help="Collection name (fuzzy) or key."),
+    limit: int | None = typer.Option(None, "--limit"),
+    offset: int = typer.Option(0, "--offset"),
+    url: str = typer.Option(DEFAULT_URL, "--url"),
+    output: str = typer.Option("json", "--output", "-o",
+        help="Output format: json (default) or table."),
+    jq_filter: str | None = typer.Option(None, "--jq", help="jq filter expression"),
+) -> None:
+    """List all items in a collection."""
+    rpc = new_rpc(url)
+    coll_id = resolve_or_die(rpc, name_or_id)
+    params: dict = {"key": coll_id}
+    if limit is not None:
+        params["limit"] = limit
+    if offset > 0:
+        params["offset"] = offset
+    emit_or_die(rpc_or_die(rpc, "collections.getItems", params), output=output, jq_filter=jq_filter)
+
+
+@collections_app.command(
+    "stats",
+    epilog='Examples:\n\n    zotron collections stats "产业经济学年鉴"',
+)
+def collections_stats(
+    name_or_id: str = typer.Argument(..., help="Collection name (fuzzy) or key."),
+    url: str = typer.Option(DEFAULT_URL, "--url"),
+    jq_filter: str | None = typer.Option(None, "--jq", help="jq filter expression"),
+) -> None:
+    """Show item/attachment/note/subcollection counts for a collection."""
+    rpc = new_rpc(url)
+    coll_id = resolve_or_die(rpc, name_or_id)
+    emit_or_die(rpc_or_die(rpc, "collections.stats", {"key": coll_id}), jq_filter=jq_filter)
+
+
+@collections_app.command(
     "rename",
     epilog='Examples:\n\n    zotron collections rename "typo-案例库" "案例库"',
 )
@@ -67,9 +121,9 @@ def collections_rename(
         die("COLLECTION_NOT_FOUND",
              f"{old_name!r} resolved to library root (no collection to rename)")
     if dry_run_flag:
-        dry_run("collections.rename", {"id": coll_id, "name": new_name})
+        dry_run("collections.rename", {"key": coll_id, "name": new_name})
     typer.echo(json.dumps(
-        rpc_or_die(rpc, "collections.rename", {"id": coll_id, "name": new_name})
+        rpc_or_die(rpc, "collections.rename", {"key": coll_id, "name": new_name})
     ))
 
 
@@ -95,7 +149,7 @@ def collections_create(
         if parent_id == 0:
             die("COLLECTION_NOT_FOUND",
                  f"parent {parent!r} resolved to library root")
-        params["parentId"] = parent_id
+        params["parentKey"] = parent_id
     if dry_run_flag:
         dry_run("collections.create", params)
     typer.echo(json.dumps(rpc_or_die(rpc, "collections.create", params)))
@@ -118,8 +172,8 @@ def collections_delete(
         die("COLLECTION_NOT_FOUND",
              f"{name_or_id!r} resolved to library root (can't delete)")
     if dry_run_flag:
-        dry_run("collections.delete", {"id": coll_id})
-    typer.echo(json.dumps(rpc_or_die(rpc, "collections.delete", {"id": coll_id})))
+        dry_run("collections.delete", {"key": coll_id})
+    typer.echo(json.dumps(rpc_or_die(rpc, "collections.delete", {"key": coll_id})))
 
 
 @collections_app.command(
@@ -139,9 +193,9 @@ def collections_add_items(
     if coll_id == 0:
         die("COLLECTION_NOT_FOUND", "can't add to library root")
     if dry_run_flag:
-        dry_run("collections.addItems", {"id": coll_id, "itemIds": item_ids})
+        dry_run("collections.addItems", {"key": coll_id, "keys": item_ids})
     typer.echo(json.dumps(rpc_or_die(rpc, "collections.addItems",
-                                      {"id": coll_id, "itemIds": item_ids})))
+                                      {"key": coll_id, "keys": item_ids})))
 
 
 @collections_app.command(
@@ -161,6 +215,6 @@ def collections_remove_items(
     if coll_id == 0:
         die("COLLECTION_NOT_FOUND", "can't operate on library root")
     if dry_run_flag:
-        dry_run("collections.removeItems", {"id": coll_id, "itemIds": item_ids})
+        dry_run("collections.removeItems", {"key": coll_id, "keys": item_ids})
     typer.echo(json.dumps(rpc_or_die(rpc, "collections.removeItems",
-                                      {"id": coll_id, "itemIds": item_ids})))
+                                      {"key": coll_id, "keys": item_ids})))

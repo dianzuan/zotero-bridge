@@ -41,8 +41,8 @@ def test_zotero_artifact_helpers_find_add_delete_by_suffix(tmp_path):
     created = add_artifact_file(rpc, parent_id=1, path=path, title=path.name)
     assert created["id"] == 12
     assert delete_artifact(rpc, artifact_id=12) == {"ok": True}
-    assert rpc.call.call_args_list[-2].args == ("attachments.add", {"parentId": 1, "path": str(path), "title": path.name})
-    assert rpc.call.call_args_list[-1].args == ("attachments.delete", {"id": 12})
+    assert rpc.call.call_args_list[-2].args == ("attachments.add", {"parentKey": 1, "path": str(path), "title": path.name})
+    assert rpc.call.call_args_list[-1].args == ("attachments.delete", {"key": 12})
 
 
 def test_provider_raw_zip_and_blocks_chunks_jsonl_roundtrip(tmp_path):
