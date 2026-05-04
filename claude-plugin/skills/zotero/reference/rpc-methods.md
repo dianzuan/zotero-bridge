@@ -46,4 +46,4 @@ For methods without a typed CLI subcommand:
 zotron rpc <namespace>.<method> '<json-params>'
 ```
 
-**ID or Key**: All methods that accept `id` or `parentId` also accept an 8-char alphanumeric item key string (e.g. `"YR5BUGHG"`).
+**Parameters**: All item/collection/attachment identifiers use `key` (8-char alphanumeric string like `"YR5BUGHG"`). Parent references use `parentKey`. Batch operations use `keys: [...]`. Numeric IDs are also accepted.

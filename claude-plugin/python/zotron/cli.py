@@ -89,7 +89,7 @@ def ping(
 
 @app.command(
     "rpc",
-    epilog="Examples:\n\n    zotron rpc system.ping\n\n    zotron rpc items.get '{\"id\":12345}'\n\n    zotron rpc tags.add '{\"itemId\":12345,\"tags\":[\"已读\"]}'",
+    epilog="Examples:\n\n    zotron rpc system.ping\n\n    zotron rpc items.get '{\"key\":\"YR5BUGHG\"}'\n\n    zotron rpc tags.add '{\"key\":\"YR5BUGHG\",\"tags\":[\"已读\"]}'",
 )
 def rpc_command(
     method: str = typer.Argument(..., help="JSON-RPC method name, e.g. 'items.get'"),

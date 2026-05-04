@@ -123,7 +123,7 @@ zotron annotations create --parent ATT_KEY --type highlight --text "selected tex
 zotron collections tree
 
 # List items in a collection
-zotron rpc collections.getItems '{"id":"COLLECTION_KEY","limit":20}'
+zotron collections get-items "Collection Name" --limit 20
 ```
 
 ## Browse recent items
