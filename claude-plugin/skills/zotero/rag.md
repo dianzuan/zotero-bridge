@@ -29,7 +29,7 @@ zotron-rag hits --zotero \
 zotron-rag hits --zotero --collection "数字经济" --output jsonl "数字经济对劳动力市场的影响机制"
 
 # Search specific items by key (from RAG hits or search results)
-zotron rpc rag.searchHits '{"query":"关键词","itemKeys":["YR5BUGHG","BF4I9QX4"],"top_spans_per_item":10}'
+zotron rpc rag.searchHits '{"query":"关键词","keys":["YR5BUGHG","BF4I9QX4"],"top_spans_per_item":10}'
 ```
 
 Returns one JSON hit per line with score, paper title, authors, section heading, chunk id, block ids, and Zotero URI.

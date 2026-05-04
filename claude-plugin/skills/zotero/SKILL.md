@@ -46,7 +46,7 @@ zotron settings list
 zotron system list-methods
 ```
 
-**IDs:** All item-scoped commands accept either a numeric ID (`12345`) or an 8-char item key (`YR5BUGHG`). Collections accept numeric ID or name (`"数字经济"`).
+**Keys (primary):** All item-scoped commands accept an 8-char item key (`YR5BUGHG`) as the primary identifier; numeric IDs (`12345`) also work as fallback. RPC params use `key`/`parentKey`/`keys` — never `id`/`parentId`. Collections accept numeric ID, 8-char key, or name (`"数字经济"`).
 
 **`--jq` filter** trims output to cut tokens:
 

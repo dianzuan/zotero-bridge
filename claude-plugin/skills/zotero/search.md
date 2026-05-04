@@ -122,8 +122,17 @@ zotron annotations create --parent ATT_KEY --type highlight --text "selected tex
 # See all collections as tree
 zotron collections tree
 
+# Flat list of collections
+zotron collections list
+
+# Get a single collection's metadata
+zotron collections get "Collection Name"
+
 # List items in a collection
 zotron collections get-items "Collection Name" --limit 20
+
+# Collection stats (item/attachment/note/subcollection counts)
+zotron collections stats "Collection Name"
 ```
 
 ## Browse recent items
