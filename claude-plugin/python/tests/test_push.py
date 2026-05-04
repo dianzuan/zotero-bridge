@@ -320,8 +320,8 @@ def test_collection_zero_means_no_collections_embedded():
 
 
 def test_wsl_path_translation_on_wsl(monkeypatch):
-    """On WSL, _zotero_path should invoke wslpath and return the UNC form."""
-    from zotron.push import _zotero_path
+    """On WSL, ZoteroRPC.zotero_path should invoke wslpath and return the UNC form."""
+    from zotron.rpc import ZoteroRPC
     monkeypatch.setenv("WSL_DISTRO_NAME", "Ubuntu-24.04")
 
     def fake_run(cmd, **kw):
@@ -332,11 +332,12 @@ def test_wsl_path_translation_on_wsl(monkeypatch):
         assert cmd[:2] == ["wslpath", "-w"]
         return R()
 
-    monkeypatch.setattr("zotron.paths.subprocess.run", fake_run)
-    assert _zotero_path(Path("/tmp/x.pdf")) == "\\\\wsl.localhost\\Ubuntu-24.04\\tmp\\x.pdf"
+    monkeypatch.setattr("zotron.rpc.subprocess.run", fake_run)
+    monkeypatch.setattr("zotron.rpc._is_wsl", lambda: True)
+    assert ZoteroRPC.zotero_path("/tmp/x.pdf") == "\\\\wsl.localhost\\Ubuntu-24.04\\tmp\\x.pdf"
 
 
 def test_path_passthrough_on_non_wsl(monkeypatch):
-    from zotron.push import _zotero_path
-    monkeypatch.setattr("zotron.paths.is_wsl", lambda: False)
-    assert _zotero_path(Path("/tmp/x.pdf")) == "/tmp/x.pdf"
+    from zotron.rpc import ZoteroRPC
+    monkeypatch.setattr("zotron.rpc._is_wsl", lambda: False)
+    assert ZoteroRPC.zotero_path("/tmp/x.pdf") == "/tmp/x.pdf"

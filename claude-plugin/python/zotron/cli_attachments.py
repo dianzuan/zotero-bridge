@@ -5,7 +5,6 @@ import json
 
 import typer
 
-from zotron.paths import zotero_path
 from zotron._cli_base import (
     DEFAULT_URL,
     new_rpc,
@@ -85,7 +84,8 @@ def attachments_add(
         help="Print intended RPC call as JSON; do not execute."),
 ) -> None:
     """Attach a local file to an item."""
-    params: dict = {"parentKey": parent, "path": zotero_path(path)}
+    from zotron.rpc import ZoteroRPC
+    params: dict = {"parentKey": parent, "path": ZoteroRPC.zotero_path(path)}
     if title is not None:
         params["title"] = title
     if dry_run_flag:

@@ -14,19 +14,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from zotron.errors import CollectionAmbiguous, CollectionNotFound, InvalidPDF
-from zotron.paths import zotero_path
-
-
-def _zotero_path(local_path: Path) -> str:
-    """Translate a local filesystem path to a string Zotero can open.
-
-    On WSL, Zotero typically runs on Windows and cannot read POSIX paths
-    like /tmp/... . We convert to the Windows UNC form
-    (\\\\wsl.localhost\\<distro>\\tmp\\...) using `wslpath -w`.
-
-    On native Linux/macOS the path is returned unchanged.
-    """
-    return zotero_path(local_path)
+from zotron.rpc import ZoteroRPC
 
 
 def check_pdf_magic(path: Path) -> bool:
@@ -61,7 +49,7 @@ def _item_has_pdf_attachment(rpc: Any, item_id: str) -> bool:
 def _attach_pdf(rpc: Any, item_id: str, pdf_path: Path) -> None:
     rpc.call("attachments.add", {
         "parentKey": item_id,
-        "path": _zotero_path(pdf_path),
+        "path": ZoteroRPC.zotero_path(pdf_path),
         "title": "Full Text PDF",
     })
 
