@@ -5,6 +5,7 @@ Every namespace module (cli_items.py, cli_notes.py, etc.) imports from here.
 from __future__ import annotations
 
 import json
+import sys
 from typing import NoReturn
 
 import typer
@@ -13,6 +14,11 @@ from zotron._output import emit
 from zotron.errors import CollectionAmbiguous, CollectionNotFound
 from zotron.push import resolve_collection
 from zotron.rpc import ZoteroRPC
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 DEFAULT_URL = "http://127.0.0.1:23119/zotron/rpc"
 
