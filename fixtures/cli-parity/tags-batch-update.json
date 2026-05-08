@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "name": "tags batch update",
+  "command": [
+    "tags",
+    "batch-update",
+    "YR5BUGHG",
+    "ABC12345",
+    "--add",
+    "read",
+    "--remove",
+    "todo"
+  ],
+  "rpc": {
+    "method": "tags.batchUpdate",
+    "params": {
+      "keys": [
+        "YR5BUGHG",
+        "ABC12345"
+      ],
+      "add": [
+        "read"
+      ],
+      "remove": [
+        "todo"
+      ]
+    },
+    "result": {
+      "ok": true,
+      "updated": 2
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"updated\": 2}\n"
+  }
+}

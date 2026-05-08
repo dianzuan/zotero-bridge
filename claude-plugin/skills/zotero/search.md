@@ -7,18 +7,22 @@ Search and browse the user's Zotero library — find papers by keywords, read PD
 | User wants | Command | When to use |
 |-----------|---------|-------------|
 | Find by title/author/year | `zotron search quick` | Most common, start here |
+| Find by title/author/year inside a collection | `zotron search quick --collection` | User gives both keyword and collection |
 | Search inside PDF text | `zotron search fulltext` | User asks "which paper mentions X" |
 | Multiple filters | `zotron search advanced` | Author + date range + journal |
 | Papers with a tag | `zotron search by-tag` | User mentions a specific tag |
-| Browse by folder | `zotron collections tree` | User says "what's in my X collection" |
+| Browse a collection | `zotron collections get-items` | User asks "what's in my X collection" |
 
 ## Quick search (default)
 
 ```bash
 zotron search quick "数字经济 就业" --limit 10
+zotron search quick "数字经济 就业" --collection "宏观因子" --limit 10
 ```
 
-Returns: item ID, title, authors, date, journal, tags. Use the ID for follow-up operations.
+Returns an envelope: `{"items":[...],"total":N}`. Use item keys for follow-up operations.
+
+In the Rust CLI, `--collection` limits quick search to items in that collection. This is a convenience layer over `collections.getItems`; it is for metadata/title/author/year-style filtering, not full PDF text search.
 
 ## Fulltext PDF search
 
@@ -70,11 +74,10 @@ zotron search delete-saved <search-id>
 
 ## Read paper content
 
-After finding a paper, use its ID or 8-char key directly:
+After finding a paper, use its 8-char key directly:
 
 ```bash
 # Full metadata
-zotron items get 12345
 zotron items get YR5BUGHG
 
 # Get fulltext from an item (auto-finds the PDF attachment)
@@ -90,13 +93,13 @@ zotron attachments get ATT_KEY
 zotron attachments path ATT_KEY
 
 # List attachments
-zotron attachments list --parent 12345
+zotron attachments list --parent YR5BUGHG
 
 # Notes (includes OCR markdown when OCR'd — filter for "ocr" tag)
 zotron notes list --parent YR5BUGHG
 
 # Read a specific note
-zotron notes get <note-id>
+zotron notes get <note-key>
 
 # PDF annotations/highlights
 zotron annotations list --parent YR5BUGHG
@@ -128,8 +131,9 @@ zotron collections list
 # Get a single collection's metadata
 zotron collections get "Collection Name"
 
-# List items in a collection
+# List items in a collection. Alias: `zotron collections items ...`
 zotron collections get-items "Collection Name" --limit 20
+zotron collections get-items "Collection Name" | jq '.items[].title'
 
 # Collection stats (item/attachment/note/subcollection counts)
 zotron collections stats "Collection Name"

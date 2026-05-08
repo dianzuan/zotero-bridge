@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "name": "items batch trash",
+  "command": [
+    "items",
+    "batch-trash",
+    "ITEM1",
+    "ITEM2",
+    "ITEM3"
+  ],
+  "rpc": {
+    "method": "items.batchTrash",
+    "params": {
+      "keys": [
+        "ITEM1",
+        "ITEM2",
+        "ITEM3"
+      ]
+    },
+    "result": {
+      "ok": true,
+      "trashed": 3
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"trashed\": 3}\n"
+  }
+}

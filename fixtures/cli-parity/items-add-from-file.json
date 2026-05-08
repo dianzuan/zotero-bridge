@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "name": "items add from file",
+  "command": [
+    "items",
+    "add-from-file",
+    "sample.pdf"
+  ],
+  "rpc": {
+    "method": "items.addFromFile",
+    "params": {
+      "path": "sample.pdf"
+    },
+    "result": {
+      "ok": true,
+      "key": "FILEITEM",
+      "version": 1
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"key\": \"FILEITEM\", \"version\": 1}\n"
+  }
+}

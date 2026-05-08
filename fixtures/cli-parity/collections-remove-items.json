@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "name": "collections remove items",
+  "command": [
+    "collections",
+    "remove-items",
+    "Research",
+    "ITEM2"
+  ],
+  "rpc": {
+    "calls": [
+      {
+        "method": "collections.list",
+        "params": null,
+        "result": [
+          {
+            "key": "COL1",
+            "name": "Research",
+            "parentKey": null
+          }
+        ]
+      },
+      {
+        "method": "collections.removeItems",
+        "params": {
+          "key": "COL1",
+          "keys": [
+            "ITEM2"
+          ]
+        },
+        "result": {
+          "removed": [
+            "ITEM2"
+          ],
+          "collectionKey": "COL1"
+        }
+      }
+    ]
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"removed\": [\"ITEM2\"], \"collectionKey\": \"COL1\"}\n"
+  }
+}

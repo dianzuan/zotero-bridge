@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "name": "system list-methods",
+  "command": ["system", "list-methods"],
+  "rpc": {
+    "method": "system.listMethods",
+    "params": null,
+    "result": [
+      "system.ping",
+      "system.listMethods",
+      "search.quick",
+      "items.get",
+      "collections.tree"
+    ]
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "[\n  \"system.ping\",\n  \"system.listMethods\",\n  \"search.quick\",\n  \"items.get\",\n  \"collections.tree\"\n]\n"
+  }
+}

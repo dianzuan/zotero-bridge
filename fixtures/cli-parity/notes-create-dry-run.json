@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "name": "notes create dry run",
+  "command": [
+    "notes",
+    "create",
+    "--parent",
+    "ITEM1",
+    "--content",
+    "<p>New note</p>",
+    "--tag",
+    "research",
+    "--dry-run"
+  ],
+  "rpc": {
+    "calls": []
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"dryRun\": true, \"wouldCall\": \"notes.create\", \"wouldCallParams\": {\"parentKey\": \"ITEM1\", \"content\": \"<p>New note</p>\", \"tags\": [\"research\"]}}\n"
+  }
+}

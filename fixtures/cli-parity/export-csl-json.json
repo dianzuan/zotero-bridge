@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "name": "export csl-json",
+  "command": ["export", "csl-json", "ITEM1"],
+  "rpc": {
+    "method": "export.cslJson",
+    "params": {
+      "keys": ["ITEM1"]
+    },
+    "result": {
+      "format": "csl-json",
+      "content": [
+        {
+          "id": "ITEM1",
+          "title": "乡村振兴与数字经济",
+          "type": "article-journal"
+        }
+      ],
+      "count": 1
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "[{'id': 'ITEM1', 'title': '乡村振兴与数字经济', 'type': 'article-journal'}]\n"
+  }
+}

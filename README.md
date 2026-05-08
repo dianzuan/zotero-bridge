@@ -124,7 +124,7 @@ zotron search quick "transformer attention" --limit 10
 zotron rpc items.get '{"key":"YR5BUGHG"}'  # escape hatch — covers all 86 methods
 ```
 
-`--jq` filters output (`gh api --jq` style); `--install-completion {bash|zsh|fish|powershell}` enables shell completion. SDK contract: [`docs/api-stability.md`](docs/api-stability.md).
+Rust `zotron` emits JSON-first output; use a shell pipeline such as `zotron items list | jq ...` for filtering. `--install-completion {bash|zsh|fish|powershell}` enables shell completion. SDK contract: [`docs/api-stability.md`](docs/api-stability.md).
 
 ### Path D — Raw HTTP
 
@@ -161,7 +161,7 @@ curl -s -X POST http://localhost:23119/zotron/rpc \
 | `settings.*` | 4 | Plugin-side preferences (OCR provider, embedding model) |
 | `system.*` | 13 | Ping, version, libraries, switchLibrary, sync, currentCollection, listMethods, describe, reload |
 
-**Conventions:** Responses are **key-first** — item and collection objects use `key` (8-char alphanumeric, Zotero Web API v3 aligned) as the primary identifier; numeric `id` is not exposed. Items include a `version` field for sync. Mutation returns use `{ok: true, key}`. Pagination uses `{items, total, offset?, limit?}` envelope. Lowercase `libraryId` on the wire. All parameters that accept item/collection identifiers take either a numeric ID or a key string. Unknown method calls get fuzzy "Did you mean?" suggestions. Errors are JSON-RPC 2.0 `{code, message}` (`-32602` caller error, `-32603` server error). `items.create` auto-splits Chinese full names — `欧阳修` → `{lastName: "欧阳", firstName: "修"}` — covering 70+ compound surnames.
+**Conventions:** Responses are **key-first** — item and collection objects use `key` (8-char alphanumeric, Zotero Web API v3 aligned) as the primary identifier; numeric `id` is not exposed. Items include a `version` field for sync. Mutation returns use `{ok: true, key}`. Pagination uses `{items, total, offset?, limit?}` envelope. Lowercase `libraryId` on the wire. All parameters that accept item/collection identifiers take keys. Unknown method calls get fuzzy "Did you mean?" suggestions. Errors are JSON-RPC 2.0 `{code, message}` (`-32602` caller error, `-32603` server error). `items.create` auto-splits Chinese full names — `欧阳修` → `{lastName: "欧阳", firstName: "修"}` — covering 70+ compound surnames.
 
 ## RAG with citations
 
@@ -180,13 +180,13 @@ zotron-rag cite "how do transformers attend to long-range context?" --collection
   "score": 0.87, "zoteroUri": "zotero://select/library/items/ABC123" }
 ```
 
-The 2026 RAG/OCR roadmap extends this toward Zotero-native artifacts and an academic-zh friendly JSONL hit stream. The stable target is:
+The 2026 RAG/OCR roadmap extends this toward hidden Zotron artifacts and an academic-zh friendly JSONL hit stream. The stable target is:
 
-- provider raw evidence in `<item-key>.zotron-ocr.raw.zip`;
-- normalized OCR/parser blocks in `<item-key>.zotron-blocks.jsonl`;
-- retrieval chunks in `<item-key>.zotron-chunks.jsonl`;
-- vectors plus index metadata in `<item-key>.zotron-embed.npz`;
-- retrieval hits as one JSON object per line with required `item_key`, `title`, and `text`, plus provenance fields such as `zotero_uri`, `chunk_id`, `block_ids`, `section_heading`, `query`, and `score`. The XPI exposes `rag.searchHits` / `rag.searchCards` for Zotero-native chunk artifact lookup; `zotron-rag hits --zotero` calls that JSON-RPC backend.
+- provider raw evidence in `storage/<attachment-key>/.zotron/zotron-ocr.raw.zip`;
+- normalized OCR/parser blocks in `storage/<attachment-key>/.zotron/zotron-blocks.jsonl`;
+- retrieval chunks in `storage/<attachment-key>/.zotron/zotron-chunks.jsonl`;
+- vectors plus index metadata in the local Zotron artifact cache as `zotron-embed.npz`;
+- retrieval hits as one JSON object per line with required `item_key`, `title`, and `text`, plus provenance fields such as `zotero_uri`, `chunk_key`, `block_keys`, `section_heading`, `query`, and `score`. Machine artifacts should not be written as normal Zotero notes or child attachments by default.
 
 Markdown is allowed as a derived convenience output, but it is not the source of truth for OCR/RAG because it loses page, bbox, table, figure, provider, and reading-order provenance.
 

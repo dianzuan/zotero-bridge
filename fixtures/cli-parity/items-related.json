@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "name": "items related",
+  "command": [
+    "items",
+    "related",
+    "ITEM1"
+  ],
+  "rpc": {
+    "method": "items.getRelated",
+    "params": {
+      "key": "ITEM1"
+    },
+    "result": [
+      {
+        "key": "ITEM2",
+        "title": "Related Paper"
+      }
+    ]
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "[\n  {\n    \"key\": \"ITEM2\",\n    \"title\": \"Related Paper\"\n  }\n]\n"
+  }
+}

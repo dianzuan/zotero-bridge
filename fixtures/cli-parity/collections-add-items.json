@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "name": "collections add items",
+  "command": [
+    "collections",
+    "add-items",
+    "Research",
+    "ITEM1",
+    "ITEM2"
+  ],
+  "rpc": {
+    "calls": [
+      {
+        "method": "collections.list",
+        "params": null,
+        "result": [
+          {
+            "key": "COL1",
+            "name": "Research",
+            "parentKey": null
+          }
+        ]
+      },
+      {
+        "method": "collections.addItems",
+        "params": {
+          "key": "COL1",
+          "keys": [
+            "ITEM1",
+            "ITEM2"
+          ]
+        },
+        "result": {
+          "added": [
+            "ITEM1",
+            "ITEM2"
+          ],
+          "collectionKey": "COL1"
+        }
+      }
+    ]
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"added\": [\"ITEM1\", \"ITEM2\"], \"collectionKey\": \"COL1\"}\n"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "command": [
+    "status",
+    "--collection",
+    "Missing Collection"
+  ],
+  "rpc": {
+    "calls": []
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"status\": \"not indexed\", \"collection\": \"Missing Collection\"}\n"
+  }
+}

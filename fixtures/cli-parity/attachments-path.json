@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "name": "attachments path",
+  "command": [
+    "attachments",
+    "path",
+    "ATT1"
+  ],
+  "rpc": {
+    "method": "attachments.getPath",
+    "params": {
+      "key": "ATT1"
+    },
+    "result": {
+      "key": "ATT1",
+      "path": "/home/user/Zotero/storage/ABC123/paper.pdf",
+      "version": 1
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\n  \"key\": \"ATT1\",\n  \"path\": \"/home/user/Zotero/storage/ABC123/paper.pdf\",\n  \"version\": 1\n}\n"
+  }
+}

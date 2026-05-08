@@ -5,7 +5,7 @@ description: Manage the user's Zotero library — search papers, add/organize it
 
 # Zotero
 
-Read-write bridge to the user's local Zotero library via the `zotron` CLI. Covers search, add/organize, citation export, PDF OCR, and semantic (RAG) search over OCR'd collections.
+Read-write bridge to the user's local Zotero library via the Rust `zotron` CLI and Zotero-side JS/XPI RPC bridge. Python code in this repo is legacy reference material for migration parity, not the target implementation surface.
 
 **Dependency:** Zotero desktop must be running with the `zotron` XPI plugin installed and listening on `localhost:23119`. If a CLI call fails with a connection error, ask the user to start Zotero — or, if the XPI was never installed, run the bundled `/zotron:setup` slash command to bootstrap it.
 
@@ -29,17 +29,19 @@ All commands use the `zotron` CLI with noun-verb structure:
 zotron <namespace> <verb> [args] [--flags]
 ```
 
-**Typed subcommands** cover all operations — always prefer these over raw RPC:
+**Typed Rust subcommands** cover normal operations — always prefer these over raw RPC:
 
 ```bash
 zotron ping                        # check connectivity
 zotron search quick "数字经济" --limit 10
+zotron search quick "数字经济" --collection "宏观因子" --limit 10
+zotron collections get-items "宏观因子" --limit 20
 zotron items get YR5BUGHG
 zotron items fulltext YR5BUGHG
-zotron notes list --parent 12345
-zotron attachments list --parent 12345
-zotron annotations list --parent 12345
-zotron tags add 12345 --tag "已读"
+zotron notes list --parent YR5BUGHG
+zotron attachments list --parent YR5BUGHG
+zotron annotations list --parent YR5BUGHG
+zotron tags add YR5BUGHG --tag "已读"
 zotron collections tree
 zotron export bibtex 12345
 zotron settings list
@@ -48,12 +50,21 @@ zotron system list-methods
 
 **Keys (primary):** All item-scoped commands accept an 8-char item key (`YR5BUGHG`) as the primary identifier; numeric IDs (`12345`) also work as fallback. RPC params use `key`/`parentKey`/`keys` — never `id`/`parentId`. Collections accept numeric ID, 8-char key, or name (`"数字经济"`).
 
-**`--jq` filter** trims output to cut tokens:
+**Search vs collection browsing:**
+- `zotron search quick "关键词"` searches the whole library.
+- `zotron search quick "关键词" --collection "集合名"` searches only items in that collection.
+- `zotron collections get-items "集合名"` lists items in a collection; use this when the user asks "这个集合里有什么".
+- `zotron collections items "集合名"` is an alias for `get-items`.
+
+**Filtering output:** Rust `zotron` stays JSON-first and does not embed libjq. Pipe to external `jq`. Many list/search commands return an envelope such as `{"items":[...],"total":N}`, so filter through `.items[]`:
 
 ```bash
-zotron items list --limit 50 --jq '.[].title'
-zotron collections tree --jq '.[] | {key, name}'
+zotron search quick "数字经济" | jq '.items[].title'
+zotron collections get-items "宏观因子" | jq '.items[].title'
+zotron collections tree | jq '.[] | {key, name}'
 ```
+
+Do not assume Python-only conveniences such as built-in `--jq` exist in the Rust CLI.
 
 **`rpc` escape hatch** for edge cases without a typed subcommand:
 

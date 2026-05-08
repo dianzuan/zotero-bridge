@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "name": "items add by url",
+  "command": [
+    "items",
+    "add-by-url",
+    "https://arxiv.org/abs/1706.03762"
+  ],
+  "rpc": {
+    "method": "items.addByURL",
+    "params": {
+      "url": "https://arxiv.org/abs/1706.03762"
+    },
+    "result": {
+      "ok": true,
+      "key": "URLITEM1",
+      "title": "Attention Is All You Need"
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"key\": \"URLITEM1\", \"title\": \"Attention Is All You Need\"}\n"
+  }
+}

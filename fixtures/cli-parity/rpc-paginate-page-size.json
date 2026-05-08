@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "name": "rpc paginate page size",
+  "command": [
+    "rpc",
+    "items.list",
+    "{\"tag\":\"ai\"}",
+    "--paginate",
+    "--page-size",
+    "2"
+  ],
+  "rpc": {
+    "calls": [
+      {
+        "method": "items.list",
+        "params": {
+          "tag": "ai",
+          "offset": 0,
+          "limit": 2
+        },
+        "result": {
+          "items": [
+            {
+              "key": "ITEM1"
+            },
+            {
+              "key": "ITEM2"
+            }
+          ],
+          "total": 3
+        }
+      },
+      {
+        "method": "items.list",
+        "params": {
+          "tag": "ai",
+          "offset": 2,
+          "limit": 2
+        },
+        "result": {
+          "items": [
+            {
+              "key": "ITEM3"
+            }
+          ],
+          "total": 3
+        }
+      }
+    ]
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "[\n  {\n    \"key\": \"ITEM1\"\n  },\n  {\n    \"key\": \"ITEM2\"\n  },\n  {\n    \"key\": \"ITEM3\"\n  }\n]\n"
+  }
+}

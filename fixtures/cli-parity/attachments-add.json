@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "name": "attachments add",
+  "command": [
+    "attachments",
+    "add",
+    "--parent",
+    "ITEM1",
+    "--path",
+    "paper.pdf",
+    "--title",
+    "Paper PDF"
+  ],
+  "rpc": {
+    "method": "attachments.add",
+    "params": {
+      "parentKey": "ITEM1",
+      "path": "paper.pdf",
+      "title": "Paper PDF"
+    },
+    "result": {
+      "key": "ATT2",
+      "title": "Paper PDF",
+      "parentKey": "ITEM1"
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"key\": \"ATT2\", \"title\": \"Paper PDF\", \"parentKey\": \"ITEM1\"}\n"
+  }
+}

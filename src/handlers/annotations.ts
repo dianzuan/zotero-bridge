@@ -30,6 +30,7 @@ export const annotationsHandlers = {
     comment?: string;
     color?: string;
     position: any;
+    sortIndex?: number | string;
   }) {
     const parent = await requireItem(params.parentKey);
     const validation = validateAnnotationParams({
@@ -49,6 +50,7 @@ export const annotationsHandlers = {
     if (params.comment) (ann as any).annotationComment = params.comment;
     if (params.color) (ann as any).annotationColor = params.color;
     if (params.position) (ann as any).annotationPosition = JSON.stringify(params.position);
+    (ann as any).annotationSortIndex = params.sortIndex ?? 0;
     await ann.saveTx();
     return { ok: true, key: ann.key };
   },

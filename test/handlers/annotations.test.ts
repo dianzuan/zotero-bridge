@@ -119,6 +119,7 @@ describe("annotations handler", () => {
       expect(createdItem.annotationText).to.equal("selected text");
       expect(createdItem.annotationComment).to.equal("my note");
       expect(createdItem.annotationColor).to.equal("#ffd400");
+      expect(createdItem.annotationSortIndex).to.equal(0);
       expect(JSON.parse(createdItem.annotationPosition)).to.deep.equal({
         pageIndex: 1, rects: [[10, 20, 30, 40]],
       });

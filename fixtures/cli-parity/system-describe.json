@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "name": "system describe",
+  "command": [
+    "system",
+    "describe",
+    "items.get"
+  ],
+  "rpc": {
+    "method": "system.describe",
+    "params": {
+      "method": "items.get"
+    },
+    "result": {
+      "method": "items.get",
+      "params": {
+        "key": "string"
+      },
+      "result": "item"
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\n  \"method\": \"items.get\",\n  \"params\": {\n    \"key\": \"string\"\n  },\n  \"result\": \"item\"\n}\n"
+  }
+}

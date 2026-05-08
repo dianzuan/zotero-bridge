@@ -1,0 +1,35 @@
+{
+  "command": [
+    "hits",
+    "sea level",
+    "--collection",
+    "Climate",
+    "--zotero",
+    "--limit",
+    "2"
+  ],
+  "rpc": {
+    "method": "rag.searchHits",
+    "params": {
+      "query": "sea level",
+      "collection": "Climate",
+      "limit": 2,
+      "top_spans_per_item": 3,
+      "include_fulltext_spans": false
+    },
+    "result": {
+      "hits": [
+        {
+          "item_key": "ABC123",
+          "title": "Climate Paper",
+          "text": "sea level rise evidence",
+          "score": 0.91
+        }
+      ]
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\n  \"hits\": [\n    {\n      \"item_key\": \"ABC123\",\n      \"title\": \"Climate Paper\",\n      \"text\": \"sea level rise evidence\",\n      \"score\": 0.91\n    }\n  ],\n  \"total\": 1\n}\n"
+  }
+}

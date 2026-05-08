@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "name": "zotron ocr status",
+  "command": ["status", "--collection", "测试集"],
+  "rpc": {
+    "calls": [
+      {
+        "method": "collections.tree",
+        "params": null,
+        "result": [
+          {"key": "COL3", "name": "测试集", "children": []}
+        ]
+      },
+      {
+        "method": "collections.getItems",
+        "params": {"key": "COL3", "limit": 500},
+        "result": {"items": [{"key": "ITEM10"}, {"key": "ITEM11"}]}
+      },
+      {
+        "method": "attachments.list",
+        "params": {"parentKey": "ITEM10"},
+        "result": []
+      },
+      {
+        "method": "notes.get",
+        "params": {"parentKey": "ITEM10"},
+        "result": [{"tags": ["ocr"]}]
+      },
+      {
+        "method": "attachments.list",
+        "params": {"parentKey": "ITEM11"},
+        "result": [{"title": "ITEM11.zotron-chunks.jsonl"}]
+      }
+    ]
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"collection\": \"测试集\", \"total\": 2, \"has_ocr\": 2, \"missing_ocr\": 0}\n"
+  }
+}

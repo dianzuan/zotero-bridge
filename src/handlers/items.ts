@@ -232,7 +232,7 @@ export const itemsHandlers = {
     const limit = params.limit ?? 20;
     const offset = params.offset ?? 0;
     // Zotero.Search has no orderByField/sortDirection conditions — query DB
-    // directly for top-N item IDs sorted by dateAdded or dateModified.
+    // directly for top-N item keys sorted by dateAdded or dateModified.
     // Excludes notes / attachments (top-level only) and deleted items.
     const sortColumn = params.type === "modified" ? "dateModified" : "dateAdded";
     const sql = `SELECT itemID FROM items
@@ -339,7 +339,7 @@ export const itemsHandlers = {
 
   async mergeDuplicates(params: { keys: (number | string)[] }) {
     if (params.keys.length < 2) {
-      throw { code: -32602, message: "Need at least 2 item IDs to merge" };
+      throw { code: -32602, message: "Need at least 2 item keys to merge" };
     }
     const items = await resolveItems(params.keys);
     const master = items[0];
@@ -452,9 +452,9 @@ export const itemsHandlers = {
     const onDuplicate = params.onDuplicate ?? "skip";
     const item = params.item;
 
-    let collectionId: number | null = null;
+    let collectionKey: number | null = null;
     if (params.collection !== undefined && params.collection !== null && params.collection !== 0) {
-      collectionId = (await requireCollection(params.collection)).id;
+      collectionKey = (await requireCollection(params.collection)).id;
     }
 
     const dupKey = await findDupByDOIOrTitle(item.fields);
@@ -465,15 +465,15 @@ export const itemsHandlers = {
     if (dupKey && onDuplicate === "skip") {
       itemKey = dupKey;
       status = "skipped_duplicate";
-      if (collectionId) {
+      if (collectionKey) {
         const dupItem = await requireItem(dupKey);
-        dupItem.addToCollection(collectionId);
+        dupItem.addToCollection(collectionKey);
         await dupItem.saveTx();
       }
     } else if (dupKey && onDuplicate === "update") {
       const dupItem = await requireItem(dupKey);
       applyFields(dupItem, item);
-      if (collectionId) dupItem.addToCollection(collectionId);
+      if (collectionKey) dupItem.addToCollection(collectionKey);
       await dupItem.saveTx();
       itemKey = dupKey;
       status = "updated";
@@ -481,7 +481,7 @@ export const itemsHandlers = {
       const newItem = new Zotero.Item((item.itemType || "journalArticle") as any);
       newItem.libraryID = Zotero.Libraries.userLibraryID;
       applyFields(newItem, item);
-      if (collectionId) newItem.addToCollection(collectionId);
+      if (collectionKey) newItem.addToCollection(collectionKey);
       await newItem.saveTx();
       itemKey = newItem.key;
       status = "created";

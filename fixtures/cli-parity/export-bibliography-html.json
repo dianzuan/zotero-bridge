@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "name": "export bibliography html",
+  "command": ["export", "bibliography", "ITEM1", "--style", "apa", "--html"],
+  "rpc": {
+    "method": "export.bibliography",
+    "params": {
+      "keys": ["ITEM1"],
+      "style": "apa"
+    },
+    "result": {
+      "format": "bibliography",
+      "style": "apa",
+      "html": "<div class=\"csl-entry\">Citation HTML</div>",
+      "text": "Citation plain text",
+      "count": 1
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "<div class=\"csl-entry\">Citation HTML</div>\n"
+  }
+}

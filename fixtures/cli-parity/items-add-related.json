@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "name": "items add related",
+  "command": [
+    "items",
+    "add-related",
+    "ITEM1",
+    "--target",
+    "ITEM2"
+  ],
+  "rpc": {
+    "method": "items.addRelated",
+    "params": {
+      "key": "ITEM1",
+      "targetKey": "ITEM2"
+    },
+    "result": {
+      "added": true
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"added\": true}\n"
+  }
+}

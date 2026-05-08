@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "name": "collections create",
+  "command": [
+    "collections",
+    "create",
+    "Reading List",
+    "--parent",
+    "Research"
+  ],
+  "rpc": {
+    "calls": [
+      {
+        "method": "collections.list",
+        "params": null,
+        "result": [
+          {
+            "key": "COL1",
+            "name": "Research",
+            "parentKey": null
+          }
+        ]
+      },
+      {
+        "method": "collections.create",
+        "params": {
+          "name": "Reading List",
+          "parentKey": "COL1"
+        },
+        "result": {
+          "key": "COL3",
+          "name": "Reading List",
+          "parentKey": "COL1"
+        }
+      }
+    ]
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"key\": \"COL3\", \"name\": \"Reading List\", \"parentKey\": \"COL1\"}\n"
+  }
+}

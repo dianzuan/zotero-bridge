@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "name": "system item fields",
+  "command": [
+    "system",
+    "item-fields",
+    "--type",
+    "journalArticle"
+  ],
+  "rpc": {
+    "method": "system.itemFields",
+    "params": {
+      "itemType": "journalArticle"
+    },
+    "result": [
+      "title",
+      "publicationTitle",
+      "date",
+      "DOI"
+    ]
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "[\n  \"title\",\n  \"publicationTitle\",\n  \"date\",\n  \"DOI\"\n]\n"
+  }
+}

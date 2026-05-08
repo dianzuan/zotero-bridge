@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "name": "search create saved dry run",
+  "command": [
+    "search",
+    "create-saved",
+    "Recent AI",
+    "--condition",
+    "tag contains AI",
+    "--dry-run"
+  ],
+  "rpc": {
+    "calls": []
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"dryRun\": true, \"wouldCall\": \"search.createSavedSearch\", \"wouldCallParams\": {\"name\": \"Recent AI\", \"conditions\": [{\"field\": \"tag\", \"operator\": \"contains\", \"value\": \"AI\"}]}}\n"
+  }
+}

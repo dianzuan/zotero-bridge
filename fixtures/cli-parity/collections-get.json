@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "name": "collections get",
+  "command": [
+    "collections",
+    "get",
+    "Research"
+  ],
+  "rpc": {
+    "calls": [
+      {
+        "method": "collections.list",
+        "params": null,
+        "result": [
+          {
+            "key": "COL1",
+            "name": "Research",
+            "parentKey": null
+          },
+          {
+            "key": "COL2",
+            "name": "乡村振兴",
+            "parentKey": "COL1"
+          }
+        ]
+      },
+      {
+        "method": "collections.get",
+        "params": {
+          "key": "COL1"
+        },
+        "result": {
+          "key": "COL1",
+          "name": "Research",
+          "parentKey": null
+        }
+      }
+    ]
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\n  \"key\": \"COL1\",\n  \"name\": \"Research\",\n  \"parentKey\": null\n}\n"
+  }
+}

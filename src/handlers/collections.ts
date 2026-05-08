@@ -62,11 +62,14 @@ export const collectionsHandlers = {
     return buildTree(cols);
   },
 
-  async create(params: { name: string; parentKey?: number }) {
+  async create(params: { name: string; parentKey?: number | string }) {
     const col = new Zotero.Collection();
     (col as any).libraryID = Zotero.Libraries.userLibraryID;
     col.name = params.name;
-    if (params.parentKey) col.parentID = params.parentKey;
+    if (params.parentKey) {
+      const parent = await requireCollection(params.parentKey);
+      col.parentID = parent.id;
+    }
     await col.saveTx();
     return serializeCollection(col);
   },
@@ -84,9 +87,14 @@ export const collectionsHandlers = {
     return { ok: true, key: col.key };
   },
 
-  async move(params: { key: number | string; newParentKey: number | null }) {
+  async move(params: { key: number | string; newParentKey: number | string | null }) {
     const col = await requireCollection(params.key);
-    (col as any).parentID = params.newParentKey || false;
+    if (params.newParentKey) {
+      const parent = await requireCollection(params.newParentKey);
+      (col as any).parentID = parent.id;
+    } else {
+      (col as any).parentID = false;
+    }
     await col.saveTx();
     return serializeCollection(col);
   },

@@ -1,0 +1,27 @@
+{
+  "command": [
+    "push",
+    "../../fixtures/cli-parity/data/push-item.json",
+    "--dry-run",
+    "--collection",
+    "Reading List"
+  ],
+  "rpc": {
+    "calls": [
+      {
+        "method": "collections.list",
+        "params": null,
+        "result": [
+          {
+            "key": "COLL1",
+            "name": "Reading List"
+          }
+        ]
+      }
+    ]
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"dryRun\": true, \"wouldPush\": {\"title\": \"Rust Migration Parity Paper\", \"itemType\": \"journalArticle\", \"collectionKey\": \"COLL1\", \"pdfPath\": null, \"onDuplicate\": \"skip\"}}\n"
+  }
+}

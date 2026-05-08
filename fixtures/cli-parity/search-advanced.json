@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "name": "search advanced",
+  "command": [
+    "search",
+    "advanced",
+    "--condition",
+    "creator contains 张三",
+    "--condition",
+    "date isAfter 2020",
+    "--operator",
+    "or",
+    "--limit",
+    "20",
+    "--offset",
+    "5"
+  ],
+  "rpc": {
+    "method": "search.advanced",
+    "params": {
+      "conditions": [
+        {
+          "field": "creator",
+          "operator": "contains",
+          "value": "张三"
+        },
+        {
+          "field": "date",
+          "operator": "isAfter",
+          "value": "2020"
+        }
+      ],
+      "operator": "or",
+      "limit": 20,
+      "offset": 5
+    },
+    "result": {
+      "items": [],
+      "total": 0,
+      "limit": 20,
+      "offset": 5,
+      "hasMore": false
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\n  \"items\": [],\n  \"total\": 0,\n  \"limit\": 20,\n  \"offset\": 5,\n  \"hasMore\": false\n}\n"
+  }
+}

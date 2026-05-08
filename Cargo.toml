@@ -1,0 +1,21 @@
+[workspace]
+members = [
+    "crates/zotron-cli",
+    "crates/zotron-rpc",
+    "crates/zotron-types",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/dianzuan/zotron"
+rust-version = "1.75"
+
+[workspace.dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+ureq = { version = "2", features = ["json"] }
+zotron-rpc = { path = "crates/zotron-rpc" }
+zotron-types = { path = "crates/zotron-types" }

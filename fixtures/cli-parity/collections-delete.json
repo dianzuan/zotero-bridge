@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "name": "collections delete",
+  "command": [
+    "collections",
+    "delete",
+    "Temp"
+  ],
+  "rpc": {
+    "calls": [
+      {
+        "method": "collections.list",
+        "params": null,
+        "result": [
+          {
+            "key": "COL5",
+            "name": "Temp",
+            "parentKey": null
+          }
+        ]
+      },
+      {
+        "method": "collections.delete",
+        "params": {
+          "key": "COL5"
+        },
+        "result": {
+          "deleted": true,
+          "key": "COL5"
+        }
+      }
+    ]
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"deleted\": true, \"key\": \"COL5\"}\n"
+  }
+}

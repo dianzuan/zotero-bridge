@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "name": "annotations delete",
+  "command": [
+    "annotations",
+    "delete",
+    "ANN3"
+  ],
+  "rpc": {
+    "method": "annotations.delete",
+    "params": {
+      "key": "ANN3"
+    },
+    "result": {
+      "ok": true,
+      "key": "ANN3"
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"key\": \"ANN3\"}\n"
+  }
+}

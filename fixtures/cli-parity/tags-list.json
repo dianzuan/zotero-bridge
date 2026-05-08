@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "name": "tags list",
+  "command": [
+    "tags",
+    "list",
+    "--limit",
+    "3"
+  ],
+  "rpc": {
+    "method": "tags.list",
+    "params": {
+      "limit": 3
+    },
+    "result": [
+      {
+        "tag": "乡村振兴",
+        "type": 0
+      },
+      {
+        "tag": "数字经济",
+        "type": 1
+      }
+    ]
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "[\n  {\n    \"tag\": \"乡村振兴\",\n    \"type\": 0\n  },\n  {\n    \"tag\": \"数字经济\",\n    \"type\": 1\n  }\n]\n"
+  }
+}

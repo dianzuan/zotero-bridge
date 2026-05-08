@@ -1,0 +1,3617 @@
+//! Minimal typed CLI surface for the Rust migration scaffold.
+
+use std::{
+    env, fs,
+    io::{self, Read},
+    path::{Path, PathBuf},
+    process::Command as ProcessCommand,
+};
+
+use clap::{error::ErrorKind, Parser, Subcommand};
+use serde_json::Value;
+use zotron_rpc::{StdProviderCommandRunner, UreqProviderHttpTransport, ZoteroRpc};
+use zotron_types::{
+    build_ocr_provider_request, builtin_ocr_provider_specs, execute_embedding_provider_request,
+    is_zotron_evidence_artifact, machine_artifact_exists_for_item, machine_artifact_store_root,
+    parse_ocr_provider_response, EmbeddingRequestInput, MachineArtifactKind, OcrRequestInput,
+    ProviderCommandRunner, ProviderHttpInvocation, ProviderHttpTransport, DEFAULT_RPC_URL,
+};
+
+pub trait RpcCaller {
+    fn call(&mut self, method: &str, params: Option<Value>) -> Result<Value, String>;
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct CliOcrProviderSpec {
+    pub id: &'static str,
+    pub provider: &'static str,
+    pub request_style: &'static str,
+    pub auth: &'static str,
+    pub auth_header: &'static str,
+    pub supports_pdf_direct: bool,
+    pub key_field: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct CliEmbeddingProviderSpec {
+    pub id: &'static str,
+    pub provider: &'static str,
+    pub request_style: &'static str,
+    pub default_url: String,
+    pub default_model: &'static str,
+    pub auth: &'static str,
+    pub key_field: &'static str,
+}
+
+pub fn ocr_provider_specs() -> Vec<CliOcrProviderSpec> {
+    builtin_ocr_provider_specs()
+        .into_iter()
+        .map(cli_ocr_provider_spec)
+        .collect()
+}
+
+pub fn ocr_provider_spec(provider: &str) -> Result<CliOcrProviderSpec, String> {
+    zotron_types::ocr_provider_spec(provider).map(cli_ocr_provider_spec)
+}
+
+pub fn embedding_provider_spec(provider: &str) -> Result<CliEmbeddingProviderSpec, String> {
+    let spec = zotron_types::embedding_provider_spec(provider)?;
+    Ok(CliEmbeddingProviderSpec {
+        id: spec.id,
+        provider: spec.provider_key,
+        request_style: if spec.provider_key == "alibaba" {
+            "dashscope"
+        } else {
+            spec.request_style.as_str()
+        },
+        default_url: spec.default_url.unwrap_or("").to_string(),
+        default_model: spec.default_model,
+        auth: spec.auth,
+        key_field: spec.key_field,
+    })
+}
+
+pub fn chunks_from_blocks(blocks: &[Value], max_chars: usize) -> Result<Vec<Value>, String> {
+    let typed = blocks
+        .iter()
+        .map(json_block_to_pdf_block)
+        .collect::<Result<Vec<_>, _>>()?;
+    let chunks = zotron_types::chunks_from_blocks(&typed, max_chars);
+    chunks
+        .into_iter()
+        .map(|chunk| chunk_to_cli_value(&chunk, &typed))
+        .collect()
+}
+
+fn cli_ocr_provider_spec(spec: zotron_types::OcrProviderSpec) -> CliOcrProviderSpec {
+    CliOcrProviderSpec {
+        id: spec.provider_key,
+        provider: spec.provider_key,
+        request_style: match spec.request_style {
+            zotron_types::OcrRequestStyle::PaddleocrVl => "openai-vision",
+            other => other.as_str(),
+        },
+        auth: spec.auth,
+        auth_header: spec.auth_header,
+        supports_pdf_direct: spec.supports_pdf_direct,
+        key_field: spec.key_field,
+    }
+}
+
+fn json_block_to_pdf_block(value: &Value) -> Result<zotron_types::PdfEvidenceBlock, String> {
+    let block_key = value
+        .get("block_key")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "block missing block_key".to_string())?
+        .to_string();
+    let item_key = value
+        .get("item_key")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "block missing item_key".to_string())?
+        .to_string();
+    let attachment_key = value
+        .get("attachment_key")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "block missing attachment_key".to_string())?
+        .to_string();
+    let page_idx = value
+        .get("page_idx")
+        .or_else(|| value.get("page"))
+        .and_then(Value::as_u64)
+        .unwrap_or(1);
+    let block_type = value
+        .get("type")
+        .or_else(|| value.get("block_type"))
+        .and_then(Value::as_str)
+        .unwrap_or("paragraph")
+        .to_string();
+    let section_path = value
+        .get("section_path")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let text = value
+        .get("text")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let bbox = value.get("bbox").and_then(value_bbox4);
+
+    Ok(zotron_types::PdfEvidenceBlock {
+        block_key,
+        item_key,
+        attachment_key,
+        page_idx,
+        block_type,
+        bbox,
+        section_path,
+        text,
+    })
+}
+
+fn chunk_to_cli_value(
+    chunk: &zotron_types::StructureChunk,
+    blocks: &[zotron_types::PdfEvidenceBlock],
+) -> Result<Value, String> {
+    let refs = chunk
+        .block_keys
+        .iter()
+        .filter_map(|key| blocks.iter().find(|block| &block.block_key == key))
+        .map(|block| {
+            serde_json::json!({
+                "block_key": block.block_key,
+                "page_idx": block.page_idx,
+                "bbox": block.bbox.map(|bbox| bbox.iter().map(|n| {
+                    if n.fract() == 0.0 {
+                        Value::from(*n as i64)
+                    } else {
+                        Value::from(*n)
+                    }
+                }).collect::<Vec<_>>()),
+            })
+        })
+        .collect::<Vec<_>>();
+    Ok(serde_json::json!({
+        "chunk_key": chunk.chunk_key,
+        "item_key": chunk.item_key,
+        "attachment_key": chunk.attachment_key,
+        "block_keys": chunk.block_keys,
+        "section_path": chunk.section_path,
+        "text": chunk.text,
+        "page_start": chunk.page_start,
+        "page_end": chunk.page_end,
+        "evidence_refs": refs,
+    }))
+}
+
+fn value_bbox4(value: &Value) -> Option<[f64; 4]> {
+    let arr = value.as_array()?;
+    if arr.len() != 4 {
+        return None;
+    }
+    Some([
+        arr[0].as_f64()?,
+        arr[1].as_f64()?,
+        arr[2].as_f64()?,
+        arr[3].as_f64()?,
+    ])
+}
+
+impl RpcCaller for ZoteroRpc {
+    fn call(&mut self, method: &str, params: Option<Value>) -> Result<Value, String> {
+        self.call(method, params).map_err(|err| err.to_string())
+    }
+}
+
+#[derive(Debug, Parser)]
+#[command(name = "zotron", about = "Rust client + CLI for the Zotron XPI")]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Debug, Parser)]
+#[command(
+    name = "zotron-ocr",
+    about = "OCR PDFs in Zotero and write raw/block/chunk artifacts."
+)]
+struct OcrCli {
+    #[command(subcommand)]
+    command: OcrCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum OcrCommand {
+    /// Print supported OCR provider contracts.
+    Providers,
+    /// Execute an OCR provider request from JSON and emit normalized blocks.
+    #[command(name = "provider-json")]
+    ProviderJson {
+        #[arg(long)]
+        provider: String,
+        /// Path to an OcrRequestInput JSON file, or "-" to read stdin.
+        #[arg(long)]
+        input: String,
+        /// Override the provider endpoint, required for service-hosted PaddleOCR-VL.
+        #[arg(long)]
+        endpoint: Option<String>,
+        /// Environment variable containing the provider bearer token.
+        #[arg(long = "api-key-env")]
+        api_key_env: Option<String>,
+    },
+    /// Show OCR statistics for a collection.
+    Status {
+        #[arg(long)]
+        collection: String,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Check that Zotero is running with the Zotron XPI enabled.
+    Ping {
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Generic RPC escape hatch.
+    Rpc {
+        method: String,
+        #[arg(default_value = "{}")]
+        params_json: String,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+        #[arg(long)]
+        paginate: bool,
+        #[arg(long, default_value_t = 100)]
+        page_size: usize,
+    },
+    /// Push prepared Zotero JSON (from file or stdin) to Zotero.
+    Push {
+        /// Path to a JSON file, or "-" to read from stdin.
+        json_file: String,
+        /// Optional PDF attachment path.
+        #[arg(long)]
+        pdf: Option<String>,
+        /// Collection name (fuzzy) or key.
+        #[arg(long)]
+        collection: Option<String>,
+        /// Duplicate handling: skip | update | create.
+        #[arg(long = "on-duplicate", default_value = "skip")]
+        on_duplicate: String,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+        /// Parse input + resolve collection only; do not push to Zotero.
+        #[arg(long = "dry-run")]
+        dry_run: bool,
+    },
+    /// System and plugin introspection commands.
+    System {
+        #[command(subcommand)]
+        command: SystemCommand,
+    },
+    /// Search items by text, tag, identifier, or structured conditions.
+    Search {
+        #[command(subcommand)]
+        command: SearchCommand,
+    },
+    /// Inspect and manage Zotero items.
+    Items {
+        #[command(subcommand)]
+        command: ItemsCommand,
+    },
+    /// Inspect Zotero collections.
+    Collections {
+        #[command(subcommand)]
+        command: CollectionsCommand,
+    },
+    /// Inspect Zotero notes.
+    Notes {
+        #[command(subcommand)]
+        command: NotesCommand,
+    },
+    /// Inspect Zotero attachments.
+    Attachments {
+        #[command(subcommand)]
+        command: AttachmentsCommand,
+    },
+    /// Inspect Zotero preferences.
+    Settings {
+        #[command(subcommand)]
+        command: SettingsCommand,
+    },
+    /// Inspect and manage Zotero tags.
+    Tags {
+        #[command(subcommand)]
+        command: TagsCommand,
+    },
+    /// Export items as BibTeX, RIS, CSL-JSON, or formatted bibliography.
+    Export {
+        #[command(subcommand)]
+        command: ExportCommand,
+    },
+    /// List, create, and delete PDF annotations.
+    Annotations {
+        #[command(subcommand)]
+        command: AnnotationsCommand,
+    },
+    /// Batch fill missing PDFs in a collection via Zotero's resolver chain.
+    #[command(name = "find-pdfs")]
+    FindPdfs {
+        #[arg(long)]
+        collection: String,
+        #[arg(long, default_value_t = 0)]
+        limit: usize,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+}
+
+struct RagHitsOptions {
+    query: String,
+    collection: Option<String>,
+    zotero: bool,
+    top_spans_per_item: u64,
+    include_fulltext_spans: bool,
+    top_k: u64,
+    output: String,
+}
+
+#[derive(Debug, Parser)]
+#[command(
+    name = "zotron-rag",
+    about = "RAG index and search for Zotero collections"
+)]
+struct RagCli {
+    #[command(subcommand)]
+    command: RagCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum RagCommand {
+    /// Print supported embedding provider contracts.
+    #[command(name = "embedding-providers")]
+    EmbeddingProviders,
+    /// Execute an embedding provider request from JSON and emit vectors.
+    #[command(name = "embedding-json")]
+    EmbeddingJson {
+        #[arg(long)]
+        provider: String,
+        /// Path to an EmbeddingRequestInput JSON file, or "-" to read stdin.
+        #[arg(long)]
+        input: String,
+        /// Override the embedding endpoint.
+        #[arg(long)]
+        endpoint: Option<String>,
+        /// Override the embedding model.
+        #[arg(long)]
+        model: Option<String>,
+        /// Override provider input type, for example document or query.
+        #[arg(long = "input-type")]
+        input_type: Option<String>,
+        /// Environment variable containing the provider bearer token.
+        #[arg(long = "api-key-env")]
+        api_key_env: Option<String>,
+    },
+    /// Show index status for a collection.
+    Status {
+        #[arg(long)]
+        collection: String,
+    },
+    /// Emit academic-zh retrieval hits with item_key/title/text provenance.
+    Hits {
+        query: String,
+        #[arg(long)]
+        collection: Option<String>,
+        #[arg(long)]
+        zotero: bool,
+        #[arg(long = "top-spans-per-item", default_value_t = 3)]
+        top_spans_per_item: u64,
+        #[arg(long = "include-fulltext-spans")]
+        include_fulltext_spans: bool,
+        #[arg(long = "limit", alias = "top-k", default_value_t = 50)]
+        top_k: u64,
+        #[arg(long, default_value = "json", value_parser = ["json", "jsonl"])]
+        output: String,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum SystemCommand {
+    /// Show XPI version and exposed method metadata.
+    Version {
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// List all libraries (user + groups).
+    Libraries {
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Get statistics for the current (or specified) library.
+    #[command(name = "library-stats")]
+    LibraryStats {
+        #[arg(long)]
+        library: Option<i64>,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// List all available Zotero item types.
+    #[command(name = "item-types")]
+    ItemTypes {
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// List all fields for a given item type.
+    #[command(name = "item-fields")]
+    ItemFields {
+        #[arg(long = "type")]
+        item_type: String,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// List creator types for a given item type.
+    #[command(name = "creator-types")]
+    CreatorTypes {
+        #[arg(long = "type")]
+        item_type: String,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Get the currently selected Zotero collection (or null).
+    #[command(name = "current-collection")]
+    CurrentCollection {
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// List all RPC methods exposed by the XPI.
+    #[command(name = "list-methods")]
+    ListMethods {
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Describe one or all RPC methods (schema / signatures).
+    Describe {
+        method: Option<String>,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum SearchCommand {
+    /// Zotero quick-search (title, creator, year, tags).
+    Quick {
+        query: String,
+        #[arg(long, default_value_t = 50)]
+        limit: u64,
+        /// Limit quick search to a collection name or key.
+        #[arg(long)]
+        collection: Option<String>,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Full-text search across PDF contents.
+    Fulltext {
+        query: String,
+        #[arg(long, default_value_t = 50)]
+        limit: u64,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Find an item by DOI / ISBN / ISSN.
+    #[command(name = "by-identifier")]
+    ByIdentifier {
+        #[arg(long)]
+        doi: Option<String>,
+        #[arg(long)]
+        isbn: Option<String>,
+        #[arg(long)]
+        issn: Option<String>,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Advanced search using structured field/operator/value conditions.
+    Advanced {
+        #[arg(long = "condition", required = true)]
+        condition: Vec<String>,
+        #[arg(long, default_value = "and")]
+        operator: String,
+        #[arg(long, default_value_t = 50)]
+        limit: u64,
+        #[arg(long, default_value_t = 0)]
+        offset: u64,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// List items that have the given tag.
+    #[command(name = "by-tag")]
+    ByTag {
+        tag: String,
+        #[arg(long, default_value_t = 50)]
+        limit: u64,
+        #[arg(long, default_value_t = 0)]
+        offset: u64,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// List all saved searches in the library.
+    #[command(name = "saved-searches")]
+    SavedSearches {
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Create a saved search with one or more conditions.
+    #[command(name = "create-saved")]
+    CreateSaved {
+        name: String,
+        #[arg(long = "condition", required = true)]
+        condition: Vec<String>,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Delete a saved search by ID.
+    #[command(name = "delete-saved")]
+    DeleteSaved {
+        search_id: String,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ItemsCommand {
+    /// Add a paper by DOI using Zotero's search translators.
+    #[command(name = "add-by-doi")]
+    AddByDoi {
+        doi: String,
+        #[arg(long)]
+        collection: Option<String>,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Add a book by ISBN.
+    #[command(name = "add-by-isbn")]
+    AddByIsbn {
+        isbn: String,
+        #[arg(long)]
+        collection: Option<String>,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Add a web resource via Zotero's web translator.
+    #[command(name = "add-by-url")]
+    AddByUrl {
+        page_url: String,
+        #[arg(long)]
+        collection: Option<String>,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Add an item from a local file.
+    #[command(name = "add-from-file")]
+    AddFromFile {
+        path: String,
+        #[arg(long)]
+        collection: Option<String>,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Create a new item of the given type.
+    Create {
+        #[arg(long = "type")]
+        item_type: String,
+        #[arg(long = "field")]
+        fields: Vec<String>,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Update fields on an existing item.
+    Update {
+        key: String,
+        #[arg(long = "field")]
+        fields: Vec<String>,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Permanently delete an item.
+    Delete {
+        key: String,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Move item to trash.
+    Trash {
+        item: String,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Restore a trashed item.
+    Restore {
+        item: String,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Move multiple items to trash in one call.
+    #[command(name = "batch-trash")]
+    BatchTrash {
+        keys: Vec<String>,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Merge a group of duplicate items.
+    #[command(name = "merge-duplicates")]
+    MergeDuplicates {
+        keys: Vec<String>,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Add a related-item link between two items.
+    #[command(name = "add-related")]
+    AddRelated {
+        key: String,
+        #[arg(long)]
+        target: String,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Remove a related-item link between two items.
+    #[command(name = "remove-related")]
+    RemoveRelated {
+        key: String,
+        #[arg(long)]
+        target: String,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Print the full serialization of an item by key.
+    Get {
+        item: String,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// List items in the library with optional sorting and pagination.
+    List {
+        #[arg(long, default_value_t = 50)]
+        limit: u64,
+        #[arg(long, default_value_t = 0)]
+        offset: u64,
+        #[arg(long)]
+        sort: Option<String>,
+        #[arg(long, default_value = "asc")]
+        direction: String,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Run Zotero's duplicate scan and print groups.
+    #[command(name = "find-duplicates")]
+    FindDuplicates {
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// List items currently in the trash.
+    #[command(name = "list-trash")]
+    ListTrash {
+        #[arg(long, default_value_t = 50)]
+        limit: u64,
+        #[arg(long, default_value_t = 0)]
+        offset: u64,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// List recently added or modified items.
+    Recent {
+        #[arg(long, default_value_t = 20)]
+        limit: u64,
+        #[arg(long, default_value_t = 0)]
+        offset: u64,
+        #[arg(long = "type", default_value = "added")]
+        recent_type: String,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Retrieve the full-text content of an item's attachment.
+    Fulltext {
+        key: String,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// List items related to the given item.
+    Related {
+        key: String,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Get the citation key for an item.
+    #[command(name = "citation-key")]
+    CitationKey {
+        key: String,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum SettingsCommand {
+    /// Get a single Zotero preference value.
+    Get {
+        key: String,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// List all Zotero preferences as a key->value dict.
+    List {
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Set a single Zotero preference.
+    Set {
+        key: String,
+        value: String,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Bulk-set Zotero preferences from a JSON file.
+    #[command(name = "set-all")]
+    SetAll {
+        #[arg(long)]
+        file: String,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum TagsCommand {
+    /// List all tags in the library (flat).
+    List {
+        #[arg(long, default_value_t = 200)]
+        limit: u64,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Rename a tag across all items.
+    Rename {
+        old: String,
+        new: String,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Delete a tag library-wide.
+    Delete {
+        tag: String,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Add one or more tags to an item.
+    Add {
+        key: String,
+        #[arg(long = "tag", required = true)]
+        tags: Vec<String>,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Remove one or more tags from an item.
+    Remove {
+        key: String,
+        #[arg(long = "tag", required = true)]
+        tags: Vec<String>,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Batch add/remove tags across multiple items.
+    #[command(name = "batch-update")]
+    BatchUpdate {
+        keys: Vec<String>,
+        #[arg(long = "add")]
+        add_tags: Vec<String>,
+        #[arg(long = "remove")]
+        remove_tags: Vec<String>,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ExportCommand {
+    /// Print BibTeX for the given item keys.
+    Bibtex {
+        keys: Vec<String>,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Print RIS for the given item keys.
+    Ris {
+        keys: Vec<String>,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Print CSL-JSON for the given item keys.
+    #[command(name = "csl-json")]
+    CslJson {
+        keys: Vec<String>,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Print a formatted bibliography.
+    Bibliography {
+        keys: Vec<String>,
+        #[arg(
+            long,
+            default_value = "http://www.zotero.org/styles/gb-t-7714-2015-numeric"
+        )]
+        style: String,
+        #[arg(long)]
+        html: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum AnnotationsCommand {
+    /// List annotations on a PDF attachment.
+    List {
+        #[arg(long)]
+        parent: String,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Create a new annotation on a PDF attachment.
+    Create {
+        #[arg(long)]
+        parent: String,
+        #[arg(long = "type")]
+        annotation_type: String,
+        #[arg(long)]
+        text: Option<String>,
+        #[arg(long)]
+        comment: Option<String>,
+        #[arg(long, default_value = "#ffd400")]
+        color: String,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Delete an annotation by ID.
+    Delete {
+        annotation_id: String,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum AttachmentsCommand {
+    /// List attachments belonging to a parent item.
+    List {
+        #[arg(long)]
+        parent: String,
+        #[arg(long, default_value_t = 50)]
+        limit: u64,
+        #[arg(long, default_value_t = 0)]
+        offset: u64,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Get a single attachment by ID.
+    Get {
+        id: String,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Get full-text content of an attachment.
+    Fulltext {
+        id: String,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Get the local filesystem path of an attachment.
+    Path {
+        id: String,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Attach a local file to an item.
+    Add {
+        #[arg(long)]
+        parent: String,
+        #[arg(long)]
+        path: String,
+        #[arg(long)]
+        title: Option<String>,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Attach a remote file (by URL) to an item.
+    #[command(name = "add-by-url")]
+    AddByUrl {
+        #[arg(long)]
+        parent: String,
+        #[arg(long = "source-url", alias = "url")]
+        source_url: String,
+        #[arg(long)]
+        title: Option<String>,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        endpoint: String,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Delete an attachment.
+    Delete {
+        id: String,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Trigger Zotero's Find Available PDF for a parent item.
+    #[command(name = "find-pdf")]
+    FindPdf {
+        #[arg(long)]
+        parent: String,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum NotesCommand {
+    /// List notes attached to a parent item.
+    List {
+        #[arg(long)]
+        parent: String,
+        #[arg(long, default_value_t = 50)]
+        limit: u64,
+        #[arg(long, default_value_t = 0)]
+        offset: u64,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Get a single note by ID.
+    Get {
+        note_id: String,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Create a note attached to a parent item.
+    Create {
+        #[arg(long)]
+        parent: String,
+        #[arg(long)]
+        content: String,
+        #[arg(long = "tag")]
+        tags: Vec<String>,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Update the content of an existing note.
+    Update {
+        note_id: String,
+        #[arg(long)]
+        content: String,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Delete a note by ID.
+    Delete {
+        note_id: String,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Search notes by text content.
+    Search {
+        query: String,
+        #[arg(long, default_value_t = 50)]
+        limit: u64,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum CollectionsCommand {
+    /// List all collections in the user library (flat).
+    List {
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Print the collection hierarchy as a tree.
+    Tree {
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Get a single collection's metadata.
+    Get {
+        name_or_id: String,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// List all items in a collection.
+    #[command(name = "get-items", visible_alias = "items")]
+    GetItems {
+        name_or_id: String,
+        #[arg(long)]
+        limit: Option<u64>,
+        #[arg(long, default_value_t = 0)]
+        offset: u64,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Show item/attachment/note/subcollection counts for a collection.
+    Stats {
+        name_or_id: String,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Rename a collection.
+    Rename {
+        old_name: String,
+        new_name: String,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Create a collection, optionally nested under a parent.
+    Create {
+        name: String,
+        #[arg(long)]
+        parent: Option<String>,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Delete a collection.
+    Delete {
+        name_or_id: String,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Add existing items to a collection.
+    #[command(name = "add-items")]
+    AddItems {
+        collection: String,
+        item_keys: Vec<String>,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Remove items from a collection.
+    #[command(name = "remove-items")]
+    RemoveItems {
+        collection: String,
+        item_keys: Vec<String>,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+        #[arg(long)]
+        dry_run: bool,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum JsonStyle {
+    /// Matches Python's top-level `ping` command (`json.dumps` defaults).
+    PythonCompact,
+    /// Matches namespace commands that route through Python `emit(..., indent=2)`.
+    Pretty,
+}
+
+enum ParseOutcome<T> {
+    Command(T),
+    Display(String),
+}
+
+fn parse_cli<T>(
+    args: impl IntoIterator<Item = impl Into<std::ffi::OsString> + Clone>,
+) -> Result<ParseOutcome<T>, String>
+where
+    T: Parser,
+{
+    match T::try_parse_from(args) {
+        Ok(cli) => Ok(ParseOutcome::Command(cli)),
+        Err(err)
+            if matches!(
+                err.kind(),
+                ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
+            ) =>
+        {
+            Ok(ParseOutcome::Display(err.to_string()))
+        }
+        Err(err) => Err(err.to_string()),
+    }
+}
+
+pub fn format_error_json(message: &str) -> String {
+    let message = message.trim_end();
+    let (code, message) = split_error_code(message).unwrap_or(("RUNTIME_ERROR", message));
+    serde_json::json!({"error": {"code": code, "message": message}}).to_string()
+}
+
+fn split_error_code(message: &str) -> Option<(&str, &str)> {
+    let (code, rest) = message.split_once(':')?;
+    if !code.is_empty()
+        && code
+            .chars()
+            .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit() || ch == '_')
+    {
+        Some((code, rest.trim_start()))
+    } else {
+        None
+    }
+}
+
+pub fn run(
+    args: impl IntoIterator<Item = impl Into<std::ffi::OsString> + Clone>,
+) -> Result<String, String> {
+    let cli = match parse_cli::<Cli>(args)? {
+        ParseOutcome::Command(cli) => cli,
+        ParseOutcome::Display(output) => return Ok(output),
+    };
+    let url = command_url(&cli.command);
+    let mut client = ZoteroRpc::new(url);
+    run_command(cli.command, &mut client)
+}
+
+pub fn run_with_client(
+    args: impl IntoIterator<Item = impl Into<std::ffi::OsString> + Clone>,
+    client: &mut impl RpcCaller,
+) -> Result<String, String> {
+    let cli = match parse_cli::<Cli>(args)? {
+        ParseOutcome::Command(cli) => cli,
+        ParseOutcome::Display(output) => return Ok(output),
+    };
+    run_command(cli.command, client)
+}
+
+pub fn run_ocr(
+    args: impl IntoIterator<Item = impl Into<std::ffi::OsString> + Clone>,
+) -> Result<String, String> {
+    let cli = match parse_cli::<OcrCli>(args)? {
+        ParseOutcome::Command(cli) => cli,
+        ParseOutcome::Display(output) => return Ok(output),
+    };
+    let url = match &cli.command {
+        OcrCommand::Providers => DEFAULT_RPC_URL.to_string(),
+        OcrCommand::ProviderJson { .. } => DEFAULT_RPC_URL.to_string(),
+        OcrCommand::Status { url, .. } => url.clone(),
+    };
+    let mut client = ZoteroRpc::new(url);
+    run_ocr_command(cli.command, &mut client)
+}
+
+pub fn run_ocr_with_client(
+    args: impl IntoIterator<Item = impl Into<std::ffi::OsString> + Clone>,
+    client: &mut impl RpcCaller,
+) -> Result<String, String> {
+    let cli = match parse_cli::<OcrCli>(args)? {
+        ParseOutcome::Command(cli) => cli,
+        ParseOutcome::Display(output) => return Ok(output),
+    };
+    run_ocr_command(cli.command, client)
+}
+
+pub fn run_rag(
+    args: impl IntoIterator<Item = impl Into<std::ffi::OsString> + Clone>,
+) -> Result<String, String> {
+    let cli = match parse_cli::<RagCli>(args)? {
+        ParseOutcome::Command(cli) => cli,
+        ParseOutcome::Display(output) => return Ok(output),
+    };
+    let url = rag_command_url(&cli.command);
+    let mut client = ZoteroRpc::new(url);
+    run_rag_command(cli.command, &mut client)
+}
+
+pub fn run_rag_with_client(
+    args: impl IntoIterator<Item = impl Into<std::ffi::OsString> + Clone>,
+    client: &mut impl RpcCaller,
+) -> Result<String, String> {
+    let cli = match parse_cli::<RagCli>(args)? {
+        ParseOutcome::Command(cli) => cli,
+        ParseOutcome::Display(output) => return Ok(output),
+    };
+    run_rag_command(cli.command, client)
+}
+
+fn rag_command_url(command: &RagCommand) -> String {
+    match command {
+        RagCommand::EmbeddingProviders => DEFAULT_RPC_URL.to_string(),
+        RagCommand::EmbeddingJson { .. } => DEFAULT_RPC_URL.to_string(),
+        RagCommand::Status { .. } => DEFAULT_RPC_URL.to_string(),
+        RagCommand::Hits { url, .. } => url.clone(),
+    }
+}
+
+fn command_url(command: &Command) -> String {
+    match command {
+        Command::Ping { url }
+        | Command::Rpc { url, .. }
+        | Command::Push { url, .. }
+        | Command::FindPdfs { url, .. } => url.clone(),
+        Command::System { command } => match command {
+            SystemCommand::Version { url }
+            | SystemCommand::Libraries { url }
+            | SystemCommand::LibraryStats { url, .. }
+            | SystemCommand::ItemTypes { url }
+            | SystemCommand::ItemFields { url, .. }
+            | SystemCommand::CreatorTypes { url, .. }
+            | SystemCommand::CurrentCollection { url }
+            | SystemCommand::ListMethods { url }
+            | SystemCommand::Describe { url, .. } => url.clone(),
+        },
+        Command::Search { command } => match command {
+            SearchCommand::Quick { url, .. }
+            | SearchCommand::Fulltext { url, .. }
+            | SearchCommand::ByIdentifier { url, .. }
+            | SearchCommand::Advanced { url, .. }
+            | SearchCommand::ByTag { url, .. }
+            | SearchCommand::SavedSearches { url }
+            | SearchCommand::CreateSaved { url, .. }
+            | SearchCommand::DeleteSaved { url, .. } => url.clone(),
+        },
+        Command::Items { command } => match command {
+            ItemsCommand::AddByDoi { url, .. }
+            | ItemsCommand::AddByIsbn { url, .. }
+            | ItemsCommand::AddByUrl { url, .. }
+            | ItemsCommand::AddFromFile { url, .. }
+            | ItemsCommand::Create { url, .. }
+            | ItemsCommand::Update { url, .. }
+            | ItemsCommand::Delete { url, .. }
+            | ItemsCommand::Trash { url, .. }
+            | ItemsCommand::Restore { url, .. }
+            | ItemsCommand::BatchTrash { url, .. }
+            | ItemsCommand::MergeDuplicates { url, .. }
+            | ItemsCommand::AddRelated { url, .. }
+            | ItemsCommand::RemoveRelated { url, .. }
+            | ItemsCommand::Get { url, .. }
+            | ItemsCommand::List { url, .. }
+            | ItemsCommand::FindDuplicates { url }
+            | ItemsCommand::ListTrash { url, .. }
+            | ItemsCommand::Recent { url, .. }
+            | ItemsCommand::Fulltext { url, .. }
+            | ItemsCommand::Related { url, .. }
+            | ItemsCommand::CitationKey { url, .. } => url.clone(),
+        },
+        Command::Collections { command } => match command {
+            CollectionsCommand::List { url }
+            | CollectionsCommand::Tree { url }
+            | CollectionsCommand::Get { url, .. }
+            | CollectionsCommand::GetItems { url, .. }
+            | CollectionsCommand::Stats { url, .. }
+            | CollectionsCommand::Rename { url, .. }
+            | CollectionsCommand::Create { url, .. }
+            | CollectionsCommand::Delete { url, .. }
+            | CollectionsCommand::AddItems { url, .. }
+            | CollectionsCommand::RemoveItems { url, .. } => url.clone(),
+        },
+        Command::Notes { command } => match command {
+            NotesCommand::List { url, .. }
+            | NotesCommand::Get { url, .. }
+            | NotesCommand::Create { url, .. }
+            | NotesCommand::Update { url, .. }
+            | NotesCommand::Delete { url, .. }
+            | NotesCommand::Search { url, .. } => url.clone(),
+        },
+        Command::Attachments { command } => match command {
+            AttachmentsCommand::List { url, .. }
+            | AttachmentsCommand::Get { url, .. }
+            | AttachmentsCommand::Fulltext { url, .. }
+            | AttachmentsCommand::Path { url, .. }
+            | AttachmentsCommand::Add { url, .. }
+            | AttachmentsCommand::Delete { url, .. }
+            | AttachmentsCommand::FindPdf { url, .. } => url.clone(),
+            AttachmentsCommand::AddByUrl { endpoint, .. } => endpoint.clone(),
+        },
+        Command::Settings { command } => match command {
+            SettingsCommand::Get { url, .. }
+            | SettingsCommand::List { url }
+            | SettingsCommand::Set { url, .. }
+            | SettingsCommand::SetAll { url, .. } => url.clone(),
+        },
+        Command::Tags { command } => match command {
+            TagsCommand::List { url, .. }
+            | TagsCommand::Rename { url, .. }
+            | TagsCommand::Delete { url, .. }
+            | TagsCommand::Add { url, .. }
+            | TagsCommand::Remove { url, .. }
+            | TagsCommand::BatchUpdate { url, .. } => url.clone(),
+        },
+        Command::Export { command } => match command {
+            ExportCommand::Bibtex { url, .. }
+            | ExportCommand::Ris { url, .. }
+            | ExportCommand::CslJson { url, .. }
+            | ExportCommand::Bibliography { url, .. } => url.clone(),
+        },
+        Command::Annotations { command } => match command {
+            AnnotationsCommand::List { url, .. }
+            | AnnotationsCommand::Create { url, .. }
+            | AnnotationsCommand::Delete { url, .. } => url.clone(),
+        },
+    }
+}
+
+fn run_ocr_command(command: OcrCommand, client: &mut impl RpcCaller) -> Result<String, String> {
+    let value = match command {
+        OcrCommand::Providers => serde_json::json!({
+            "providers": ocr_provider_specs(),
+        }),
+        OcrCommand::ProviderJson {
+            provider,
+            input,
+            endpoint,
+            api_key_env,
+        } => run_ocr_provider_json_command(provider, input, endpoint, api_key_env)?,
+        OcrCommand::Status { collection, .. } => run_ocr_status_command(client, collection)?,
+    };
+    format_json(&value, JsonStyle::PythonCompact)
+}
+
+fn run_ocr_provider_json_command(
+    provider: String,
+    input: String,
+    endpoint: Option<String>,
+    api_key_env: Option<String>,
+) -> Result<Value, String> {
+    let input: OcrRequestInput = read_json_input(&input)?;
+    let request = build_ocr_provider_request(&provider, &input)?;
+    let payload = if request.command.is_empty() {
+        let method = request
+            .method
+            .ok_or_else(|| format!("OCR provider {} missing HTTP method", request.provider))?;
+        let mut transport = provider_http_transport(api_key_env.as_deref())?;
+        transport.post_json(&ProviderHttpInvocation {
+            provider: request.provider.to_string(),
+            style: request.style.to_string(),
+            method: method.to_string(),
+            url: endpoint.or_else(|| request.url.map(ToString::to_string)),
+            auth_header_name: request.auth_header.map(ToString::to_string),
+            auth_header_value: None,
+            body: request.body,
+        })?
+    } else {
+        let mut command_runner = StdProviderCommandRunner;
+        command_runner.run_json(&request.command)?
+    };
+    let blocks = parse_ocr_provider_response(
+        request.provider,
+        &payload,
+        &input.item_key,
+        &input.attachment_key,
+    )?;
+
+    Ok(serde_json::json!({
+        "provider": request.provider,
+        "blocks": blocks,
+    }))
+}
+
+fn run_ocr_status_command(
+    client: &mut impl RpcCaller,
+    collection: String,
+) -> Result<Value, String> {
+    let collection_key = find_collection_in_tree(client, &collection)?.ok_or_else(|| {
+        format!(
+            "{{\"error\": \"Collection not found: '{}'\"}}",
+            collection.replace('\'', "\\'")
+        )
+    })?;
+    let raw = client.call(
+        "collections.getItems",
+        Some(serde_json::json!({"key": collection_key, "limit": 500})),
+    )?;
+    let items = raw
+        .get("items")
+        .and_then(Value::as_array)
+        .or_else(|| raw.as_array())
+        .ok_or_else(|| "collections.getItems returned non-array/non-items result".to_string())?
+        .clone();
+
+    let mut has_ocr = 0usize;
+    for item in &items {
+        let item_key = item.get("key").cloned().unwrap_or(Value::Null);
+        if has_ocr_artifact(client, &item_key)? || has_ocr_note(client, &item_key)? {
+            has_ocr += 1;
+        }
+    }
+
+    Ok(serde_json::json!({
+        "collection": collection,
+        "total": items.len(),
+        "has_ocr": has_ocr,
+        "missing_ocr": items.len() - has_ocr,
+    }))
+}
+
+fn has_ocr_artifact(client: &mut impl RpcCaller, item_key: &Value) -> Result<bool, String> {
+    if let Some(item_key) = item_key.as_str() {
+        if machine_artifact_exists_for_item(
+            machine_artifact_store_root(),
+            item_key,
+            MachineArtifactKind::Chunks,
+        ) {
+            return Ok(true);
+        }
+    }
+
+    let attachments = client.call(
+        "attachments.list",
+        Some(serde_json::json!({"parentKey": item_key.clone()})),
+    )?;
+    Ok(attachments.as_array().is_some_and(|attachments| {
+        attachments.iter().any(|attachment| {
+            attachment
+                .get("title")
+                .and_then(Value::as_str)
+                .is_some_and(|title| title.ends_with("zotron-chunks.jsonl"))
+        })
+    }))
+}
+
+fn has_ocr_note(client: &mut impl RpcCaller, item_key: &Value) -> Result<bool, String> {
+    let notes = client.call(
+        "notes.get",
+        Some(serde_json::json!({"parentKey": item_key.clone()})),
+    )?;
+    Ok(notes.as_array().is_some_and(|notes| {
+        notes.iter().any(|note| {
+            note.get("tags")
+                .and_then(Value::as_array)
+                .is_some_and(|tags| tags.iter().any(|tag| tag == "ocr"))
+        })
+    }))
+}
+
+fn find_collection_in_tree(
+    client: &mut impl RpcCaller,
+    collection: &str,
+) -> Result<Option<Value>, String> {
+    let tree = client.call("collections.tree", None)?;
+    let nodes = tree
+        .as_array()
+        .ok_or_else(|| "collections.tree returned non-array result".to_string())?;
+    Ok(search_collection_tree(nodes, collection))
+}
+
+fn search_collection_tree(nodes: &[Value], collection: &str) -> Option<Value> {
+    for node in nodes {
+        if node.get("name").and_then(Value::as_str) == Some(collection) {
+            return node.get("key").cloned();
+        }
+        if let Some(children) = node.get("children").and_then(Value::as_array) {
+            if let Some(found) = search_collection_tree(children, collection) {
+                return Some(found);
+            }
+        }
+    }
+    None
+}
+
+fn run_command(command: Command, client: &mut impl RpcCaller) -> Result<String, String> {
+    if let Command::Export { command } = command {
+        return run_export_command(command, client);
+    }
+
+    let (value, style) = match command {
+        Command::Ping { .. } => (
+            call_json(client, "system.ping", None)?,
+            JsonStyle::PythonCompact,
+        ),
+        Command::Rpc {
+            method,
+            params_json,
+            paginate,
+            page_size,
+            ..
+        } => {
+            let params = serde_json::from_str::<Value>(&params_json)
+                .map_err(|err| format!("INVALID_JSON: params must be a JSON object: {err}"))?;
+            if !params.is_object() {
+                return Err("INVALID_JSON: params must be a JSON object".to_string());
+            }
+            if paginate {
+                (
+                    paginate_rpc(client, &method, params, page_size)?,
+                    JsonStyle::Pretty,
+                )
+            } else {
+                (call_json(client, &method, Some(params))?, JsonStyle::Pretty)
+            }
+        }
+        Command::Push {
+            json_file,
+            pdf,
+            collection,
+            on_duplicate,
+            dry_run,
+            ..
+        } => return run_push_command(json_file, pdf, collection, on_duplicate, dry_run, client),
+        Command::System { command } => run_system_command(command, client)?,
+        Command::Search { command } => run_search_command(command, client)?,
+        Command::Items { command } => run_items_command(command, client)?,
+        Command::Collections { command } => run_collections_command(command, client)?,
+        Command::Notes { command } => run_notes_command(command, client)?,
+        Command::Attachments { command } => run_attachments_command(command, client)?,
+        Command::Settings { command } => run_settings_command(command, client)?,
+        Command::Tags { command } => run_tags_command(command, client)?,
+        Command::Annotations { command } => run_annotations_command(command, client)?,
+        Command::Export { .. } => unreachable!("export commands return raw output above"),
+        Command::FindPdfs {
+            collection, limit, ..
+        } => run_find_pdfs_command(client, collection, limit)?,
+    };
+
+    format_json(&value, style)
+}
+
+fn run_rag_command(command: RagCommand, client: &mut impl RpcCaller) -> Result<String, String> {
+    match command {
+        RagCommand::EmbeddingProviders => format_json(
+            &serde_json::json!({
+                "providers": [
+                    embedding_provider_spec("volcengine")?,
+                    embedding_provider_spec("alibaba")?,
+                    embedding_provider_spec("custom")?,
+                ],
+            }),
+            JsonStyle::Pretty,
+        ),
+        RagCommand::EmbeddingJson {
+            provider,
+            input,
+            endpoint,
+            model,
+            input_type,
+            api_key_env,
+        } => {
+            let value = run_embedding_provider_json_command(
+                provider,
+                input,
+                endpoint,
+                model,
+                input_type,
+                api_key_env,
+            )?;
+            format_json(&value, JsonStyle::PythonCompact)
+        }
+        RagCommand::Status { collection } => {
+            let value = rag_status_value(&collection)?;
+            format_json(&value, JsonStyle::PythonCompact)
+        }
+        RagCommand::Hits {
+            query,
+            collection,
+            zotero,
+            top_spans_per_item,
+            include_fulltext_spans,
+            top_k,
+            output,
+            ..
+        } => run_rag_hits_command(
+            client,
+            RagHitsOptions {
+                query,
+                collection,
+                zotero,
+                top_spans_per_item,
+                include_fulltext_spans,
+                top_k,
+                output,
+            },
+        ),
+    }
+}
+
+fn run_embedding_provider_json_command(
+    provider: String,
+    input: String,
+    endpoint: Option<String>,
+    model: Option<String>,
+    input_type: Option<String>,
+    api_key_env: Option<String>,
+) -> Result<Value, String> {
+    let mut input: EmbeddingRequestInput = read_json_input(&input)?;
+    if endpoint.is_some() {
+        input.url = endpoint;
+    }
+    if model.is_some() {
+        input.model = model;
+    }
+    if input_type.is_some() {
+        input.input_type = input_type;
+    }
+    let mut transport = provider_http_transport(api_key_env.as_deref())?;
+    let vectors = execute_embedding_provider_request(&provider, &input, &mut transport)?;
+
+    Ok(serde_json::json!({
+        "provider": provider,
+        "vectors": vectors,
+    }))
+}
+
+fn provider_http_transport(api_key_env: Option<&str>) -> Result<UreqProviderHttpTransport, String> {
+    let Some(env_name) = api_key_env else {
+        return Ok(UreqProviderHttpTransport::new());
+    };
+    let token = env::var(env_name)
+        .map_err(|_| format!("missing provider credential env var {env_name}"))?;
+    if token.trim().is_empty() {
+        return Err(format!("provider credential env var {env_name} is empty"));
+    }
+    if token.trim_start().starts_with("Bearer ") {
+        Ok(UreqProviderHttpTransport::with_api_key(token))
+    } else {
+        Ok(UreqProviderHttpTransport::with_bearer_token(token))
+    }
+}
+
+fn read_json_input<T: serde::de::DeserializeOwned>(path: &str) -> Result<T, String> {
+    let payload = if path == "-" {
+        let mut input = String::new();
+        io::stdin()
+            .read_to_string(&mut input)
+            .map_err(|err| format!("read stdin: {err}"))?;
+        input
+    } else {
+        fs::read_to_string(path).map_err(|err| format!("read {path}: {err}"))?
+    };
+    serde_json::from_str::<T>(&payload)
+        .map_err(|err| format!("INVALID_JSON: Could not parse JSON: {err}"))
+}
+
+fn run_rag_hits_command(
+    client: &mut impl RpcCaller,
+    options: RagHitsOptions,
+) -> Result<String, String> {
+    if !options.zotero {
+        return Err(
+            "zotron-rag hits currently supports only the fixture-covered --zotero backend in Rust"
+                .to_string(),
+        );
+    }
+    let collection = options.collection.ok_or_else(|| {
+        "{\"error\": \"--collection is required when --zotero is used\"}".to_string()
+    })?;
+    let payload = client.call(
+        "rag.searchHits",
+        Some(serde_json::json!({
+            "query": options.query,
+            "collection": collection,
+            "limit": options.top_k,
+            "top_spans_per_item": options.top_spans_per_item,
+            "include_fulltext_spans": options.include_fulltext_spans,
+        })),
+    )?;
+    let hits = payload
+        .get("hits")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    if options.output == "jsonl" {
+        let mut out = String::new();
+        for hit in hits {
+            out.push_str(&serde_json::to_string(&hit).map_err(|err| err.to_string())?);
+            out.push('\n');
+        }
+        Ok(out)
+    } else {
+        let total = hits.len();
+        format_json(
+            &serde_json::json!({
+                "hits": hits,
+                "total": total,
+            }),
+            JsonStyle::Pretty,
+        )
+    }
+}
+
+fn rag_status_value(collection: &str) -> Result<Value, String> {
+    let store_path = rag_store_path(collection);
+    if !store_path.exists() {
+        return Ok(serde_json::json!({
+            "status": "not indexed",
+            "collection": collection,
+        }));
+    }
+
+    let raw = fs::read_to_string(&store_path)
+        .map_err(|err| format!("read RAG store {}: {err}", store_path.display()))?;
+    let store: Value = serde_json::from_str(&raw)
+        .map_err(|err| format!("parse RAG store {}: {err}", store_path.display()))?;
+    let chunks = store
+        .get("chunks")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut item_keys = Vec::<Value>::new();
+    for chunk in &chunks {
+        let Some(item_key) = chunk.get("item_key") else {
+            continue;
+        };
+        if !item_keys.iter().any(|seen| seen == item_key) {
+            item_keys.push(item_key.clone());
+        }
+    }
+    Ok(serde_json::json!({
+        "status": "indexed",
+        "collection": store.get("collection").and_then(Value::as_str).unwrap_or(collection),
+        "collection_key": store.get("collection_key").cloned().unwrap_or(Value::Null),
+        "model": store.get("model").cloned().unwrap_or(Value::String("unknown".to_string())),
+        "total_chunks": chunks.len(),
+        "total_items": item_keys.len(),
+        "store_path": store_path.to_string_lossy(),
+    }))
+}
+
+fn rag_store_path(collection: &str) -> PathBuf {
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("~"));
+    home.join(".local")
+        .join("share")
+        .join("zotron")
+        .join("rag")
+        .join(format!("{collection}.json"))
+}
+
+fn run_push_command(
+    json_file: String,
+    pdf: Option<String>,
+    collection: Option<String>,
+    on_duplicate: String,
+    dry_run: bool,
+    client: &mut impl RpcCaller,
+) -> Result<String, String> {
+    if !matches!(on_duplicate.as_str(), "skip" | "update" | "create") {
+        return Err(format!(
+            "INVALID_ARGS: --on-duplicate must be skip|update|create, got {on_duplicate:?}"
+        ));
+    }
+
+    let payload = if json_file == "-" {
+        let mut input = String::new();
+        io::stdin()
+            .read_to_string(&mut input)
+            .map_err(|err| format!("read stdin: {err}"))?;
+        input
+    } else {
+        fs::read_to_string(&json_file).map_err(|err| format!("read {json_file}: {err}"))?
+    };
+    let item_json = serde_json::from_str::<Value>(&payload)
+        .map_err(|err| format!("INVALID_JSON: Could not parse JSON: {err}"))?;
+
+    if dry_run {
+        let collection_key = collection
+            .as_deref()
+            .map(|name| resolve_collection(client, name))
+            .transpose()?;
+        return format_json(
+            &serde_json::json!({
+                "ok": true,
+                "dryRun": true,
+                "wouldPush": {
+                    "title": item_json.get("title").cloned().unwrap_or(Value::Null),
+                    "itemType": item_json.get("itemType").cloned().unwrap_or(Value::Null),
+                    "collectionKey": collection_key,
+                    "pdfPath": pdf,
+                    "onDuplicate": on_duplicate,
+                }
+            }),
+            JsonStyle::PythonCompact,
+        );
+    }
+
+    let result = push_item(
+        client,
+        &item_json,
+        pdf.as_deref(),
+        collection.as_deref(),
+        &on_duplicate,
+    )?;
+    format_json(&result, JsonStyle::PythonCompact)
+}
+
+fn push_item(
+    client: &mut impl RpcCaller,
+    item_json: &Value,
+    pdf_path: Option<&str>,
+    collection: Option<&str>,
+    on_duplicate: &str,
+) -> Result<Value, String> {
+    let pdf_size = if let Some(path) = pdf_path {
+        validate_pdf_magic(path)?
+    } else {
+        0
+    };
+
+    let collection_key = match collection {
+        Some(name) => resolve_collection(client, name)?,
+        None => resolve_current_collection(client)?,
+    };
+
+    let dup_id = find_duplicate(client, item_json)?;
+    if let Some(dup_id) = dup_id.as_deref().filter(|_| on_duplicate == "skip") {
+        if !is_library_root(&collection_key) {
+            client.call(
+                "collections.addItems",
+                Some(serde_json::json!({"key": collection_key, "keys": [dup_id]})),
+            )?;
+        }
+        let mut pdf_attached = false;
+        if let Some(path) = pdf_path {
+            if !item_has_pdf_attachment(client, dup_id)? {
+                attach_pdf(client, dup_id, path)?;
+                pdf_attached = true;
+            }
+        }
+        return Ok(push_result(
+            "skipped_duplicate",
+            Some(dup_id.to_string()),
+            pdf_attached,
+            if pdf_attached { pdf_size } else { 0 },
+            Value::Null,
+        ));
+    }
+
+    let xpi_payload = to_xpi_payload(item_json, Some(&collection_key));
+    let (item_key, status) =
+        if let Some(dup_id) = dup_id.as_deref().filter(|_| on_duplicate == "update") {
+            let mut params = serde_json::Map::new();
+            params.insert("key".to_string(), Value::String(dup_id.to_string()));
+            params.insert(
+                "fields".to_string(),
+                xpi_payload
+                    .get("fields")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({})),
+            );
+            if let Some(creators) = xpi_payload.get("creators") {
+                params.insert("creators".to_string(), creators.clone());
+            }
+            if let Some(tags) = xpi_payload.get("tags") {
+                params.insert("tags".to_string(), tags.clone());
+            }
+            client.call("items.update", Some(Value::Object(params)))?;
+            (dup_id.to_string(), "updated")
+        } else {
+            let created = client.call("items.create", Some(xpi_payload))?;
+            let key = created
+                .get("key")
+                .and_then(Value::as_str)
+                .ok_or_else(|| format!("items.create returned unexpected shape: {created:?}"))?;
+            (key.to_string(), "created")
+        };
+
+    let mut pdf_attached = false;
+    if let Some(path) = pdf_path {
+        if status != "updated" || !item_has_pdf_attachment(client, &item_key)? {
+            attach_pdf(client, &item_key, path)?;
+            pdf_attached = true;
+        }
+    }
+
+    if status == "updated" && !is_library_root(&collection_key) {
+        client.call(
+            "collections.addItems",
+            Some(serde_json::json!({"key": collection_key, "keys": [item_key]})),
+        )?;
+    }
+
+    Ok(push_result(
+        status,
+        Some(item_key),
+        pdf_attached,
+        if pdf_attached { pdf_size } else { 0 },
+        Value::Null,
+    ))
+}
+
+fn validate_pdf_magic(path: &str) -> Result<u64, String> {
+    let bytes = fs::read(path)
+        .map_err(|_| format!("INVALID_PDF: {path} does not start with %PDF- magic bytes"))?;
+    if !bytes.starts_with(b"%PDF-") {
+        return Err(format!(
+            "INVALID_PDF: {path} does not start with %PDF- magic bytes"
+        ));
+    }
+    Ok(bytes.len() as u64)
+}
+
+fn resolve_current_collection(client: &mut impl RpcCaller) -> Result<Value, String> {
+    let selected = client.call("system.currentCollection", None)?;
+    Ok(selected
+        .get("key")
+        .cloned()
+        .unwrap_or_else(|| Value::Number(0.into())))
+}
+
+fn find_duplicate(
+    client: &mut impl RpcCaller,
+    item_json: &Value,
+) -> Result<Option<String>, String> {
+    if let Some(doi) = item_json
+        .get("DOI")
+        .and_then(Value::as_str)
+        .filter(|doi| !doi.is_empty())
+    {
+        let hits = client.call("search.byIdentifier", Some(serde_json::json!({"doi": doi})))?;
+        if let Some(key) = first_hit_key(&hits) {
+            return Ok(Some(key));
+        }
+    }
+
+    if let Some(title) = item_json
+        .get("title")
+        .and_then(Value::as_str)
+        .filter(|title| title.len() >= 10)
+    {
+        let hits = client.call(
+            "search.quick",
+            Some(serde_json::json!({"query": title, "limit": 20})),
+        )?;
+        if let Some(items) = response_items(&hits) {
+            for item in items {
+                if item.get("title").and_then(Value::as_str) == Some(title) {
+                    if let Some(key) = item.get("key").and_then(Value::as_str) {
+                        return Ok(Some(key.to_string()));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+fn first_hit_key(response: &Value) -> Option<String> {
+    response_items(response)?
+        .first()?
+        .get("key")?
+        .as_str()
+        .map(ToString::to_string)
+}
+
+fn response_items(response: &Value) -> Option<&Vec<Value>> {
+    response
+        .get("items")
+        .and_then(Value::as_array)
+        .or_else(|| response.as_array())
+}
+
+fn to_xpi_payload(item_json: &Value, collection_key: Option<&Value>) -> Value {
+    const NON_FIELD_KEYS: &[&str] = &[
+        "itemType",
+        "creators",
+        "tags",
+        "collections",
+        "attachments",
+        "relations",
+        "notes",
+        "id",
+        "key",
+        "version",
+    ];
+
+    let mut fields = serde_json::Map::new();
+    if let Some(item) = item_json.as_object() {
+        for (key, value) in item {
+            if !NON_FIELD_KEYS.contains(&key.as_str()) && !value.is_null() && value != "" {
+                fields.insert(key.clone(), value.clone());
+            }
+        }
+    }
+
+    let mut payload = serde_json::Map::new();
+    payload.insert(
+        "itemType".to_string(),
+        item_json
+            .get("itemType")
+            .cloned()
+            .unwrap_or_else(|| Value::String("journalArticle".to_string())),
+    );
+    payload.insert("fields".to_string(), Value::Object(fields));
+
+    if let Some(creators) = item_json.get("creators").and_then(Value::as_array) {
+        if !creators.is_empty() {
+            payload.insert(
+                "creators".to_string(),
+                Value::Array(
+                    creators
+                        .iter()
+                        .map(|creator| {
+                            serde_json::json!({
+                                "firstName": creator.get("firstName").and_then(Value::as_str).unwrap_or(""),
+                                "lastName": creator.get("lastName").and_then(Value::as_str).unwrap_or(""),
+                                "creatorType": creator.get("creatorType").and_then(Value::as_str).unwrap_or("author"),
+                            })
+                        })
+                        .collect(),
+                ),
+            );
+        }
+    }
+
+    if let Some(tags) = item_json.get("tags").and_then(Value::as_array) {
+        if !tags.is_empty() {
+            payload.insert(
+                "tags".to_string(),
+                Value::Array(
+                    tags.iter()
+                        .map(|tag| tag.get("tag").cloned().unwrap_or_else(|| tag.clone()))
+                        .collect(),
+                ),
+            );
+        }
+    }
+
+    if let Some(collection_key) = collection_key.filter(|key| !is_library_root(key)) {
+        payload.insert(
+            "collections".to_string(),
+            Value::Array(vec![collection_key.clone()]),
+        );
+    }
+
+    Value::Object(payload)
+}
+
+fn item_has_pdf_attachment(client: &mut impl RpcCaller, item_key: &str) -> Result<bool, String> {
+    let attachments = client.call(
+        "attachments.list",
+        Some(serde_json::json!({"parentKey": item_key})),
+    )?;
+    Ok(has_pdf_attachment(&attachments))
+}
+
+fn attach_pdf(client: &mut impl RpcCaller, item_key: &str, path: &str) -> Result<(), String> {
+    client.call(
+        "attachments.add",
+        Some(serde_json::json!({
+            "parentKey": item_key,
+            "path": zotero_path(path),
+            "title": "Full Text PDF",
+        })),
+    )?;
+    Ok(())
+}
+
+fn zotero_path(path: &str) -> String {
+    let path = Path::new(path)
+        .canonicalize()
+        .unwrap_or_else(|_| Path::new(path).to_path_buf())
+        .to_string_lossy()
+        .into_owned();
+    if is_wsl() {
+        return ProcessCommand::new("wslpath")
+            .arg("-w")
+            .arg(&path)
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .and_then(|output| String::from_utf8(output.stdout).ok())
+            .map(|converted| converted.trim().to_string())
+            .filter(|converted| !converted.is_empty())
+            .unwrap_or(path);
+    }
+    path
+}
+
+fn is_wsl() -> bool {
+    if env::var_os("WSL_DISTRO_NAME").is_some() {
+        return true;
+    }
+    fs::read_to_string("/proc/sys/kernel/osrelease")
+        .map(|release| release.to_ascii_lowercase().contains("microsoft"))
+        .unwrap_or(false)
+}
+
+fn is_library_root(value: &Value) -> bool {
+    value.as_i64() == Some(0) || value.as_u64() == Some(0)
+}
+
+fn push_result(
+    status: &str,
+    zotero_item_key: Option<String>,
+    pdf_attached: bool,
+    pdf_size_bytes: u64,
+    error: Value,
+) -> Value {
+    serde_json::json!({
+        "status": status,
+        "zotero_item_key": zotero_item_key,
+        "pdf_attached": pdf_attached,
+        "pdf_size_bytes": pdf_size_bytes,
+        "error": error,
+    })
+}
+
+fn run_search_command(
+    command: SearchCommand,
+    client: &mut impl RpcCaller,
+) -> Result<(Value, JsonStyle), String> {
+    match command {
+        SearchCommand::Quick {
+            query,
+            limit,
+            collection,
+            ..
+        } => {
+            let value = if let Some(collection) = collection {
+                let key = resolve_collection(client, &collection)?;
+                let response = client.call(
+                    "collections.getItems",
+                    Some(serde_json::json!({"key": key})),
+                )?;
+                collection_quick_search_response(&response, &query, limit)
+            } else {
+                filter_search_artifacts(client.call(
+                    "search.quick",
+                    Some(serde_json::json!({"query": query, "limit": limit})),
+                )?)
+            };
+            Ok((value, JsonStyle::Pretty))
+        }
+        SearchCommand::Fulltext { query, limit, .. } => Ok((
+            client.call(
+                "search.fulltext",
+                Some(serde_json::json!({"query": query, "limit": limit})),
+            )?,
+            JsonStyle::Pretty,
+        )),
+        SearchCommand::ByIdentifier {
+            doi, isbn, issn, ..
+        } => {
+            let mut params = serde_json::Map::new();
+            if let Some(doi) = doi {
+                params.insert("doi".to_string(), Value::String(doi));
+            }
+            if let Some(isbn) = isbn {
+                params.insert("isbn".to_string(), Value::String(isbn));
+            }
+            if let Some(issn) = issn {
+                params.insert("issn".to_string(), Value::String(issn));
+            }
+            if params.is_empty() {
+                return Err("INVALID_ARGS: give at least one of --doi/--isbn/--issn".to_string());
+            }
+            Ok((
+                client.call("search.byIdentifier", Some(Value::Object(params)))?,
+                JsonStyle::Pretty,
+            ))
+        }
+        SearchCommand::Advanced {
+            condition,
+            operator,
+            limit,
+            offset,
+            ..
+        } => {
+            if operator != "and" && operator != "or" {
+                return Err(format!(
+                    "INVALID_ARGS: --operator must be 'and' or 'or', got {operator:?}"
+                ));
+            }
+            let conditions = condition
+                .iter()
+                .map(|raw| parse_search_condition(raw))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok((
+                client.call(
+                    "search.advanced",
+                    Some(serde_json::json!({
+                        "conditions": conditions,
+                        "operator": operator,
+                        "limit": limit,
+                        "offset": offset,
+                    })),
+                )?,
+                JsonStyle::Pretty,
+            ))
+        }
+        SearchCommand::ByTag {
+            tag, limit, offset, ..
+        } => Ok((
+            client.call(
+                "search.byTag",
+                Some(serde_json::json!({"tag": tag, "limit": limit, "offset": offset})),
+            )?,
+            JsonStyle::Pretty,
+        )),
+        SearchCommand::SavedSearches { .. } => Ok((
+            client.call("search.savedSearches", None)?,
+            JsonStyle::Pretty,
+        )),
+        SearchCommand::CreateSaved {
+            name,
+            condition,
+            dry_run,
+            ..
+        } => {
+            let conditions = condition
+                .iter()
+                .map(|raw| parse_search_condition(raw))
+                .collect::<Result<Vec<_>, _>>()?;
+            let params = serde_json::json!({"name": name, "conditions": conditions});
+            if dry_run {
+                Ok((
+                    dry_run_value("search.createSavedSearch", params),
+                    JsonStyle::PythonCompact,
+                ))
+            } else {
+                Ok((
+                    client.call("search.createSavedSearch", Some(params))?,
+                    JsonStyle::PythonCompact,
+                ))
+            }
+        }
+        SearchCommand::DeleteSaved {
+            search_id, dry_run, ..
+        } => {
+            let params = serde_json::json!({"key": search_id});
+            if dry_run {
+                Ok((
+                    dry_run_value("search.deleteSavedSearch", params),
+                    JsonStyle::PythonCompact,
+                ))
+            } else {
+                Ok((
+                    client.call("search.deleteSavedSearch", Some(params))?,
+                    JsonStyle::PythonCompact,
+                ))
+            }
+        }
+    }
+}
+
+fn filter_search_artifacts(mut value: Value) -> Value {
+    let Some(items) = value.get_mut("items").and_then(Value::as_array_mut) else {
+        return value;
+    };
+    items.retain(|item| match item.get("title").and_then(Value::as_str) {
+        Some(title) => !is_zotron_evidence_artifact(title),
+        None => true,
+    });
+    let total_items = items.len() as u64;
+    if let Some(total) = value.get_mut("total") {
+        *total = Value::from(total_items);
+    }
+    value
+}
+
+fn collection_quick_search_response(response: &Value, query: &str, limit: u64) -> Value {
+    let mut matched = collection_items(response)
+        .into_iter()
+        .filter(|item| !item_is_evidence_artifact(item))
+        .filter(|item| quick_item_matches(item, query))
+        .collect::<Vec<_>>();
+    let total = matched.len() as u64;
+    let limit = usize::try_from(limit).unwrap_or(usize::MAX);
+    if matched.len() > limit {
+        matched.truncate(limit);
+    }
+    serde_json::json!({"items": matched, "total": total})
+}
+
+fn item_is_evidence_artifact(item: &Value) -> bool {
+    item.get("title")
+        .and_then(Value::as_str)
+        .is_some_and(is_zotron_evidence_artifact)
+}
+
+fn quick_item_matches(item: &Value, query: &str) -> bool {
+    let terms = query
+        .split_whitespace()
+        .map(|term| term.to_lowercase())
+        .filter(|term| !term.is_empty())
+        .collect::<Vec<_>>();
+    if terms.is_empty() {
+        return true;
+    }
+    let mut haystack = String::new();
+    append_search_text(item, &mut haystack);
+    let haystack = haystack.to_lowercase();
+    terms.iter().all(|term| haystack.contains(term))
+}
+
+fn append_search_text(value: &Value, out: &mut String) {
+    match value {
+        Value::String(text) => {
+            out.push(' ');
+            out.push_str(text);
+        }
+        Value::Number(number) => {
+            out.push(' ');
+            out.push_str(&number.to_string());
+        }
+        Value::Bool(value) => {
+            out.push(' ');
+            out.push_str(if *value { "true" } else { "false" });
+        }
+        Value::Array(items) => {
+            for item in items {
+                append_search_text(item, out);
+            }
+        }
+        Value::Object(map) => {
+            for item in map.values() {
+                append_search_text(item, out);
+            }
+        }
+        Value::Null => {}
+    }
+}
+
+fn parse_search_condition(raw: &str) -> Result<Value, String> {
+    let mut parts = raw.split_whitespace();
+    let field = parts.next();
+    let operator = parts.next();
+    let value = parts.collect::<Vec<_>>().join(" ");
+    match (field, operator, value.is_empty()) {
+        (Some(field), Some(operator), false) => Ok(serde_json::json!({
+            "field": field,
+            "operator": operator,
+            "value": value,
+        })),
+        _ => Err(format!(
+            "INVALID_ARGS: --condition must be 'field operator value', got: {raw:?}"
+        )),
+    }
+}
+
+const RPC_PAGINATION_SAFETY_CAP: usize = 10_000;
+const RPC_PAGE_LIST_KEYS: [&str; 4] = ["items", "tags", "results", "data"];
+
+fn paginate_rpc(
+    client: &mut impl RpcCaller,
+    method: &str,
+    params: Value,
+    page_size: usize,
+) -> Result<Value, String> {
+    let base = params
+        .as_object()
+        .ok_or_else(|| "params must be a JSON object".to_string())?;
+    let mut out = Vec::new();
+    let mut prev_page: Option<Vec<Value>> = None;
+    let mut offset = 0usize;
+
+    loop {
+        let mut page_params = base.clone();
+        page_params.insert("offset".to_string(), Value::Number(offset.into()));
+        page_params.insert("limit".to_string(), Value::Number(page_size.into()));
+        let response = client.call(method, Some(Value::Object(page_params)))?;
+
+        let page = match extract_page(&response) {
+            Some(page) => page,
+            None if out.is_empty() => return Ok(response),
+            None if response.is_object() => {
+                return Err(format!(
+                    "paginate: {method:?} returned a non-paginated dict after {} accumulated rows; aborting",
+                    out.len()
+                ));
+            }
+            None => {
+                return Err(format!(
+                    "paginate: {method:?} returned non-list/non-dict shape after {} accumulated rows; aborting",
+                    out.len()
+                ));
+            }
+        };
+
+        if prev_page.as_ref() == Some(&page) {
+            return Err(format!(
+                "paginate: {method:?} returned identical pages — method likely ignores offset; aborting after {} rows",
+                out.len()
+            ));
+        }
+
+        let page_len = page.len();
+        out.extend(page.clone());
+        if page_len < page_size {
+            return Ok(Value::Array(out));
+        }
+        if out.len() >= RPC_PAGINATION_SAFETY_CAP {
+            out.truncate(RPC_PAGINATION_SAFETY_CAP);
+            return Ok(Value::Array(out));
+        }
+        prev_page = Some(page);
+        offset += page_size;
+    }
+}
+
+fn extract_page(response: &Value) -> Option<Vec<Value>> {
+    if let Some(page) = response.as_array() {
+        return Some(page.clone());
+    }
+    let object = response.as_object()?;
+    for key in RPC_PAGE_LIST_KEYS {
+        if let Some(page) = object.get(key).and_then(Value::as_array) {
+            return Some(page.clone());
+        }
+    }
+    None
+}
+
+fn run_find_pdfs_command(
+    client: &mut impl RpcCaller,
+    collection: String,
+    limit: usize,
+) -> Result<(Value, JsonStyle), String> {
+    let collection_key = resolve_collection(client, &collection)?;
+    let response = client.call(
+        "collections.getItems",
+        Some(serde_json::json!({"key": collection_key})),
+    )?;
+    let items = collection_items(&response);
+
+    let mut missing = Vec::new();
+    for item in &items {
+        let Some(item_key) = item.get("key").and_then(Value::as_str) else {
+            continue;
+        };
+        let attachments = client.call(
+            "attachments.list",
+            Some(serde_json::json!({"parentKey": item_key})),
+        )?;
+        if !has_pdf_attachment(&attachments) {
+            missing.push(item.clone());
+        }
+        if limit > 0 && missing.len() >= limit {
+            break;
+        }
+    }
+
+    let mut results = Vec::new();
+    for item in &missing {
+        let item_key = item
+            .get("key")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "missing item lacks key".to_string())?;
+        let response = client.call(
+            "attachments.findPDF",
+            Some(serde_json::json!({"parentKey": item_key})),
+        )?;
+        let attachment = response.get("attachment").filter(|value| !value.is_null());
+        results.push(serde_json::json!({
+            "item_key": item_key,
+            "title": item.get("title").cloned().unwrap_or(Value::Null),
+            "found": attachment.is_some(),
+            "attachment_key": attachment
+                .and_then(|attachment| attachment.get("key"))
+                .cloned()
+                .unwrap_or(Value::Null),
+        }));
+    }
+
+    Ok((
+        serde_json::json!({
+            "scanned": items.len(),
+            "attempted": missing.len(),
+            "results": results,
+        }),
+        JsonStyle::Pretty,
+    ))
+}
+
+fn collection_items(response: &Value) -> Vec<Value> {
+    if let Some(items) = response.get("items").and_then(Value::as_array) {
+        return items.clone();
+    }
+    response.as_array().cloned().unwrap_or_default()
+}
+
+fn has_pdf_attachment(attachments: &Value) -> bool {
+    attachments
+        .as_array()
+        .is_some_and(|attachments| attachments.iter().any(is_pdf_attachment))
+}
+
+fn is_pdf_attachment(attachment: &Value) -> bool {
+    let content_type = attachment
+        .get("contentType")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_lowercase();
+    let path = attachment
+        .get("path")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_lowercase();
+    matches!(
+        content_type.as_str(),
+        "application/pdf" | "application/x-pdf"
+    ) || path.ends_with(".pdf")
+}
+
+fn call_json(
+    client: &mut impl RpcCaller,
+    method: &str,
+    params: Option<Value>,
+) -> Result<Value, String> {
+    client.call(method, params)
+}
+
+fn run_system_command(
+    command: SystemCommand,
+    client: &mut impl RpcCaller,
+) -> Result<(Value, JsonStyle), String> {
+    let value = match command {
+        SystemCommand::Version { .. } => client.call("system.version", None)?,
+        SystemCommand::Libraries { .. } => client.call("system.libraries", None)?,
+        SystemCommand::LibraryStats { library, .. } => {
+            let params = library.map(|id| serde_json::json!({"id": id}));
+            client.call("system.libraryStats", params)?
+        }
+        SystemCommand::ItemTypes { .. } => client.call("system.itemTypes", None)?,
+        SystemCommand::ItemFields { item_type, .. } => client.call(
+            "system.itemFields",
+            Some(serde_json::json!({"itemType": item_type})),
+        )?,
+        SystemCommand::CreatorTypes { item_type, .. } => client.call(
+            "system.creatorTypes",
+            Some(serde_json::json!({"itemType": item_type})),
+        )?,
+        SystemCommand::CurrentCollection { .. } => client.call("system.currentCollection", None)?,
+        SystemCommand::ListMethods { .. } => client.call("system.listMethods", None)?,
+        SystemCommand::Describe { method, .. } => {
+            let params = method.map(|method| serde_json::json!({"method": method}));
+            client.call("system.describe", params)?
+        }
+    };
+    Ok((value, JsonStyle::Pretty))
+}
+
+fn run_items_command(
+    command: ItemsCommand,
+    client: &mut impl RpcCaller,
+) -> Result<(Value, JsonStyle), String> {
+    let (value, style) = match command {
+        ItemsCommand::AddByDoi {
+            doi,
+            collection,
+            dry_run,
+            ..
+        } => run_add_identifier_command(client, "items.addByDOI", "doi", doi, collection, dry_run)?,
+        ItemsCommand::AddByIsbn {
+            isbn,
+            collection,
+            dry_run,
+            ..
+        } => run_add_identifier_command(
+            client,
+            "items.addByISBN",
+            "isbn",
+            isbn,
+            collection,
+            dry_run,
+        )?,
+        ItemsCommand::AddByUrl {
+            page_url,
+            collection,
+            dry_run,
+            ..
+        } => run_add_identifier_command(
+            client,
+            "items.addByURL",
+            "url",
+            page_url,
+            collection,
+            dry_run,
+        )?,
+        ItemsCommand::AddFromFile {
+            path,
+            collection,
+            dry_run,
+            ..
+        } => {
+            let mut params = serde_json::json!({"path": zotero_path(&path)});
+            maybe_insert_collection(client, &mut params, collection)?;
+            run_mutation_command(client, "items.addFromFile", params, dry_run)?
+        }
+        ItemsCommand::Create {
+            item_type,
+            fields,
+            dry_run,
+            ..
+        } => {
+            let parsed_fields = parse_field_options(&fields)?;
+            let mut params = serde_json::json!({"itemType": item_type});
+            if !parsed_fields.is_empty() {
+                if let Some(map) = params.as_object_mut() {
+                    map.insert("fields".to_string(), Value::Object(parsed_fields));
+                }
+            }
+            run_mutation_command(client, "items.create", params, dry_run)?
+        }
+        ItemsCommand::Update {
+            key,
+            fields,
+            dry_run,
+            ..
+        } => {
+            let parsed_fields = parse_field_options(&fields)?;
+            let mut params = serde_json::json!({"key": key});
+            if !parsed_fields.is_empty() {
+                if let Some(map) = params.as_object_mut() {
+                    map.insert("fields".to_string(), Value::Object(parsed_fields));
+                }
+            }
+            run_mutation_command(client, "items.update", params, dry_run)?
+        }
+        ItemsCommand::Delete { key, dry_run, .. } => run_mutation_command(
+            client,
+            "items.delete",
+            serde_json::json!({"key": key}),
+            dry_run,
+        )?,
+        ItemsCommand::Trash { item, dry_run, .. } => run_mutation_command(
+            client,
+            "items.trash",
+            serde_json::json!({"key": item}),
+            dry_run,
+        )?,
+        ItemsCommand::Restore { item, dry_run, .. } => run_mutation_command(
+            client,
+            "items.restore",
+            serde_json::json!({"key": item}),
+            dry_run,
+        )?,
+        ItemsCommand::BatchTrash { keys, dry_run, .. } => run_mutation_command(
+            client,
+            "items.batchTrash",
+            serde_json::json!({"keys": keys}),
+            dry_run,
+        )?,
+        ItemsCommand::MergeDuplicates { keys, dry_run, .. } => {
+            if keys.len() < 2 {
+                return Err("INVALID_ARGS: need at least 2 keys to merge".to_string());
+            }
+            run_mutation_command(
+                client,
+                "items.mergeDuplicates",
+                serde_json::json!({"keys": keys}),
+                dry_run,
+            )?
+        }
+        ItemsCommand::AddRelated {
+            key,
+            target,
+            dry_run,
+            ..
+        } => run_mutation_command(
+            client,
+            "items.addRelated",
+            serde_json::json!({"key": key, "targetKey": target}),
+            dry_run,
+        )?,
+        ItemsCommand::RemoveRelated {
+            key,
+            target,
+            dry_run,
+            ..
+        } => run_mutation_command(
+            client,
+            "items.removeRelated",
+            serde_json::json!({"key": key, "targetKey": target}),
+            dry_run,
+        )?,
+        ItemsCommand::Get { item, .. } => (
+            client.call("items.get", Some(serde_json::json!({"key": item})))?,
+            JsonStyle::Pretty,
+        ),
+        ItemsCommand::List {
+            limit,
+            offset,
+            sort,
+            direction,
+            ..
+        } => {
+            let mut params = serde_json::json!({
+                "limit": limit,
+                "offset": offset,
+                "direction": direction,
+            });
+            if let (Some(sort), Some(map)) = (sort, params.as_object_mut()) {
+                map.insert("sort".to_string(), Value::String(sort));
+            }
+            (client.call("items.list", Some(params))?, JsonStyle::Pretty)
+        }
+        ItemsCommand::FindDuplicates { .. } => (
+            client.call("items.findDuplicates", None)?,
+            JsonStyle::Pretty,
+        ),
+        ItemsCommand::ListTrash { limit, offset, .. } => (
+            client.call(
+                "items.getTrash",
+                Some(serde_json::json!({"limit": limit, "offset": offset})),
+            )?,
+            JsonStyle::Pretty,
+        ),
+        ItemsCommand::Recent {
+            limit,
+            offset,
+            recent_type,
+            ..
+        } => {
+            if recent_type != "added" && recent_type != "modified" {
+                return Err(format!(
+                    "--type must be added or modified, got {recent_type:?}"
+                ));
+            }
+            (
+                client.call(
+                    "items.getRecent",
+                    Some(
+                        serde_json::json!({"limit": limit, "offset": offset, "type": recent_type}),
+                    ),
+                )?,
+                JsonStyle::Pretty,
+            )
+        }
+        ItemsCommand::Fulltext { key, .. } => (
+            client.call("items.getFullText", Some(serde_json::json!({"key": key})))?,
+            JsonStyle::Pretty,
+        ),
+        ItemsCommand::Related { key, .. } => (
+            client.call("items.getRelated", Some(serde_json::json!({"key": key})))?,
+            JsonStyle::Pretty,
+        ),
+        ItemsCommand::CitationKey { key, .. } => (
+            client.call("items.citationKey", Some(serde_json::json!({"key": key})))?,
+            JsonStyle::Pretty,
+        ),
+    };
+    Ok((value, style))
+}
+
+fn run_add_identifier_command(
+    client: &mut impl RpcCaller,
+    method: &str,
+    param_name: &str,
+    param_value: String,
+    collection: Option<String>,
+    dry_run: bool,
+) -> Result<(Value, JsonStyle), String> {
+    let mut params = Value::Object(serde_json::Map::from_iter([(
+        param_name.to_string(),
+        Value::String(param_value),
+    )]));
+    maybe_insert_collection(client, &mut params, collection)?;
+    run_mutation_command(client, method, params, dry_run)
+}
+
+fn run_mutation_command(
+    client: &mut impl RpcCaller,
+    method: &str,
+    params: Value,
+    dry_run: bool,
+) -> Result<(Value, JsonStyle), String> {
+    let value = if dry_run {
+        serde_json::json!({
+            "ok": true,
+            "dryRun": true,
+            "wouldCall": method,
+            "wouldCallParams": params,
+        })
+    } else {
+        client.call(method, Some(params))?
+    };
+    Ok((value, JsonStyle::PythonCompact))
+}
+
+fn parse_field_options(fields: &[String]) -> Result<serde_json::Map<String, Value>, String> {
+    let mut parsed = serde_json::Map::new();
+    for field in fields {
+        let (key, value) = field
+            .split_once('=')
+            .ok_or_else(|| format!("INVALID_ARGS: --field must be key=value, got: {field:?}"))?;
+        parsed.insert(key.to_string(), Value::String(value.to_string()));
+    }
+    Ok(parsed)
+}
+
+fn maybe_insert_collection(
+    client: &mut impl RpcCaller,
+    params: &mut Value,
+    collection: Option<String>,
+) -> Result<(), String> {
+    let Some(collection) = collection else {
+        return Ok(());
+    };
+    let collection = resolve_collection(client, &collection)?;
+    let include = match &collection {
+        Value::Null => false,
+        Value::Number(number) => number.as_i64() != Some(0),
+        _ => true,
+    };
+    if include {
+        params
+            .as_object_mut()
+            .expect("mutation params are always objects")
+            .insert("collection".to_string(), collection);
+    }
+    Ok(())
+}
+
+fn run_settings_command(
+    command: SettingsCommand,
+    client: &mut impl RpcCaller,
+) -> Result<(Value, JsonStyle), String> {
+    let (value, style) = match command {
+        SettingsCommand::Get { key, .. } => (
+            client.call("settings.get", Some(serde_json::json!({"key": key})))?,
+            JsonStyle::Pretty,
+        ),
+        SettingsCommand::List { .. } => (client.call("settings.getAll", None)?, JsonStyle::Pretty),
+        SettingsCommand::Set {
+            key,
+            value,
+            dry_run,
+            ..
+        } => {
+            let parsed_value =
+                serde_json::from_str::<Value>(&value).unwrap_or(Value::String(value));
+            let params = serde_json::json!({"key": key, "value": parsed_value});
+            if dry_run {
+                (
+                    dry_run_value("settings.set", params),
+                    JsonStyle::PythonCompact,
+                )
+            } else {
+                (
+                    client.call("settings.set", Some(params))?,
+                    JsonStyle::PythonCompact,
+                )
+            }
+        }
+        SettingsCommand::SetAll { file, dry_run, .. } => {
+            let raw = fs::read_to_string(&file)
+                .map_err(|err| format!("INVALID_JSON: Could not read JSON: {err}"))?;
+            let settings: Value = serde_json::from_str(&raw)
+                .map_err(|err| format!("INVALID_JSON: Could not parse JSON: {err}"))?;
+            let params = serde_json::json!({"settings": settings});
+            if dry_run {
+                (
+                    dry_run_value("settings.setAll", params),
+                    JsonStyle::PythonCompact,
+                )
+            } else {
+                (
+                    client.call("settings.setAll", Some(params))?,
+                    JsonStyle::PythonCompact,
+                )
+            }
+        }
+    };
+    Ok((value, style))
+}
+
+fn run_tags_command(
+    command: TagsCommand,
+    client: &mut impl RpcCaller,
+) -> Result<(Value, JsonStyle), String> {
+    let (value, style) = match command {
+        TagsCommand::List { limit, .. } => (
+            client.call("tags.list", Some(serde_json::json!({"limit": limit})))?,
+            JsonStyle::Pretty,
+        ),
+        TagsCommand::Rename {
+            old, new, dry_run, ..
+        } => run_tag_mutation(
+            client,
+            "tags.rename",
+            serde_json::json!({"oldName": old, "newName": new}),
+            dry_run,
+        )?,
+        TagsCommand::Delete { tag, dry_run, .. } => run_tag_mutation(
+            client,
+            "tags.delete",
+            serde_json::json!({"tag": tag}),
+            dry_run,
+        )?,
+        TagsCommand::Add {
+            key, tags, dry_run, ..
+        } => run_tag_mutation(
+            client,
+            "tags.add",
+            serde_json::json!({"key": key, "tags": tags}),
+            dry_run,
+        )?,
+        TagsCommand::Remove {
+            key, tags, dry_run, ..
+        } => run_tag_mutation(
+            client,
+            "tags.remove",
+            serde_json::json!({"key": key, "tags": tags}),
+            dry_run,
+        )?,
+        TagsCommand::BatchUpdate {
+            keys,
+            add_tags,
+            remove_tags,
+            dry_run,
+            ..
+        } => {
+            if add_tags.is_empty() && remove_tags.is_empty() {
+                return Err(
+                    "INVALID_ARGS: at least one of --add or --remove is required".to_string(),
+                );
+            }
+            let mut params = serde_json::json!({"keys": keys});
+            if let Some(map) = params.as_object_mut() {
+                if !add_tags.is_empty() {
+                    map.insert("add".to_string(), serde_json::json!(add_tags));
+                }
+                if !remove_tags.is_empty() {
+                    map.insert("remove".to_string(), serde_json::json!(remove_tags));
+                }
+            }
+            run_tag_mutation(client, "tags.batchUpdate", params, dry_run)?
+        }
+    };
+    Ok((value, style))
+}
+
+fn run_tag_mutation(
+    client: &mut impl RpcCaller,
+    method: &str,
+    params: Value,
+    dry_run: bool,
+) -> Result<(Value, JsonStyle), String> {
+    if dry_run {
+        Ok((dry_run_value(method, params), JsonStyle::PythonCompact))
+    } else {
+        Ok((client.call(method, Some(params))?, JsonStyle::PythonCompact))
+    }
+}
+
+fn dry_run_value(method: &str, params: Value) -> Value {
+    serde_json::json!({
+        "ok": true,
+        "dryRun": true,
+        "wouldCall": method,
+        "wouldCallParams": params,
+    })
+}
+
+fn run_annotations_command(
+    command: AnnotationsCommand,
+    client: &mut impl RpcCaller,
+) -> Result<(Value, JsonStyle), String> {
+    let (value, style) = match command {
+        AnnotationsCommand::List { parent, .. } => client
+            .call(
+                "annotations.list",
+                Some(serde_json::json!({"parentKey": parent})),
+            )
+            .map(|value| (value, JsonStyle::Pretty))?,
+        AnnotationsCommand::Create {
+            parent,
+            annotation_type,
+            text,
+            comment,
+            color,
+            dry_run,
+            ..
+        } => {
+            if !matches!(annotation_type.as_str(), "highlight" | "note" | "underline") {
+                return Err(format!(
+                    "INVALID_ARGS: --type must be highlight|note|underline, got {annotation_type:?}"
+                ));
+            }
+            let mut params = serde_json::Map::new();
+            params.insert("parentKey".to_string(), Value::String(parent));
+            params.insert("type".to_string(), Value::String(annotation_type));
+            params.insert("color".to_string(), Value::String(color));
+            if let Some(text) = text {
+                params.insert("text".to_string(), Value::String(text));
+            }
+            if let Some(comment) = comment {
+                params.insert("comment".to_string(), Value::String(comment));
+            }
+            run_mutating_command(client, "annotations.create", Value::Object(params), dry_run)?
+        }
+        AnnotationsCommand::Delete {
+            annotation_id,
+            dry_run,
+            ..
+        } => run_mutating_command(
+            client,
+            "annotations.delete",
+            serde_json::json!({"key": annotation_id}),
+            dry_run,
+        )?,
+    };
+    Ok((value, style))
+}
+
+fn run_attachments_command(
+    command: AttachmentsCommand,
+    client: &mut impl RpcCaller,
+) -> Result<(Value, JsonStyle), String> {
+    let value = match command {
+        AttachmentsCommand::List {
+            parent,
+            limit,
+            offset,
+            ..
+        } => client.call(
+            "attachments.list",
+            Some(serde_json::json!({"parentKey": parent, "limit": limit, "offset": offset})),
+        )?,
+        AttachmentsCommand::Get { id, .. } => {
+            client.call("attachments.get", Some(serde_json::json!({"key": id})))?
+        }
+        AttachmentsCommand::Fulltext { id, .. } => client.call(
+            "attachments.getFulltext",
+            Some(serde_json::json!({"key": id})),
+        )?,
+        AttachmentsCommand::Path { id, .. } => {
+            client.call("attachments.getPath", Some(serde_json::json!({"key": id})))?
+        }
+        AttachmentsCommand::Add {
+            parent,
+            path,
+            title,
+            dry_run,
+            ..
+        } => {
+            let mut params = serde_json::json!({"parentKey": parent, "path": zotero_path(&path)});
+            insert_optional_string(&mut params, "title", title);
+            if dry_run {
+                return Ok((
+                    dry_run_value("attachments.add", params),
+                    JsonStyle::PythonCompact,
+                ));
+            }
+            return Ok((
+                client.call("attachments.add", Some(params))?,
+                JsonStyle::PythonCompact,
+            ));
+        }
+        AttachmentsCommand::AddByUrl {
+            parent,
+            source_url,
+            title,
+            dry_run,
+            ..
+        } => {
+            let mut params = serde_json::json!({"parentKey": parent, "url": source_url});
+            insert_optional_string(&mut params, "title", title);
+            if dry_run {
+                return Ok((
+                    dry_run_value("attachments.addByURL", params),
+                    JsonStyle::PythonCompact,
+                ));
+            }
+            return Ok((
+                client.call("attachments.addByURL", Some(params))?,
+                JsonStyle::PythonCompact,
+            ));
+        }
+        AttachmentsCommand::Delete { id, dry_run, .. } => {
+            let params = serde_json::json!({"key": id});
+            if dry_run {
+                return Ok((
+                    dry_run_value("attachments.delete", params),
+                    JsonStyle::PythonCompact,
+                ));
+            }
+            return Ok((
+                client.call("attachments.delete", Some(params))?,
+                JsonStyle::PythonCompact,
+            ));
+        }
+        AttachmentsCommand::FindPdf { parent, .. } => client.call(
+            "attachments.findPDF",
+            Some(serde_json::json!({"parentKey": parent})),
+        )?,
+    };
+    Ok((value, JsonStyle::Pretty))
+}
+
+fn run_notes_command(
+    command: NotesCommand,
+    client: &mut impl RpcCaller,
+) -> Result<(Value, JsonStyle), String> {
+    let (value, style) = match command {
+        NotesCommand::List {
+            parent,
+            limit,
+            offset,
+            ..
+        } => client
+            .call(
+                "notes.list",
+                Some(serde_json::json!({"parentKey": parent, "limit": limit, "offset": offset})),
+            )
+            .map(|value| (value, JsonStyle::Pretty))?,
+        NotesCommand::Get { note_id, .. } => {
+            let value = client.call("notes.get", Some(serde_json::json!({"key": note_id})))?;
+            (value, JsonStyle::Pretty)
+        }
+        NotesCommand::Create {
+            parent,
+            content,
+            tags,
+            dry_run,
+            ..
+        } => {
+            let mut params = serde_json::Map::new();
+            params.insert("parentKey".to_string(), Value::String(parent));
+            params.insert("content".to_string(), Value::String(content));
+            if !tags.is_empty() {
+                params.insert(
+                    "tags".to_string(),
+                    Value::Array(tags.into_iter().map(Value::String).collect()),
+                );
+            }
+            run_mutating_command(client, "notes.create", Value::Object(params), dry_run)?
+        }
+        NotesCommand::Update {
+            note_id,
+            content,
+            dry_run,
+            ..
+        } => run_mutating_command(
+            client,
+            "notes.update",
+            serde_json::json!({"key": note_id, "content": content}),
+            dry_run,
+        )?,
+        NotesCommand::Delete {
+            note_id, dry_run, ..
+        } => {
+            // Python CLI intentionally routes note deletion through items.delete.
+            run_mutating_command(
+                client,
+                "items.delete",
+                serde_json::json!({"key": note_id}),
+                dry_run,
+            )?
+        }
+        NotesCommand::Search { query, limit, .. } => client
+            .call(
+                "notes.search",
+                Some(serde_json::json!({"query": query, "limit": limit})),
+            )
+            .map(|value| (value, JsonStyle::Pretty))?,
+    };
+    Ok((value, style))
+}
+
+fn run_mutating_command(
+    client: &mut impl RpcCaller,
+    method: &str,
+    params: Value,
+    dry_run: bool,
+) -> Result<(Value, JsonStyle), String> {
+    if dry_run {
+        Ok((
+            serde_json::json!({
+                "ok": true,
+                "dryRun": true,
+                "wouldCall": method,
+                "wouldCallParams": params,
+            }),
+            JsonStyle::PythonCompact,
+        ))
+    } else {
+        client
+            .call(method, Some(params))
+            .map(|value| (value, JsonStyle::PythonCompact))
+    }
+}
+
+fn run_collections_command(
+    command: CollectionsCommand,
+    client: &mut impl RpcCaller,
+) -> Result<(Value, JsonStyle), String> {
+    let value = match command {
+        CollectionsCommand::List { .. } => client.call("collections.list", None)?,
+        CollectionsCommand::Tree { .. } => client.call("collections.tree", None)?,
+        CollectionsCommand::Get { name_or_id, .. } => {
+            let key = resolve_collection(client, &name_or_id)?;
+            client.call("collections.get", Some(serde_json::json!({"key": key})))?
+        }
+        CollectionsCommand::GetItems {
+            name_or_id,
+            limit,
+            offset,
+            ..
+        } => {
+            let key = resolve_collection(client, &name_or_id)?;
+            let mut params = serde_json::json!({"key": key});
+            if let Some(map) = params.as_object_mut() {
+                if let Some(limit) = limit {
+                    map.insert("limit".to_string(), Value::Number(limit.into()));
+                }
+                if offset > 0 {
+                    map.insert("offset".to_string(), Value::Number(offset.into()));
+                }
+            }
+            client.call("collections.getItems", Some(params))?
+        }
+        CollectionsCommand::Stats { name_or_id, .. } => {
+            let key = resolve_collection(client, &name_or_id)?;
+            client.call("collections.stats", Some(serde_json::json!({"key": key})))?
+        }
+        CollectionsCommand::Rename {
+            old_name,
+            new_name,
+            dry_run,
+            ..
+        } => {
+            let key = resolve_mutable_collection(client, &old_name, "rename")?;
+            let params = serde_json::json!({"key": key, "name": new_name});
+            if dry_run {
+                return Ok((
+                    dry_run_value("collections.rename", params),
+                    JsonStyle::PythonCompact,
+                ));
+            }
+            return Ok((
+                client.call("collections.rename", Some(params))?,
+                JsonStyle::PythonCompact,
+            ));
+        }
+        CollectionsCommand::Create {
+            name,
+            parent,
+            dry_run,
+            ..
+        } => {
+            let mut params = serde_json::json!({"name": name});
+            if let Some(parent) = parent {
+                let parent_key = resolve_mutable_collection(client, &parent, "use as parent")?;
+                if let Some(map) = params.as_object_mut() {
+                    map.insert("parentKey".to_string(), parent_key);
+                }
+            }
+            if dry_run {
+                return Ok((
+                    dry_run_value("collections.create", params),
+                    JsonStyle::PythonCompact,
+                ));
+            }
+            return Ok((
+                client.call("collections.create", Some(params))?,
+                JsonStyle::PythonCompact,
+            ));
+        }
+        CollectionsCommand::Delete {
+            name_or_id,
+            dry_run,
+            ..
+        } => {
+            let key = resolve_mutable_collection(client, &name_or_id, "delete")?;
+            let params = serde_json::json!({"key": key});
+            if dry_run {
+                return Ok((
+                    dry_run_value("collections.delete", params),
+                    JsonStyle::PythonCompact,
+                ));
+            }
+            return Ok((
+                client.call("collections.delete", Some(params))?,
+                JsonStyle::PythonCompact,
+            ));
+        }
+        CollectionsCommand::AddItems {
+            collection,
+            item_keys,
+            dry_run,
+            ..
+        } => {
+            let key = resolve_mutable_collection(client, &collection, "add to")?;
+            let params = serde_json::json!({"key": key, "keys": item_keys});
+            if dry_run {
+                return Ok((
+                    dry_run_value("collections.addItems", params),
+                    JsonStyle::PythonCompact,
+                ));
+            }
+            return Ok((
+                client.call("collections.addItems", Some(params))?,
+                JsonStyle::PythonCompact,
+            ));
+        }
+        CollectionsCommand::RemoveItems {
+            collection,
+            item_keys,
+            dry_run,
+            ..
+        } => {
+            let key = resolve_mutable_collection(client, &collection, "operate on")?;
+            let params = serde_json::json!({"key": key, "keys": item_keys});
+            if dry_run {
+                return Ok((
+                    dry_run_value("collections.removeItems", params),
+                    JsonStyle::PythonCompact,
+                ));
+            }
+            return Ok((
+                client.call("collections.removeItems", Some(params))?,
+                JsonStyle::PythonCompact,
+            ));
+        }
+    };
+    Ok((value, JsonStyle::Pretty))
+}
+
+fn run_export_command(
+    command: ExportCommand,
+    client: &mut impl RpcCaller,
+) -> Result<String, String> {
+    match command {
+        ExportCommand::Bibtex { keys, .. } => {
+            run_export_content_command(client, "export.bibtex", keys)
+        }
+        ExportCommand::Ris { keys, .. } => run_export_content_command(client, "export.ris", keys),
+        ExportCommand::CslJson { keys, .. } => {
+            run_export_content_command(client, "export.cslJson", keys)
+        }
+        ExportCommand::Bibliography {
+            keys, style, html, ..
+        } => {
+            let response = client.call(
+                "export.bibliography",
+                Some(serde_json::json!({"keys": keys, "style": style})),
+            )?;
+            if let Some(object) = response.as_object() {
+                let field = if html { "html" } else { "text" };
+                if object.contains_key("html") || object.contains_key("text") {
+                    return raw_value_output(
+                        object.get(field).unwrap_or(&Value::String(String::new())),
+                    );
+                }
+            }
+            format_json(&response, JsonStyle::PythonCompact)
+        }
+    }
+}
+
+fn run_export_content_command(
+    client: &mut impl RpcCaller,
+    method: &str,
+    keys: Vec<String>,
+) -> Result<String, String> {
+    let response = client.call(method, Some(serde_json::json!({"keys": keys})))?;
+    if let Some(content) = response.get("content") {
+        raw_value_output(content)
+    } else {
+        format_json(&response, JsonStyle::PythonCompact)
+    }
+}
+
+fn raw_value_output(value: &Value) -> Result<String, String> {
+    let mut out = match value {
+        Value::Null => String::new(),
+        Value::String(content) => content.clone(),
+        other => to_python_repr(other),
+    };
+    out.push('\n');
+    Ok(out)
+}
+
+fn to_python_repr(value: &Value) -> String {
+    match value {
+        Value::Null => "None".to_string(),
+        Value::Bool(value) => {
+            if *value {
+                "True".to_string()
+            } else {
+                "False".to_string()
+            }
+        }
+        Value::Number(value) => value.to_string(),
+        Value::String(value) => format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'")),
+        Value::Array(values) => {
+            let inner = values
+                .iter()
+                .map(to_python_repr)
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("[{inner}]")
+        }
+        Value::Object(entries) => {
+            let inner = entries
+                .iter()
+                .map(|(key, value)| {
+                    format!("'{}': {}", key.replace('\'', "\\'"), to_python_repr(value))
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{{{inner}}}")
+        }
+    }
+}
+
+fn resolve_collection(client: &mut impl RpcCaller, name_or_id: &str) -> Result<Value, String> {
+    let trimmed = name_or_id.trim();
+    if let Ok(id) = trimmed.parse::<i64>() {
+        return Ok(Value::Number(id.into()));
+    }
+
+    let collections = client.call("collections.list", None)?;
+    let items = collections
+        .as_array()
+        .ok_or_else(|| "collections.list returned non-array result".to_string())?;
+
+    if let Some(collection) = items
+        .iter()
+        .find(|collection| collection.get("key").and_then(Value::as_str) == Some(trimmed))
+    {
+        return collection_key(collection);
+    }
+
+    let exact = items
+        .iter()
+        .filter(|collection| collection.get("name").and_then(Value::as_str) == Some(trimmed))
+        .collect::<Vec<_>>();
+    if exact.len() == 1 {
+        return collection_key(exact[0]);
+    }
+
+    let needle = normalize_collection_name(trimmed);
+    let fuzzy = items
+        .iter()
+        .filter(|collection| {
+            collection
+                .get("name")
+                .and_then(Value::as_str)
+                .map(normalize_collection_name)
+                .is_some_and(|name| name.contains(&needle))
+        })
+        .collect::<Vec<_>>();
+
+    match fuzzy.len() {
+        1 => collection_key(fuzzy[0]),
+        0 => Err(format!(
+            "COLLECTION_NOT_FOUND: No collection named {trimmed:?}"
+        )),
+        _ => Err(format!(
+            "COLLECTION_AMBIGUOUS: Multiple collections match {trimmed:?}"
+        )),
+    }
+}
+
+fn collection_key(collection: &Value) -> Result<Value, String> {
+    collection
+        .get("key")
+        .cloned()
+        .ok_or_else(|| "collection result is missing key".to_string())
+}
+
+fn resolve_mutable_collection(
+    client: &mut impl RpcCaller,
+    name_or_id: &str,
+    operation: &str,
+) -> Result<Value, String> {
+    let key = resolve_collection(client, name_or_id)?;
+    if key.as_i64() == Some(0) {
+        return Err(format!(
+            "COLLECTION_NOT_FOUND: {name_or_id:?} resolved to library root (cannot {operation})"
+        ));
+    }
+    Ok(key)
+}
+
+fn insert_optional_string(value: &mut Value, key: &str, maybe: Option<String>) {
+    if let (Some(map), Some(content)) = (value.as_object_mut(), maybe) {
+        map.insert(key.to_string(), Value::String(content));
+    }
+}
+
+fn normalize_collection_name(name: &str) -> String {
+    name.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+fn format_json(value: &Value, style: JsonStyle) -> Result<String, String> {
+    let mut out = match style {
+        JsonStyle::PythonCompact => to_python_compact_json(value),
+        JsonStyle::Pretty => serde_json::to_string_pretty(value).map_err(|err| err.to_string())?,
+    };
+    out.push('\n');
+    Ok(out)
+}
+
+fn to_python_compact_json(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_string(),
+        Value::Bool(value) => value.to_string(),
+        Value::Number(value) => value.to_string(),
+        Value::String(value) => {
+            serde_json::to_string(value).expect("string serialization cannot fail")
+        }
+        Value::Array(values) => {
+            let inner = values
+                .iter()
+                .map(to_python_compact_json)
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("[{inner}]")
+        }
+        Value::Object(entries) => {
+            let inner = entries
+                .iter()
+                .map(|(key, value)| {
+                    let key = serde_json::to_string(key).expect("string serialization cannot fail");
+                    format!("{key}: {}", to_python_compact_json(value))
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{{{inner}}}")
+        }
+    }
+}

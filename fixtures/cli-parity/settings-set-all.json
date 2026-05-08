@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "name": "settings set all",
+  "command": [
+    "settings",
+    "set-all",
+    "--file",
+    "../../fixtures/settings-set-all-input.json"
+  ],
+  "rpc": {
+    "method": "settings.setAll",
+    "params": {
+      "settings": {
+        "extensions.zotero.debug.log": false,
+        "extensions.zotero.sync.storage.enabled": true
+      }
+    },
+    "result": {
+      "ok": true,
+      "updated": 2
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"updated\": 2}\n"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "name": "items add by doi",
+  "command": [
+    "items",
+    "add-by-doi",
+    "10.1038/nature12373"
+  ],
+  "rpc": {
+    "method": "items.addByDOI",
+    "params": {
+      "doi": "10.1038/nature12373"
+    },
+    "result": {
+      "ok": true,
+      "key": "DOIITEM1",
+      "title": "A DOI Paper"
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"key\": \"DOIITEM1\", \"title\": \"A DOI Paper\"}\n"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "name": "annotations create dry run",
+  "command": [
+    "annotations",
+    "create",
+    "--parent",
+    "ATTACH1",
+    "--type",
+    "note",
+    "--comment",
+    "margin note",
+    "--dry-run"
+  ],
+  "rpc": {
+    "calls": []
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"dryRun\": true, \"wouldCall\": \"annotations.create\", \"wouldCallParams\": {\"parentKey\": \"ATTACH1\", \"type\": \"note\", \"color\": \"#ffd400\", \"comment\": \"margin note\"}}\n"
+  }
+}

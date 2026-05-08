@@ -137,6 +137,41 @@ describe("collections handler", () => {
     });
   });
 
+  describe("create parent resolution", () => {
+    it("resolves parent collection keys to numeric parentID before saving", async () => {
+      const parent = fakeCollection({ id: 7, key: "PARENT01", name: "test" });
+      const saveTxStub = sinon.stub().resolves();
+      let createdCollection: any = null;
+
+      installZotero({
+        Libraries: { userLibraryID: 1 },
+        Collections: {
+          getByLibraryAndKeyAsync: sinon.stub().withArgs(1, "PARENT01").resolves(parent),
+          get: sinon.stub().withArgs(7).returns(parent),
+        },
+        Collection: function () {
+          createdCollection = fakeCollection({
+            id: 8,
+            key: "CHILD001",
+            name: "Child",
+            parentID: null,
+          });
+          createdCollection.saveTx = saveTxStub;
+          return createdCollection;
+        },
+      });
+
+      delete require.cache[require.resolve("../../src/utils/guards")];
+      delete require.cache[require.resolve("../../src/handlers/collections")];
+      const { collectionsHandlers } = await import("../../src/handlers/collections");
+      const result = await collectionsHandlers.create({ name: "Child", parentKey: "PARENT01" });
+
+      expect(saveTxStub.calledOnce).to.equal(true);
+      expect(createdCollection.parentID).to.equal(7);
+      expect(result.parentKey).to.equal("PARENT01");
+    });
+  });
+
   describe("addItems batch helper (fix #53)", () => {
     it("calls col.addItems(itemIDs) inside a transaction instead of N+1 loop", async () => {
       const colAddItemsStub = sinon.stub().resolves();

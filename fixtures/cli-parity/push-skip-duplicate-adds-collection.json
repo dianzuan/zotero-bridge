@@ -1,0 +1,53 @@
+{
+  "command": [
+    "push",
+    "../../fixtures/cli-parity/data/push-item.json",
+    "--collection",
+    "Reading List"
+  ],
+  "rpc": {
+    "calls": [
+      {
+        "method": "collections.list",
+        "params": null,
+        "result": [
+          {
+            "key": "COLL1",
+            "name": "Reading List"
+          }
+        ]
+      },
+      {
+        "method": "search.byIdentifier",
+        "params": {
+          "doi": "10.1234/zotron.push"
+        },
+        "result": {
+          "items": [
+            {
+              "key": "DUP123",
+              "title": "Rust Migration Parity Paper"
+            }
+          ],
+          "total": 1
+        }
+      },
+      {
+        "method": "collections.addItems",
+        "params": {
+          "key": "COLL1",
+          "keys": [
+            "DUP123"
+          ]
+        },
+        "result": {
+          "ok": true
+        }
+      }
+    ]
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"status\": \"skipped_duplicate\", \"zotero_item_key\": \"DUP123\", \"pdf_attached\": false, \"pdf_size_bytes\": 0, \"error\": null}\n"
+  }
+}

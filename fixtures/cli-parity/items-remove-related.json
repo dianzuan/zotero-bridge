@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "name": "items remove related",
+  "command": [
+    "items",
+    "remove-related",
+    "ITEM1",
+    "--target",
+    "ITEM2"
+  ],
+  "rpc": {
+    "method": "items.removeRelated",
+    "params": {
+      "key": "ITEM1",
+      "targetKey": "ITEM2"
+    },
+    "result": {
+      "removed": true
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"removed\": true}\n"
+  }
+}

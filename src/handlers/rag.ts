@@ -168,10 +168,10 @@ async function resolveCollectionItems(params: SearchHitsParams): Promise<any[]> 
 async function readItemArtifacts(item: any): Promise<ItemArtifacts> {
   const chunks: Record<string, any>[] = [];
   const embeddingArtifacts: EmbeddingArtifactMetadata[] = [];
-  const attachmentIds = item.getAttachments?.() || [];
+  const attachmentKeys = item.getAttachments?.() || [];
 
-  for (const attachmentId of attachmentIds) {
-    const attachment = await Zotero.Items.getAsync(attachmentId);
+  for (const attachmentKey of attachmentKeys) {
+    const attachment = await Zotero.Items.getAsync(attachmentKey);
     if (!attachment?.isAttachment?.()) continue;
 
     const title = String(attachment.getField?.("title") || "");

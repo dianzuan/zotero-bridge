@@ -6,13 +6,78 @@
 
 Zotron 应该作为 **Zotero/RAG producer**，输出带 provenance 的 retrieval hits。人仍然读 PDF；OCR 和 embedding 是机器层，用来节省 token、定位原文、支撑 academic-zh 后续生成 paper cards 和 citation map。
 
+### 0.1 2026-05-07 修订：从 RAG 问答转向 PDF 证据与标注
+
+当前路线收敛为 **PDF evidence and annotation pipeline**。Zotron 不内置
+LLM 问答能力；Codex / Claude Code 是推理层，Zotron 只负责把 PDF 变成
+可检索、可定位、可标注的证据。
+
+修订后的核心能力是五个：
+
+1. `parse-pdf`：把 PDF attachment 解析成结构化 blocks。主路径是 MinerU
+   等 document parser；Zotero fulltext 只做便宜文本 fallback，不承担结构化解析。
+2. `index-blocks`：按结构块建索引。embedding 可选，不能替代
+   `block_key + page_idx + bbox + text` 这些 provenance。
+3. `retrieve-blocks`：给 agent 返回证据块，不做问答、不调用 LLM。
+4. `locate-highlight-target`：把 quote / block / bbox 定位成可写入 Zotero
+   annotation 的目标。优先 text highlight，失败则 area-box。
+5. `apply-annotations`：把定位结果写成 Zotero 原生 annotation。
+
+由此废弃或降级的想法：
+
+- `ask-pdf` 不进入 Zotron 核心能力；问答由 agent 完成。
+- `export-annotated-pdf` 暂不列入核心 milestone；Zotero UI 已能导出嵌入标注
+  的 PDF，CLI 以后可作为 convenience wrapper。
+- 不把 PDF 按页/按 token 直接切 embedding 作为主路径。
+- 不用 Zotero fulltext + 大量正则/LLM 反推结构文档。
+
 第一阶段不再只做“保守修补”。既然要做，就把长期架构规划完整，并把 storage 一起纳入设计：
 
 - OCR 结果不能只存 markdown。
 - Provider 原始返回必须可审计、可重跑解析。
 - RAG 不能直接消费各家 OCR 的私有格式，必须有统一中间层。
 - academic-zh 不接收最终 paper card 作为主产物，优先接收一行一个 span 的 JSONL hit。
-- Zotero-native storage 是长期主路径；旧本地 JSON 索引只作为迁移/兼容路径。
+- Zotron artifact store 分成两类：可同步证据 sidecar 和本机机器缓存。
+  Zotero 库里只保留真实文献、PDF attachment、人工/AI 可见 annotation。
+  OCR、blocks、chunks、embedding 这类机器派生产物不能作为普通 Zotero
+  note/attachment 写入，避免污染人类搜索和文献列表。
+
+### 0.2 2026-05-07 修订：PDF attachment sidecar 存储
+
+Zotron 可以把需要跨设备复核的证据 artifact 放进既有 PDF attachment 的
+storage 目录，但不创建新的 Zotero child attachment。目标结构：
+
+```text
+Zotero Data Directory/
+└── storage/
+    └── <attachment-key>/
+        ├── paper.pdf
+        └── .zotron/
+            ├── manifest.json
+            ├── zotron-ocr.raw.zip
+            ├── zotron-blocks.jsonl
+            └── zotron-chunks.jsonl
+```
+
+这个方案的动机：
+
+- Zotero UI 仍然只显示原 PDF，不显示 `zotron-chunks.jsonl` 等机器文件。
+- Zotron 搜索不再需要过滤一堆伪附件；Zotero 人类搜索也不会被 artifact
+  title 污染。
+- Zotero 文件同步会压缩 attachment storage 目录。源码显示普通 dotfile 会被
+  跳过，但 dot 目录下的普通文件有机会随 attachment zip 同步；落地前必须用
+  真实 WebDAV/Zotero Storage 做往返验证。
+
+约束：
+
+- Sidecar 只放可审计、可复建检索上下文的证据文件：raw OCR/parser output、
+  normalized blocks、chunks、manifest。
+- `zotron-embed.npz` 默认仍放本机 artifact cache，不默认同步。embedding
+  体积大、可从 chunks 重建，且更容易产生跨机器冲突。
+- 插件写入 sidecar 后必须显式标记 attachment 文件同步状态；不能只依赖外部
+  CLI 写文件后等待 Zotero 自动发现。
+- 禁止用 ordinary Zotero note/child attachment 存机器 artifact，除非用户显式
+  请求导出或调试。
 
 ## 1. 非目标
 
@@ -46,10 +111,10 @@ olmOCR       -> dolma.jsonl + optional markdown
 - 重新 normalize：规则升级后不用重新 OCR。
 - 保留 provider 专有信息：bbox、layout category、table、image crop、confidence、reading order。
 
-建议 Zotero artifact：
+建议 sidecar / artifact store 文件：
 
 ```text
-<item-key>.zotron-ocr.raw.zip
+storage/<attachment-key>/.zotron/zotron-ocr.raw.zip
 ```
 
 如果 provider 只返回一个 JSON，可以直接放进 zip；如果 provider 返回目录，zip 保留目录结构。
@@ -100,10 +165,10 @@ Zotron blocks 是统一后的 OCR / parser block JSONL。一行一个 block。�
 heading | paragraph | table | figure | equation | caption | footnote | header | footer | reference | unknown
 ```
 
-建议 Zotero artifact：
+建议 sidecar / artifact store 文件：
 
 ```text
-<item-key>.zotron-blocks.jsonl
+storage/<attachment-key>/.zotron/zotron-blocks.jsonl
 ```
 
 ### 2.3 RAG Chunks：embedding / search 单位
@@ -114,10 +179,10 @@ Chunk 是从 blocks 组合出来的检索单位。一个 chunk 可以包含多�
 
 ```json
 {
-  "chunk_id": "attABC:c42",
+  "chunk_key": "attABC:c42",
   "item_key": "Wang_2022_trade_risk",
   "attachment_key": "attABC",
-  "block_ids": ["attABC:p12:b08", "attABC:p12:b09"],
+  "block_keys": ["attABC:p12:b08", "attABC:p12:b09"],
   "section_heading": "三、研究设计",
   "page_start": 12,
   "page_end": 12,
@@ -128,14 +193,17 @@ Chunk 是从 blocks 组合出来的检索单位。一个 chunk 可以包含多�
 }
 ```
 
-建议 Zotero artifacts：
+建议 artifact 文件：
 
 ```text
-<item-key>.zotron-chunks.jsonl
-<item-key>.zotron-embed.npz
+storage/<attachment-key>/.zotron/zotron-chunks.jsonl
+<zotron-artifact-cache>/items/<item-key>/attachments/<attachment-key>/zotron-embed.npz
 ```
 
-`zotron-embed.npz` 只存 vectors 和索引元数据，不替代 `zotron-chunks.jsonl`。这样调试时不用解 npz 才能看文本。
+`zotron-chunks.jsonl` 可以进入 PDF attachment sidecar；`zotron-embed.npz`
+默认进入本机 cache。`zotron-embed.npz` 只存 vectors 和索引元数据，不替代
+`zotron-chunks.jsonl`。这样调试时不用解 npz 才能看文本，换 embedding
+provider 时也能从 chunks 重建。
 
 ### 2.4 Retrieval Hits：对 academic-zh 的输出层
 
@@ -163,8 +231,8 @@ Hit 是检索结果，不是内部存储格式。一行一个 span，用 JSONL �
   "doi": "",
   "zotero_uri": "zotero://select/items/...",
   "section_heading": "三、研究设计",
-  "chunk_id": "attABC:c42",
-  "block_ids": ["attABC:p12:b08", "attABC:p12:b09"],
+  "chunk_key": "attABC:c42",
+  "block_keys": ["attABC:p12:b08", "attABC:p12:b09"],
   "query": "贸易中心性 金融风险 识别策略",
   "score": 0.82,
   "text": "本文利用世界投入产出表和金融风险指标..."
@@ -194,8 +262,8 @@ MVP 规则：
 4. 同一 section 下连续短 paragraph 可以合并到 600-1000 tokens。
 5. table / figure / equation 默认单独成 block；embedding 时优先使用 caption、标题、附近正文和线性化 table text。
 6. block 太长才在 block 内按句子或 token 二次拆分。
-7. overlap 不用粗暴字符 overlap；优先保留 `block_ids`，必要时在 chunk text 中附带上一句/下一句。
-8. 每个 hit 必须能追溯到 `chunk_id` 和 `block_ids`。
+7. overlap 不用粗暴字符 overlap；优先保留 `block_keys`，必要时在 chunk text 中附带上一句/下一句。
+8. 每个 hit 必须能追溯到 `chunk_key` 和 `block_keys`。
 
 粗粒度检索需要额外 `level`：
 
@@ -298,18 +366,22 @@ Embedding provider 要抽成 registry/spec，而不是每个 provider 写一个�
 - provider 支持 input_type/task/prefix 时必须正确区分。
 - 模型维度、max tokens、modalities 写进 ModelSpec。
 
-## 6. Zotero-Native Storage
+## 6. Zotron Artifact Store
 
-长期主路径是每篇 item 下挂子附件：
+长期主路径分为 attachment sidecar 和本机 artifact cache。Zotero 只保留真实
+文献、PDF attachment 和可见 annotation。每篇 item/attachment 的证据产物路径：
 
 ```text
-<item-key>.zotron-ocr.raw.zip
-<item-key>.zotron-blocks.jsonl
-<item-key>.zotron-chunks.jsonl
-<item-key>.zotron-embed.npz
+storage/<attachment-key>/.zotron/manifest.json
+storage/<attachment-key>/.zotron/zotron-ocr.raw.zip
+storage/<attachment-key>/.zotron/zotron-blocks.jsonl
+storage/<attachment-key>/.zotron/zotron-chunks.jsonl
+<zotron-artifact-cache>/items/<item-key>/attachments/<attachment-key>/zotron-embed.npz
 ```
 
-可选保留 HTML note：
+Sidecar 负责可同步、可复核的证据；本机 cache 负责可重建的大型机器索引。
+
+可选的人类预览必须显式 opt-in，且不能作为默认流程：
 
 ```text
 OCR Preview note, tag=ocr
@@ -335,7 +407,7 @@ embedder_id
 embedder_dim
 source_chunks_sha256
 created_at
-chunk_ids
+chunk_keys
 vectors
 ```
 
@@ -349,7 +421,8 @@ zotron-ocr status --collection "中国工业经济"
 zotron-ocr rebuild --item <item-id>
 ```
 
-内部写入 Zotero artifacts。
+内部写入 attachment sidecar 或本机 artifact cache，不写入普通 Zotero
+note/child attachment。
 
 ### 7.2 RAG Index
 
@@ -400,8 +473,8 @@ zotron-rag hits
       "doi": "",
       "zotero_uri": "zotero://select/items/...",
       "section_heading": "三、研究设计",
-      "chunk_id": "attABC:c42",
-      "block_ids": ["attABC:p12:b08"],
+      "chunk_key": "attABC:c42",
+      "block_keys": ["attABC:p12:b08"],
       "query": "贸易中心性 金融风险 识别策略",
       "score": 0.82,
       "text": "本文利用世界投入产出表和金融风险指标..."
@@ -460,6 +533,10 @@ agent-plugin/
 
 ## 9. Roadmap
 
+本 roadmap 以 `docs/2026-05-07-pdf-evidence-annotation-milestones.md`
+中的 milestone 为当前执行准线。下列早期 phase 仍保留历史上下文；如果与
+2026-05-07 milestone 冲突，以 milestone 文档为准。
+
 ### Phase 0 -- Contract Freeze
 
 产出：
@@ -468,26 +545,32 @@ agent-plugin/
 - `docs/api-stability.md` 更新 retrieval hits JSONL contract。
 - 明确 `rag.searchHits` / `zotron-rag hits` 命名。
 - 明确 blocks/chunks/hits schema version。
+- 明确 key-first contract：RAG/OCR/PDF evidence 新输出不使用 `*_id` 字段。
+- 明确 `parse-pdf` / `index-blocks` / `retrieve-blocks` /
+  `locate-highlight-target` / `apply-annotations` 是当前能力边界。
 
 验收：
 
 - academic-zh 可以按 JSONL contract 开始对接。
 - README 不再暗示 RAG 只返回 paper-level result。
+- PRD 中不再把 `ask-pdf` 作为 Zotron 内置服务。
 
 ### Phase 1 -- Storage + Schema Foundation
 
 产出：
 
-- Zotero artifact helper：add/list/delete/find by suffix。
+- Zotron artifact helper：add/list/delete/find by item/attachment key and
+  artifact kind，支持 attachment sidecar 和本机 cache 两类 backend。
 - `provider_raw` zip 写入。
 - `zotron-blocks.jsonl` 写入。
 - `zotron-chunks.jsonl` 写入。
-- `zotron-embed.npz` 写入/读取。
+- `zotron-embed.npz` 本机 cache 写入/读取。
 - stale 检测字段。
 
 验收：
 
-- 单篇论文 OCR 后能在 Zotero item 下看到 artifacts。
+- 单篇论文 OCR 后能看到 sidecar/cache artifacts，Zotero item 列表/search
+  不新增机器派生条目。
 - 不依赖 HTML note 做 RAG source。
 - 本地临时文件不会残留。
 
@@ -513,7 +596,8 @@ agent-plugin/
 - blocks -> chunks builder。
 - doc / section / chunk 三层 level。
 - table/figure/equation chunk policy。
-- chunk provenance：`block_ids`、page range、section heading。
+- chunk provenance：`block_keys`、page range、section heading。
+- `retrieve-blocks` CLI/RPC：返回原文证据块，不做 LLM synthesis。
 
 验收：
 
@@ -529,7 +613,7 @@ agent-plugin/
 - OpenAI-compatible adapter。
 - Voyage / Jina / Cohere / Google / DashScope / Ollama support。
 - query/document role 区分。
-- embeddings 写入 Zotero `.zotron-embed.npz`。
+- embeddings 写入本机 artifact cache 的 `zotron-embed.npz`。
 
 验收：
 
@@ -546,6 +630,8 @@ agent-plugin/
 - `top_spans_per_item`。
 - `include_fulltext_spans`。
 - optional grep/hybrid path。
+- `locate-highlight-target` 第一版：quote/block/bbox -> area annotation target。
+- `apply-annotations` 第一版：area-box targets -> Zotero native annotations。
 
 验收：
 
@@ -553,6 +639,8 @@ agent-plugin/
 - 每个 hit 至少有 `item_key/title/text`。
 - 推荐字段齐全时 academic-zh 能生成 `paper_cards.jsonl` 和 `citation_map.json`。
 - `text` 是可引用原文 span，不是泛泛摘要。
+- 对至少一个 MinerU block bbox 能创建可见 Zotero annotation。
+- 对 text-layer PDF 的 quote 定位失败时，能自动降级为 bbox area annotation。
 
 ### Phase 6 -- Codex Install Surface
 
@@ -608,7 +696,8 @@ agent-plugin/
 
 ## 11. 关键风险
 
-- Zotero child attachment 数量变多，UI 可能变吵。需要隐藏命名约定和清晰 tag。
+- 如果机器派生产物继续写成 Zotero child attachment，Zotero UI 和搜索会被污染；
+  默认必须写入 attachment sidecar 或本机 artifact cache。
 - `.npz` 不是人读格式，所以必须保留 `.zotron-chunks.jsonl`。
 - Provider bbox 坐标系可能不同，需要记录 coordinate system。
 - VLM fallback 的 provenance 弱，不能和 parser provider 混同评分。
@@ -621,7 +710,7 @@ agent-plugin/
 
 ```text
 Contract Freeze
-  -> Zotero artifact storage
+  -> Zotron sidecar/cache artifact store
   -> OCR raw + blocks
   -> blocks -> chunks
   -> embedding provider registry + npz

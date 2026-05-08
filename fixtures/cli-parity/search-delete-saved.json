@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "name": "search delete saved",
+  "command": [
+    "search",
+    "delete-saved",
+    "SAVED1"
+  ],
+  "rpc": {
+    "method": "search.deleteSavedSearch",
+    "params": {
+      "key": "SAVED1"
+    },
+    "result": {
+      "ok": true,
+      "deleted": true
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"deleted\": true}\n"
+  }
+}

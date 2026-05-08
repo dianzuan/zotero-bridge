@@ -1,0 +1,585 @@
+{
+  "schemaVersion": 1,
+  "generatedFor": "Continue Python-to-Rust full migration next slice",
+  "scope": "Python CLI entrypoints shipped by claude-plugin/python pyproject scripts. Rust implementation now includes fixture-covered zotron namespace parity plus first zotron-rag entrypoint slice for status and Zotero-backed hits.",
+  "rustImplementedCount": 45,
+  "pythonCommandCount": 95,
+  "commands": [
+    {
+      "command": "zotron ping",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron rpc",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron push",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron find-pdfs",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "side-effect-risk"
+    },
+    {
+      "command": "zotron collections list",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron collections tree",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron collections get",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron collections get-items",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron collections stats",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron collections rename",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron collections create",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron collections delete",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron collections add-items",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron collections remove-items",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron items get",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron items add-by-doi",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron items add-by-isbn",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron items add-by-url",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron items trash",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron items restore",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron items find-duplicates",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only-scan"
+    },
+    {
+      "command": "zotron items merge-duplicates",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron items list",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron items create",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron items update",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron items delete",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron items list-trash",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron items batch-trash",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron items recent",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron items fulltext",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron items add-from-file",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron items related",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron items add-related",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron items remove-related",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron items citation-key",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron search quick",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron search fulltext",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron search by-identifier",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron search advanced",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron search by-tag",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron search saved-searches",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron search create-saved",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron search delete-saved",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron tags list",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron tags rename",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron tags delete",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron tags add",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron tags remove",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron tags batch-update",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron export bibtex",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron export ris",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron export csl-json",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron export bibliography",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron system version",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron system sync",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "side-effect-risk"
+    },
+    {
+      "command": "zotron system libraries",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron system switch-library",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron system library-stats",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron system item-types",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron system item-fields",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron system creator-types",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron system current-collection",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron system reload",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "side-effect-risk"
+    },
+    {
+      "command": "zotron system list-methods",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron system describe",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron notes list",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron notes get",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron notes create",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron notes update",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron notes delete",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron notes search",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron attachments list",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron attachments get",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron attachments fulltext",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron attachments add",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron attachments add-by-url",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect",
+      "normalizedRustArgs": {
+        "source_url": "--source-url",
+        "legacy_source_url_alias": "--url",
+        "rpc_endpoint": "--endpoint"
+      },
+      "notes": "Rust basic CLI avoids source/RPC endpoint ambiguity by preferring --source-url for the attachment URL while preserving --url as a compatibility alias; the command remains classified as a deferred write/import lane in this migration manifest."
+    },
+    {
+      "command": "zotron attachments path",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron attachments delete",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron attachments find-pdf",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron annotations list",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron annotations create",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron annotations delete",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron settings get",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron settings set",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron settings list",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "implemented",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron settings set-all",
+      "python_entrypoint": "zotron.cli:app",
+      "migrationStatus": "deferred",
+      "lane": "write-or-side-effect"
+    },
+    {
+      "command": "zotron-ocr status",
+      "python_entrypoint": "zotron.ocr.cli:main",
+      "migrationStatus": "deferred",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron-ocr run",
+      "python_entrypoint": "zotron.ocr.cli:main",
+      "migrationStatus": "deferred",
+      "lane": "write-or-indexing"
+    },
+    {
+      "command": "zotron-ocr rebuild",
+      "python_entrypoint": "zotron.ocr.cli:main",
+      "migrationStatus": "deferred",
+      "lane": "write-or-indexing"
+    },
+    {
+      "command": "zotron-rag index",
+      "python_entrypoint": "zotron.rag.cli:main",
+      "migrationStatus": "deferred",
+      "lane": "write-or-indexing"
+    },
+    {
+      "command": "zotron-rag index-artifacts",
+      "python_entrypoint": "zotron.rag.cli:main",
+      "migrationStatus": "deferred",
+      "lane": "write-or-indexing"
+    },
+    {
+      "command": "zotron-rag search",
+      "python_entrypoint": "zotron.rag.cli:main",
+      "migrationStatus": "deferred",
+      "lane": "read-only"
+    },
+    {
+      "command": "zotron-rag status",
+      "python_entrypoint": "zotron.rag.cli:main",
+      "migrationStatus": "implemented",
+      "lane": "read-only-local-index-status"
+    },
+    {
+      "command": "zotron-rag hits",
+      "python_entrypoint": "zotron.rag.cli:main",
+      "migrationStatus": "implemented",
+      "lane": "read-only-rpc-zotero-backed"
+    },
+    {
+      "command": "zotron-rag cite",
+      "python_entrypoint": "zotron.rag.cli:main",
+      "migrationStatus": "deferred",
+      "lane": "read-only"
+    }
+  ]
+}

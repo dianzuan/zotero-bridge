@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "name": "items create",
+  "command": [
+    "items",
+    "create",
+    "--type",
+    "journalArticle",
+    "--field",
+    "title=Migration Paper",
+    "--field",
+    "year=2026"
+  ],
+  "rpc": {
+    "method": "items.create",
+    "params": {
+      "itemType": "journalArticle",
+      "fields": {
+        "title": "Migration Paper",
+        "year": "2026"
+      }
+    },
+    "result": {
+      "ok": true,
+      "key": "NEWITEM1",
+      "version": 1
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"key\": \"NEWITEM1\", \"version\": 1}\n"
+  }
+}

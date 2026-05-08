@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "name": "notes create",
+  "command": [
+    "notes",
+    "create",
+    "--parent",
+    "ITEM1",
+    "--content",
+    "<p>New note</p>",
+    "--tag",
+    "research",
+    "--tag",
+    "todo"
+  ],
+  "rpc": {
+    "method": "notes.create",
+    "params": {
+      "parentKey": "ITEM1",
+      "content": "<p>New note</p>",
+      "tags": [
+        "research",
+        "todo"
+      ]
+    },
+    "result": {
+      "ok": true,
+      "key": "NOTE2"
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"key\": \"NOTE2\"}\n"
+  }
+}

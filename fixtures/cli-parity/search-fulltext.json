@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "name": "search fulltext",
+  "command": [
+    "search",
+    "fulltext",
+    "attention is all you need",
+    "--limit",
+    "3"
+  ],
+  "rpc": {
+    "method": "search.fulltext",
+    "params": {
+      "query": "attention is all you need",
+      "limit": 3
+    },
+    "result": {
+      "items": [
+        {
+          "key": "PDF1",
+          "title": "Attention Is All You Need",
+          "itemType": "journalArticle",
+          "score": 0.98
+        }
+      ],
+      "total": 1,
+      "limit": 3
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\n  \"items\": [\n    {\n      \"key\": \"PDF1\",\n      \"title\": \"Attention Is All You Need\",\n      \"itemType\": \"journalArticle\",\n      \"score\": 0.98\n    }\n  ],\n  \"total\": 1,\n  \"limit\": 3\n}\n"
+  }
+}

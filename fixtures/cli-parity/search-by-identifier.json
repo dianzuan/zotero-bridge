@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "name": "search by identifier",
+  "command": [
+    "search",
+    "by-identifier",
+    "--doi",
+    "10.1038/nature12373",
+    "--isbn",
+    "9780262035613"
+  ],
+  "rpc": {
+    "method": "search.byIdentifier",
+    "params": {
+      "doi": "10.1038/nature12373",
+      "isbn": "9780262035613"
+    },
+    "result": {
+      "key": "ID1",
+      "title": "Identifier matched item",
+      "DOI": "10.1038/nature12373"
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\n  \"key\": \"ID1\",\n  \"title\": \"Identifier matched item\",\n  \"DOI\": \"10.1038/nature12373\"\n}\n"
+  }
+}

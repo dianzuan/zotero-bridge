@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "name": "collections get items",
+  "command": [
+    "collections",
+    "get-items",
+    "乡村振兴",
+    "--limit",
+    "2",
+    "--offset",
+    "5"
+  ],
+  "rpc": {
+    "calls": [
+      {
+        "method": "collections.list",
+        "params": null,
+        "result": [
+          {
+            "key": "COL1",
+            "name": "Research",
+            "parentKey": null
+          },
+          {
+            "key": "COL2",
+            "name": "乡村振兴",
+            "parentKey": "COL1"
+          }
+        ]
+      },
+      {
+        "method": "collections.getItems",
+        "params": {
+          "key": "COL2",
+          "limit": 2,
+          "offset": 5
+        },
+        "result": {
+          "items": [
+            {
+              "key": "ITEM1",
+              "title": "乡村振兴与数字经济"
+            }
+          ],
+          "total": 1
+        }
+      }
+    ]
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\n  \"items\": [\n    {\n      \"key\": \"ITEM1\",\n      \"title\": \"乡村振兴与数字经济\"\n    }\n  ],\n  \"total\": 1\n}\n"
+  }
+}

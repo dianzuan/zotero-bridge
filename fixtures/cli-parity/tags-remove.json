@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "name": "tags remove",
+  "command": [
+    "tags",
+    "remove",
+    "YR5BUGHG",
+    "--tag",
+    "todo"
+  ],
+  "rpc": {
+    "method": "tags.remove",
+    "params": {
+      "key": "YR5BUGHG",
+      "tags": [
+        "todo"
+      ]
+    },
+    "result": {
+      "ok": true,
+      "key": "YR5BUGHG",
+      "removed": [
+        "todo"
+      ]
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"key\": \"YR5BUGHG\", \"removed\": [\"todo\"]}\n"
+  }
+}

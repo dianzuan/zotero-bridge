@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "name": "items list trash",
+  "command": [
+    "items",
+    "list-trash",
+    "--limit",
+    "2",
+    "--offset",
+    "0"
+  ],
+  "rpc": {
+    "method": "items.getTrash",
+    "params": {
+      "limit": 2,
+      "offset": 0
+    },
+    "result": {
+      "items": [
+        {
+          "key": "TRASH1",
+          "title": "Deleted draft"
+        }
+      ],
+      "total": 1
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\n  \"items\": [\n    {\n      \"key\": \"TRASH1\",\n      \"title\": \"Deleted draft\"\n    }\n  ],\n  \"total\": 1\n}\n"
+  }
+}

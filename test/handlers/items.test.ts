@@ -614,7 +614,7 @@ describe("items handler", () => {
   });
 
   describe("citationKey on items namespace (fix #52 relocation)", () => {
-    it("returns {citationKey, id} when called as items.citationKey", async () => {
+    it("returns {citationKey, key} when called as items.citationKey", async () => {
       const item: any = {
         id: 5, key: "K5",
         getField: (n: string) => {

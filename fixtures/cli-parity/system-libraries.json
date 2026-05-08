@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "name": "system libraries",
+  "command": [
+    "system",
+    "libraries"
+  ],
+  "rpc": {
+    "method": "system.libraries",
+    "params": null,
+    "result": [
+      {
+        "id": 1,
+        "type": "user",
+        "name": "My Library"
+      },
+      {
+        "id": 42,
+        "type": "group",
+        "name": "产业研究组"
+      }
+    ]
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "[\n  {\n    \"id\": 1,\n    \"type\": \"user\",\n    \"name\": \"My Library\"\n  },\n  {\n    \"id\": 42,\n    \"type\": \"group\",\n    \"name\": \"产业研究组\"\n  }\n]\n"
+  }
+}

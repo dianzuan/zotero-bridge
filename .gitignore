@@ -1,6 +1,7 @@
 node_modules/
 .scaffold/
 *.xpi
+target/
 
 # Python
 __pycache__/

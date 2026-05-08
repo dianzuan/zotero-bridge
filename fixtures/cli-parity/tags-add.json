@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "name": "tags add",
+  "command": [
+    "tags",
+    "add",
+    "YR5BUGHG",
+    "--tag",
+    "reviewed",
+    "--tag",
+    "important"
+  ],
+  "rpc": {
+    "method": "tags.add",
+    "params": {
+      "key": "YR5BUGHG",
+      "tags": [
+        "reviewed",
+        "important"
+      ]
+    },
+    "result": {
+      "ok": true,
+      "key": "YR5BUGHG",
+      "added": [
+        "reviewed",
+        "important"
+      ]
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"key\": \"YR5BUGHG\", \"added\": [\"reviewed\", \"important\"]}\n"
+  }
+}

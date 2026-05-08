@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "name": "export bibtex",
+  "command": ["export", "bibtex", "ITEM1", "ITEM2"],
+  "rpc": {
+    "method": "export.bibtex",
+    "params": {
+      "keys": ["ITEM1", "ITEM2"]
+    },
+    "result": {
+      "format": "bibtex",
+      "content": "@article{item1,\n  title = {乡村振兴与数字经济}\n}",
+      "count": 2
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "@article{item1,\n  title = {乡村振兴与数字经济}\n}\n"
+  }
+}

@@ -16,7 +16,7 @@ breaking changes require a major-version bump:
 - `resolve_collection(rpc, name_or_id: str | int) -> int`
 - `find_duplicate(rpc, item_json: dict) -> int | None`
 - `check_pdf_magic(path) -> bool`
-- `PushResult` — dataclass with fields `status: Literal["created", "updated", "skipped_duplicate", "failed"]`, `zotero_item_id: int | None`, `pdf_attached: bool`, `pdf_size_bytes: int`, `error: dict | None`; convenience property `pdf_size_kb: int`
+- `PushResult` — dataclass with fields `status: Literal["created", "updated", "skipped_duplicate", "failed"]`, `zotero_item_key: str | None`, `pdf_attached: bool`, `pdf_size_bytes: int`, `error: dict | None`; convenience property `pdf_size_kb: int`
 
 ### Errors
 - `ZotronError` — base
@@ -26,7 +26,7 @@ breaking changes require a major-version bump:
 - `InvalidPDF`
 
 ### Citation API (since 0.2.0)
-- `Citation` — dataclass; fields `item_key: str`, `attachment_id: int | None`, `title: str`, `authors: str`, `section: str`, `chunk_index: int`, `text: str`, `score: float`; method `zotero_uri() -> str`
+- `Citation` — dataclass; fields `item_key: str`, `attachment_key: str | int | None`, `title: str`, `authors: str`, `section: str`, `chunk_index: int`, `text: str`, `score: float`; method `zotero_uri() -> str`
 - `retrieve_with_citations(query: str, *, store_path, embedder, top_k=10) -> list[Citation]`
 - `format_citation_markdown(c: Citation) -> str`
 - `format_citation_json(c: Citation) -> dict`
@@ -64,7 +64,6 @@ the per-command section below.
 Error codes (all stable; new codes may be added):
 - `INVALID_JSON` — params didn't parse
 - `INVALID_ARGS` — bad CLI flags / argument values
-- `INVALID_JQ` — `--jq` expression didn't compile
 - `ZOTERO_UNAVAILABLE` — Zotero process not reachable
 - `RPC_ERROR` — XPI returned a JSON-RPC error
 - `COLLECTION_NOT_FOUND`

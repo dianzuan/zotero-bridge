@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "name": "notes delete",
+  "command": [
+    "notes",
+    "delete",
+    "NOTE2"
+  ],
+  "rpc": {
+    "method": "items.delete",
+    "params": {
+      "key": "NOTE2"
+    },
+    "result": {
+      "ok": true,
+      "key": "NOTE2"
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"key\": \"NOTE2\"}\n"
+  }
+}

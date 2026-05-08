@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "name": "system version",
+  "command": [
+    "system",
+    "version"
+  ],
+  "rpc": {
+    "method": "system.version",
+    "params": null,
+    "result": {
+      "version": "0.1.5",
+      "methods": 86
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\n  \"version\": \"0.1.5\",\n  \"methods\": 86\n}\n"
+  }
+}

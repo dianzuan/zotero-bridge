@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "name": "items merge duplicates",
+  "command": [
+    "items",
+    "merge-duplicates",
+    "MASTER1",
+    "DUPL0002",
+    "DUPL0003"
+  ],
+  "rpc": {
+    "method": "items.mergeDuplicates",
+    "params": {
+      "keys": [
+        "MASTER1",
+        "DUPL0002",
+        "DUPL0003"
+      ]
+    },
+    "result": {
+      "ok": true,
+      "master": "MASTER1",
+      "merged": [
+        "DUPL0002",
+        "DUPL0003"
+      ]
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"master\": \"MASTER1\", \"merged\": [\"DUPL0002\", \"DUPL0003\"]}\n"
+  }
+}

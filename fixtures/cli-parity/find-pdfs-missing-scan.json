@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "name": "find pdfs missing scan",
+  "command": [
+    "find-pdfs",
+    "--collection",
+    "Reading List",
+    "--limit",
+    "1"
+  ],
+  "rpc": {
+    "calls": [
+      {
+        "method": "collections.list",
+        "params": null,
+        "result": [
+          {
+            "key": "COL1",
+            "name": "Reading List",
+            "parentKey": null
+          }
+        ]
+      },
+      {
+        "method": "collections.getItems",
+        "params": {
+          "key": "COL1"
+        },
+        "result": {
+          "items": [
+            {
+              "key": "ITEM1",
+              "title": "Already Has PDF"
+            },
+            {
+              "key": "ITEM2",
+              "title": "Needs PDF"
+            }
+          ],
+          "total": 2
+        }
+      },
+      {
+        "method": "attachments.list",
+        "params": {
+          "parentKey": "ITEM1"
+        },
+        "result": [
+          {
+            "key": "ATT1",
+            "contentType": "application/pdf",
+            "path": "/tmp/already.pdf"
+          }
+        ]
+      },
+      {
+        "method": "attachments.list",
+        "params": {
+          "parentKey": "ITEM2"
+        },
+        "result": []
+      },
+      {
+        "method": "attachments.findPDF",
+        "params": {
+          "parentKey": "ITEM2"
+        },
+        "result": {
+          "attachment": {
+            "key": "ATT2",
+            "title": "Found PDF"
+          }
+        }
+      }
+    ]
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\n  \"scanned\": 2,\n  \"attempted\": 1,\n  \"results\": [\n    {\n      \"item_key\": \"ITEM2\",\n      \"title\": \"Needs PDF\",\n      \"found\": true,\n      \"attachment_key\": \"ATT2\"\n    }\n  ]\n}\n"
+  }
+}

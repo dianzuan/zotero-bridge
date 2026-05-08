@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "name": "items add by isbn",
+  "command": [
+    "items",
+    "add-by-isbn",
+    "9780262035613"
+  ],
+  "rpc": {
+    "method": "items.addByISBN",
+    "params": {
+      "isbn": "9780262035613"
+    },
+    "result": {
+      "ok": true,
+      "key": "ISBNITEM",
+      "title": "A Book"
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"key\": \"ISBNITEM\", \"title\": \"A Book\"}\n"
+  }
+}
