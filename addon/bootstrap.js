@@ -16,7 +16,7 @@ async function startup({ id, version, resourceURI, rootURI }, reason) {
   ctx._globalThis = ctx;
 
   Services.scriptloader.loadSubScript(
-    `${rootURI}/content/scripts/zotron.js`,
+    rootURI + "content/scripts/zotron.js",
     ctx,
   );
   Zotero.Zotron.data.rootURI = rootURI;
