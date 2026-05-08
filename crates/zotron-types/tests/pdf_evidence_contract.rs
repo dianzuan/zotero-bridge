@@ -2,9 +2,10 @@ use serde_json::json;
 use std::fs;
 use zotron_types::{
     blocks_from_provider_payload, chunks_from_blocks, embedding_provider_spec,
-    find_machine_artifact, is_zotron_artifact_title, machine_artifact_exists_for_item,
+    find_machine_artifact, is_zotron_artifact_title, machine_artifact_exists_in_sidecar,
     machine_artifact_persist_plan, machine_artifact_relative_path, ocr_provider_spec,
-    read_machine_artifact, write_machine_artifact, MachineArtifactKind, MachineArtifactStorage,
+    read_machine_artifact, write_machine_artifact, write_machine_artifact_sidecar,
+    MachineArtifactKind, MachineArtifactStorage,
 };
 
 #[test]
@@ -189,11 +190,13 @@ fn artifact_titles_are_detected_for_search_pollution_guards() {
     assert!(is_zotron_artifact_title("ITEM.zotron-blocks.jsonl"));
     assert!(is_zotron_artifact_title("ITEM.zotron-chunks.jsonl"));
     assert!(is_zotron_artifact_title("ITEM.zotron-embed.npz"));
+    assert!(is_zotron_artifact_title("chunks.v1.jsonl"));
+    assert!(is_zotron_artifact_title("vectors.jsonl"));
     assert!(!is_zotron_artifact_title("Normal paper title"));
 }
 
 #[test]
-fn machine_artifacts_have_external_store_paths_not_zotero_titles() {
+fn machine_artifacts_default_to_hidden_attachment_sidecar_paths() {
     let path = machine_artifact_relative_path(
         "ITEMKEY",
         "ATTACHKEY",
@@ -202,29 +205,29 @@ fn machine_artifacts_have_external_store_paths_not_zotero_titles() {
 
     assert_eq!(
         path.to_string_lossy().replace('\\', "/"),
-        "items/ITEMKEY/attachments/ATTACHKEY/zotron-embed.npz"
+        ".zotron/embeddings/vectors.jsonl"
     );
     assert!(
-        !path.to_string_lossy().contains(".zotero"),
-        "machine artifacts should live in Zotron's external artifact store"
+        path.to_string_lossy().starts_with(".zotron"),
+        "machine artifacts should live under the PDF storage sidecar"
     );
     assert!(
         !path.to_string_lossy().contains("storage"),
-        "machine artifacts must not target Zotero storage paths"
+        "relative sidecar paths must not hard-code platform storage roots"
     );
 }
 
 #[test]
-fn machine_artifact_persistence_defaults_to_external_store_without_zotero_add() {
+fn machine_artifact_persistence_defaults_to_sidecar_without_zotero_add() {
     let plan =
         machine_artifact_persist_plan("ITEMKEY", "ATTACHKEY", MachineArtifactKind::Chunks, false);
 
-    assert_eq!(plan.storage, MachineArtifactStorage::ExternalStore);
+    assert_eq!(plan.storage, MachineArtifactStorage::AttachmentSidecar);
     assert_eq!(
         plan.relative_path.to_string_lossy().replace('\\', "/"),
-        "items/ITEMKEY/attachments/ATTACHKEY/zotron-chunks.jsonl"
+        ".zotron/chunks/chunks.v1.jsonl"
     );
-    assert_eq!(plan.file_name, "zotron-chunks.jsonl");
+    assert_eq!(plan.file_name, "chunks.v1.jsonl");
     assert_eq!(plan.zotero_attachment_title, None);
     assert!(
         !plan.should_call_zotero_attachments_add,
@@ -242,7 +245,7 @@ fn machine_artifact_persistence_defaults_to_external_store_without_zotero_add() 
 }
 
 #[test]
-fn external_machine_artifact_store_round_trips_without_zotero_state() {
+fn sidecar_machine_artifact_store_round_trips_without_zotero_state() {
     let root = std::env::temp_dir().join(format!(
         "zotron-artifact-store-{}-{}",
         std::process::id(),
@@ -261,7 +264,7 @@ fn external_machine_artifact_store_round_trips_without_zotero_state() {
 
     assert_eq!(
         record.relative_path.to_string_lossy().replace('\\', "/"),
-        "items/ITEMKEY/attachments/ATTACHKEY/zotron-blocks.jsonl"
+        ".zotron/ocr/latest.blocks.jsonl"
     );
     assert_eq!(
         read_machine_artifact(&root, "ITEMKEY", "ATTACHKEY", MachineArtifactKind::Blocks)
@@ -271,18 +274,43 @@ fn external_machine_artifact_store_round_trips_without_zotero_state() {
     assert!(
         find_machine_artifact(&root, "ITEMKEY", "ATTACHKEY", MachineArtifactKind::Blocks).is_some()
     );
-    assert!(machine_artifact_exists_for_item(
+    assert!(machine_artifact_exists_in_sidecar(
         &root,
-        "ITEMKEY",
         MachineArtifactKind::Blocks
     ));
-    assert!(!machine_artifact_exists_for_item(
+    assert!(!machine_artifact_exists_in_sidecar(
         &root,
-        "ITEMKEY",
         MachineArtifactKind::EmbeddingVectors
     ));
 
     let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn sidecar_machine_artifact_round_trips_inside_pdf_storage_directory() {
+    let storage_dir =
+        std::env::temp_dir().join(format!("zotron-pdf-storage-sidecar-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&storage_dir);
+
+    let record = write_machine_artifact_sidecar(
+        &storage_dir,
+        "ITEMKEY",
+        "ATTACHKEY",
+        MachineArtifactKind::Chunks,
+        br#"{"chunk_key":"ATTACHKEY:c0","text":"evidence"}\n"#,
+    )
+    .expect("sidecar artifact writes");
+
+    assert_eq!(
+        record.relative_path.to_string_lossy().replace('\\', "/"),
+        ".zotron/chunks/chunks.v1.jsonl"
+    );
+    assert!(
+        record.absolute_path.exists(),
+        "sidecar artifact should be written below the attachment storage dir"
+    );
+
+    let _ = fs::remove_dir_all(&storage_dir);
 }
 
 #[test]
@@ -508,16 +536,31 @@ fn academic_zh_hits_accept_legacy_id_fields_but_serialize_key_first() {
         "chunk_id": "ATT:c0",
         "query": "query",
         "score": 1.0,
-        "block_ids": ["ATT:p1:b1"]
+        "block_ids": ["ATT:p1:b1"],
+        "attachment_key": "ATT",
+        "page_idx": 1,
+        "page_range": [1, 1],
+        "bbox": [10, 20, 30, 40],
+        "section_path": ["Section"],
+        "evidence_refs": [{"block_key":"ATT:p1:b1","page_idx":1,"bbox":[10,20,30,40]}]
     }))
     .expect("legacy id fields deserialize through aliases");
 
     assert_eq!(hit.chunk_key, "ATT:c0");
     assert_eq!(hit.block_keys, vec!["ATT:p1:b1"]);
+    assert_eq!(hit.attachment_key.as_deref(), Some("ATT"));
+    assert_eq!(hit.page_idx, Some(1));
+    assert_eq!(hit.bbox, Some([10.0, 20.0, 30.0, 40.0]));
+    assert_eq!(hit.evidence_refs[0].block_key, "ATT:p1:b1");
 
     let serialized = serde_json::to_value(&hit).expect("hit serializes");
     assert_eq!(serialized["chunk_key"], "ATT:c0");
     assert_eq!(serialized["block_keys"], json!(["ATT:p1:b1"]));
     assert!(serialized.get("chunk_id").is_none());
     assert!(serialized.get("block_ids").is_none());
+    assert_eq!(serialized["page_idx"], 1);
+    assert_eq!(
+        serialized["evidence_refs"][0]["bbox"],
+        json!([10.0, 20.0, 30.0, 40.0])
+    );
 }

@@ -48,4 +48,41 @@ describe("export handler", () => {
       }
     });
   });
+
+  describe("bibliography key-first export", () => {
+    it("resolves item keys before passing numeric IDs to citeproc", async () => {
+      const updateItems = sinon.stub();
+      const makeBibliography = sinon.stub().returns([{}, ["Rendered bibliography"]]);
+      const engine = {
+        setOutputFormat: sinon.stub(),
+        updateItems,
+        makeBibliography,
+        free: sinon.stub(),
+      };
+      const item = { id: 123, key: "ITEMKEY" };
+
+      installZotero({
+        Libraries: { userLibraryID: 1 },
+        Items: {
+          getByLibraryAndKeyAsync: sinon.stub().withArgs(1, "ITEMKEY").resolves(item),
+        },
+        Styles: {
+          get: sinon.stub().withArgs("http://www.zotero.org/styles/apa").returns({
+            getCiteProc: () => engine,
+          }),
+        },
+      });
+
+      const { exportHandlers } = await import("../../src/handlers/export");
+      const result = await exportHandlers.bibliography({
+        keys: ["ITEMKEY"],
+        style: "http://www.zotero.org/styles/apa",
+      });
+
+      expect(updateItems.calledTwice).to.equal(true);
+      expect(updateItems.alwaysCalledWith([123])).to.equal(true);
+      expect(result.text).to.equal("Rendered bibliography");
+      expect(result.count).to.equal(1);
+    });
+  });
 });

@@ -91,4 +91,13 @@ describe("validateAnnotationParams", () => {
       if (!r.ok) expect(r.message).to.match(/sortIndex/i);
     }
   });
+
+  it("accepts Zotero PDF sortIndex strings", () => {
+    const r = validateAnnotationParams({
+      type: "highlight",
+      position,
+      sortIndex: "00000|000000|00165",
+    });
+    expect(r.ok).to.equal(true);
+  });
 });

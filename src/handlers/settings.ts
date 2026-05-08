@@ -54,16 +54,32 @@ export const settingsHandlers = {
   },
 
   async setAll(params: Record<string, any>) {
-    const unknown = findUnknownKey(params, KNOWN_KEYS);
+    const updates = normalizeSetAllPayload(params);
+    const unknown = findUnknownKey(updates, KNOWN_KEYS);
     if (unknown) throw { code: -32602, message: `Unknown setting key: ${unknown}` };
 
     const updated: Record<string, any> = {};
-    for (const [key, value] of Object.entries(params)) {
+    for (const [key, value] of Object.entries(updates)) {
       setPref(key, value);
       updated[key] = value;
     }
     return { updated };
   },
 };
+
+function normalizeSetAllPayload(params: Record<string, any>): Record<string, any> {
+  if (
+    params
+    && typeof params === "object"
+    && !Array.isArray(params)
+    && Object.keys(params).length === 1
+    && params.settings
+    && typeof params.settings === "object"
+    && !Array.isArray(params.settings)
+  ) {
+    return params.settings;
+  }
+  return params;
+}
 
 registerHandlers("settings", settingsHandlers);

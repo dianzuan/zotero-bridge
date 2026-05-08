@@ -144,6 +144,28 @@ describe("search handler", () => {
       expect(result.total).to.equal(5);
       expect(result.limit).to.equal(2);
     });
+
+    it("accepts operator alias from Rust CLI conditions", async () => {
+      const addCondition = sinon.stub();
+      class FakeSearch {
+        libraryID: number = 1;
+        addCondition = addCondition;
+        search = sinon.stub().resolves([]);
+      }
+      installZotero({
+        Libraries: { userLibraryID: 1 },
+        Search: FakeSearch,
+        Items: { getAsync: sinon.stub().resolves([]) },
+        ItemFields: { getItemTypeFields: () => [], getName: () => "" },
+        CreatorTypes: { getName: () => "author" },
+      });
+      const { searchHandlers } = await import("../../src/handlers/search");
+      await searchHandlers.advanced({
+        conditions: [{ field: "title", operator: "contains", value: "数字经济" }],
+        limit: 2,
+      });
+      expect(addCondition.calledWith("title", "contains", "数字经济")).to.equal(true);
+    });
   });
 
   describe("byIdentifier accepts limit (fix #36)", () => {
@@ -190,10 +212,33 @@ describe("search handler", () => {
       const result = await searchHandlers.createSavedSearch({
         name: "My Saved", conditions: [{ field: "title", op: "contains", value: "x" }],
       });
+      expect(fakeSavedSearch.addCondition.calledWith("title", "contains", "x")).to.equal(true);
       expect(result).to.not.have.property("id");
       expect(result).to.have.property("ok", true);
       expect(result).to.have.property("key", "SS42");
       expect(result).to.have.property("name", "My Saved");
+    });
+
+    it("accepts operator alias from Rust CLI conditions", async () => {
+      const fakeSavedSearch: any = {
+        id: 43, key: "SS43",
+        addCondition: sinon.stub(),
+        saveTx: sinon.stub().resolves(),
+        libraryID: 1,
+      };
+      class FakeSearch {
+        constructor() { Object.assign(this, fakeSavedSearch); return fakeSavedSearch; }
+      }
+      installZotero({
+        Libraries: { userLibraryID: 1 },
+        Search: FakeSearch,
+      });
+      const { searchHandlers } = await import("../../src/handlers/search");
+      await searchHandlers.createSavedSearch({
+        name: "My Saved",
+        conditions: [{ field: "title", operator: "contains", value: "数字经济" }],
+      });
+      expect(fakeSavedSearch.addCondition.calledWith("title", "contains", "数字经济")).to.equal(true);
     });
   });
 });

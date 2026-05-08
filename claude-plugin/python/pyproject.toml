@@ -17,8 +17,6 @@ dev = ["pytest>=8.0", "pytest-mock>=3.12", "ruff>=0.6", "mypy>=1.11"]
 
 [project.scripts]
 zotron = "zotron.cli:app"
-zotron-ocr = "zotron.ocr.cli:main"
-zotron-rag = "zotron.rag.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["zotron"]

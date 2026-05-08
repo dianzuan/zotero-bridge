@@ -9,6 +9,7 @@ const VALID_TYPES: ReadonlySet<AnnotationType> = new Set([
 const TEXT_TYPES: ReadonlySet<AnnotationType> = new Set(["highlight", "underline"]);
 
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+const PDF_SORT_INDEX = /^\d{5}\|\d{6}\|\d{5}$/;
 
 export interface AnnotationParams {
   type: AnnotationType;
@@ -79,14 +80,14 @@ export function validateAnnotationParams(p: AnnotationParams): ValidationResult 
     if (typeof p.sortIndex !== "number" && typeof p.sortIndex !== "string") {
       return {
         ok: false,
-        message: `annotation sortIndex must be numeric (got ${String(p.sortIndex)})`,
+        message: `annotation sortIndex must be a Zotero PDF sort index or numeric y-offset (got ${String(p.sortIndex)})`,
       };
     }
-    const sortIndex = typeof p.sortIndex === "number" ? p.sortIndex : Number(p.sortIndex.trim());
-    if (!Number.isFinite(sortIndex)) {
+    const raw = typeof p.sortIndex === "number" ? String(p.sortIndex) : p.sortIndex.trim();
+    if (!PDF_SORT_INDEX.test(raw) && !Number.isFinite(Number(raw))) {
       return {
         ok: false,
-        message: `annotation sortIndex must be numeric (got ${p.sortIndex})`,
+        message: `annotation sortIndex must be a Zotero PDF sort index or numeric y-offset (got ${p.sortIndex})`,
       };
     }
   }

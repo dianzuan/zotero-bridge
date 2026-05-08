@@ -101,7 +101,7 @@ Then install **Zotron** from Codex's plugin UI and invoke the setup skill:
 $zotron-setup
 ```
 
-The setup skill exposes the bundled `zotron`, `zotron-rag`, and `zotron-ocr` shims, downloads release `zotron.xpi` into your Downloads folder when needed, and walks you through Zotero's native **Tools → Plugins → ⚙ → Install Add-on From File → restart** flow. The repository does not track generated XPI files; releases are the install source. Set `ZOTRON_XPI_URLS` to a whitespace/comma/semicolon-separated mirror list when GitHub is not reachable.
+The setup skill exposes the bundled `zotron` CLI. OCR and RAG live under that single command as `zotron ocr ...` and `zotron rag ...`; the old standalone `zotron-ocr` / `zotron-rag` shims are not part of the Rust product surface. Setup downloads release `zotron.xpi` into your Downloads folder when needed and walks you through Zotero's native **Tools → Plugins → ⚙ → Install Add-on From File → restart** flow. The repository does not track generated XPI files; releases are the install source. Set `ZOTRON_XPI_URLS` to a whitespace/comma/semicolon-separated mirror list when GitHub is not reachable.
 
 After Zotero restarts:
 
@@ -110,7 +110,7 @@ zotron ping
 zotron search quick "transformer attention" --limit 10
 ```
 
-After `zotron ping` succeeds, Codex can call `zotron`, `zotron-rag`, `zotron-ocr`, or raw HTTP directly through the installed plugin skill.
+After `zotron ping` succeeds, Codex can call `zotron` subcommands or raw HTTP directly through the installed plugin skill.
 
 ### Path C — Python CLI / SDK
 
@@ -165,28 +165,47 @@ curl -s -X POST http://localhost:23119/zotron/rpc \
 
 ## RAG with citations
 
-The RAG layer (`claude-plugin/python/zotron/rag/`) returns each retrieved chunk as a `Citation` carrying the Zotero item key, attachment id, section heading, chunk index, similarity score, verbatim text, and a `zotero://` URI for one-click verification.
+The Rust RAG surface returns each retrieved chunk as a provenance-rich hit carrying the Zotero item key, attachment key, section heading/path, page and bounding-box evidence when available, score, verbatim text, and a `zotero://` URI for one-click verification.
 
 ```bash
-zotron-rag index --collection "ML Papers"
-zotron-rag cite "how do transformers attend to long-range context?" --collection "ML Papers" --output json
+zotron rag status --collection "ML Papers"
+zotron rag hits --zotero "how do transformers attend to long-range context?" --collection "ML Papers" --output jsonl
 ```
 
-`--output json` is the AI-facing stable contract:
+`--output jsonl` is the AI-facing stable contract:
 
 ```json
-{ "itemKey": "ABC123", "attachmentKey": "ATT42XY", "title": "...", "authors": "...",
-  "section": "Section 3 — The Model", "chunkIndex": 7, "text": "...",
-  "score": 0.87, "zoteroUri": "zotero://select/library/items/ABC123" }
+{
+  "item_key": "ABC123",
+  "attachment_key": "ATT42XY",
+  "title": "...",
+  "authors": ["..."],
+  "section_heading": "Section 3 - The Model",
+  "section_path": ["Section 3 - The Model"],
+  "chunk_key": "ATT42XY:c7",
+  "block_keys": ["ATT42XY:p1:b7"],
+  "page_idx": 1,
+  "bbox": [72.0, 180.0, 510.0, 220.0],
+  "evidence_refs": [{"block_key": "ATT42XY:p1:b7", "page_idx": 1, "bbox": [72.0, 180.0, 510.0, 220.0]}],
+  "score": 0.87,
+  "zotero_uri": "zotero://select/library/items/ABC123",
+  "text": "..."
+}
 ```
 
-The 2026 RAG/OCR roadmap extends this toward hidden Zotron artifacts and an academic-zh friendly JSONL hit stream. The stable target is:
+The 2026 RAG/OCR roadmap stores machine artifacts in a hidden per-PDF sidecar directory. The stable target is:
 
-- provider raw evidence in `storage/<attachment-key>/.zotron/zotron-ocr.raw.zip`;
-- normalized OCR/parser blocks in `storage/<attachment-key>/.zotron/zotron-blocks.jsonl`;
-- retrieval chunks in `storage/<attachment-key>/.zotron/zotron-chunks.jsonl`;
-- vectors plus index metadata in the local Zotron artifact cache as `zotron-embed.npz`;
-- retrieval hits as one JSON object per line with required `item_key`, `title`, and `text`, plus provenance fields such as `zotero_uri`, `chunk_key`, `block_keys`, `section_heading`, `query`, and `score`. Machine artifacts should not be written as normal Zotero notes or child attachments by default.
+```text
+storage/<attachment-key>/.zotron/
+├── ocr/latest.raw.json
+├── ocr/latest.blocks.jsonl
+├── ocr/latest.native.md
+├── ocr/latest.assets.json
+├── chunks/chunks.v1.jsonl
+└── embeddings/vectors.jsonl
+```
+
+Retrieval hits are one JSON object per line with required `item_key`, `title`, and `text`, plus provenance fields such as `attachment_key`, `zotero_uri`, `chunk_key`, `block_keys`, `section_heading`, `section_path`, `page_idx`, `bbox`, `evidence_refs`, `query`, and `score`. Machine artifacts should not be written as normal Zotero notes or child attachments by default.
 
 Markdown is allowed as a derived convenience output, but it is not the source of truth for OCR/RAG because it loses page, bbox, table, figure, provider, and reading-order provenance.
 
@@ -216,7 +235,7 @@ Preference keys reserved in `SETTINGS_KEYS` (callable via `settings.set`); consu
 
 - `ocr.*` — for a future `attachments.ocr` method
 - `embedding.*` — semantic search / chunking
-- `rag.searchHits` / `rag.searchCards` — Zotero-native retrieval hits over attached chunk artifacts
+- `rag.searchHits` — Zotero-native retrieval hits over hidden per-PDF chunk sidecars, with legacy attached chunk artifacts as a fallback
 
 See [`docs/2026-04-27-rag-ocr-roadmap.md`](docs/2026-04-27-rag-ocr-roadmap.md) for the current storage and retrieval contract. First-class RAG/OCR work should preserve provider raw outputs, normalize to blocks/chunks, and expose academic-zh compatible retrieval hits without treating markdown as the only truth.
 

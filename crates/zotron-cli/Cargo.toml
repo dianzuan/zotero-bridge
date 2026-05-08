@@ -8,24 +8,10 @@ rust-version.workspace = true
 
 [features]
 default = []
-# Keep unfinished Rust OCR/RAG entrypoints out of the default basic package.
-# Internal fixture tests call library entrypoints directly; opt in only when
-# explicitly validating these unstable binaries.
-unstable-rust-ocr-rag-bins = []
 
 [[bin]]
 name = "zotron"
 path = "src/main.rs"
-
-[[bin]]
-name = "zotron-ocr"
-path = "src/main_ocr.rs"
-required-features = ["unstable-rust-ocr-rag-bins"]
-
-[[bin]]
-name = "zotron-rag"
-path = "src/bin/zotron-rag.rs"
-required-features = ["unstable-rust-ocr-rag-bins"]
 
 [dependencies]
 clap.workspace = true

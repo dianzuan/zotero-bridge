@@ -22,7 +22,7 @@
         "result": []
       },
       {
-        "method": "notes.get",
+        "method": "notes.list",
         "params": {"parentKey": "ITEM10"},
         "result": [{"tags": ["ocr"]}]
       },

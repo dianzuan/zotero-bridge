@@ -8,7 +8,7 @@ use std::sync::{mpsc, Mutex};
 use std::thread;
 
 use serde_json::{json, Value};
-use zotron_cli::{run_ocr_with_client, run_rag_with_client, run_with_client, RpcCaller};
+use zotron_cli::{run_with_client, RpcCaller};
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
@@ -372,10 +372,10 @@ fn ocr_provider_contracts_are_key_first_for_glm_paddle_and_mineru() {
 }
 
 #[test]
-fn zotron_ocr_providers_prints_provider_matrix_without_rpc() {
+fn zotron_ocr_subcommand_providers_prints_provider_matrix_without_rpc() {
     let mut client = FakeClient::default();
     let out =
-        run_ocr_with_client(["zotron-ocr", "providers"], &mut client).expect("providers succeeds");
+        run_with_client(["zotron", "ocr", "providers"], &mut client).expect("providers succeeds");
     let payload: Value = serde_json::from_str(&out).expect("providers output is JSON");
 
     assert!(client.calls.is_empty());
@@ -410,9 +410,9 @@ fn embedding_provider_contracts_cover_volcengine_alibaba_and_custom_without_ids(
 }
 
 #[test]
-fn zotron_rag_embedding_providers_prints_provider_matrix_without_rpc() {
+fn zotron_rag_subcommand_embedding_providers_prints_provider_matrix_without_rpc() {
     let mut client = FakeClient::default();
-    let out = run_rag_with_client(["zotron-rag", "embedding-providers"], &mut client)
+    let out = run_with_client(["zotron", "rag", "embedding-providers"], &mut client)
         .expect("embedding providers succeeds");
     let payload: Value = serde_json::from_str(&out).expect("embedding providers output is JSON");
 
@@ -459,8 +459,9 @@ fn zotron_ocr_provider_json_executes_local_http_with_endpoint_and_env_credential
     );
     std::env::set_var("ZOTRON_TEST_OCR_KEY", "ocr-env-key");
 
-    let out = zotron_cli::run_ocr([
-        "zotron-ocr",
+    let out = zotron_cli::run([
+        "zotron",
+        "ocr",
         "provider-json",
         "--provider",
         "glm",
@@ -500,7 +501,7 @@ fn zotron_ocr_provider_json_executes_local_http_with_endpoint_and_env_credential
 }
 
 #[test]
-fn zotron_rag_embedding_json_executes_custom_provider_against_local_http() {
+fn zotron_rag_subcommand_embedding_json_executes_custom_provider_against_local_http() {
     let _guard = ENV_LOCK.lock().expect("env lock");
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind local embedding server");
     let url = format!("http://{}", listener.local_addr().expect("local addr"));
@@ -528,8 +529,9 @@ fn zotron_rag_embedding_json_executes_custom_provider_against_local_http() {
     );
     std::env::set_var("ZOTRON_TEST_EMBED_KEY", "embed-env-key");
 
-    let out = zotron_cli::run_rag([
-        "zotron-rag",
+    let out = zotron_cli::run([
+        "zotron",
+        "rag",
         "embedding-json",
         "--provider",
         "custom",
@@ -688,7 +690,7 @@ fn ocr_status_fixture_matches_python_cli_behavior() {
     let original_store = std::env::var_os("ZOTRON_ARTIFACT_STORE");
     std::env::remove_var("ZOTRON_ARTIFACT_STORE");
     let fixture = load_fixture_from("ocr-cli-parity", "status");
-    let mut args = vec!["zotron-ocr".to_string()];
+    let mut args = vec!["zotron".to_string(), "ocr".to_string()];
     args.extend(
         fixture["command"]
             .as_array()
@@ -698,8 +700,8 @@ fn ocr_status_fixture_matches_python_cli_behavior() {
     );
 
     let mut client = FakeClient::with_responses(expected_results(&fixture));
-    let out = run_ocr_with_client(args.iter().map(String::as_str), &mut client)
-        .unwrap_or_else(|err| panic!("zotron-ocr status should succeed: {err}"));
+    let out = run_with_client(args.iter().map(String::as_str), &mut client)
+        .unwrap_or_else(|err| panic!("zotron ocr status should succeed: {err}"));
 
     assert_eq!(out, fixture["expect"]["stdout"]);
     assert_eq!(client.calls, expected_calls(&fixture));
@@ -717,7 +719,7 @@ fn ocr_status_prefers_external_artifact_store_without_attachment_rpc() {
         std::env::temp_dir().join(format!("zotron-cli-artifact-store-{}", std::process::id()));
     let _ = fs::remove_dir_all(&store);
     std::env::set_var("ZOTRON_ARTIFACT_STORE", &store);
-    zotron_types::write_machine_artifact(
+    zotron_types::write_legacy_machine_artifact(
         &store,
         "ITEM11",
         "ATT11",
@@ -731,8 +733,8 @@ fn ocr_status_prefers_external_artifact_store_without_attachment_rpc() {
         json!({"items": [{"key": "ITEM11", "title": "Paper"}]}),
     ]);
 
-    let out = run_ocr_with_client(
-        ["zotron-ocr", "status", "--collection", "Research"],
+    let out = run_with_client(
+        ["zotron", "ocr", "status", "--collection", "Research"],
         &mut client,
     )
     .expect("ocr status succeeds from external artifact store");
@@ -760,13 +762,67 @@ fn ocr_status_prefers_external_artifact_store_without_attachment_rpc() {
 }
 
 #[test]
+fn ocr_status_checks_note_list_and_object_tags_for_legacy_ocr_notes() {
+    let _guard = ENV_LOCK.lock().expect("env lock");
+    let original_store = std::env::var_os("ZOTRON_ARTIFACT_STORE");
+    let store = std::env::temp_dir().join(format!(
+        "zotron-cli-empty-artifact-store-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&store);
+    fs::create_dir_all(&store).expect("create empty artifact store");
+    std::env::set_var("ZOTRON_ARTIFACT_STORE", &store);
+
+    let mut client = FakeClient::with_responses(vec![
+        json!([{"key": "COL1", "name": "Research", "children": []}]),
+        json!({"items": [{"key": "ITEM11", "title": "Paper"}]}),
+        json!([]),
+        json!([{"key": "NOTE11", "tags": [{"tag": "ocr"}]}]),
+    ]);
+
+    let out = run_with_client(
+        ["zotron", "ocr", "status", "--collection", "Research"],
+        &mut client,
+    )
+    .expect("ocr status detects legacy OCR notes");
+    let payload: Value = serde_json::from_str(&out).expect("status output is JSON");
+
+    assert_eq!(payload["has_ocr"], 1);
+    assert_eq!(payload["missing_ocr"], 0);
+    assert_eq!(
+        client.calls,
+        vec![
+            ("collections.tree".to_string(), None),
+            (
+                "collections.getItems".to_string(),
+                Some(json!({"key": "COL1", "limit": 500, "offset": 0}))
+            ),
+            (
+                "attachments.list".to_string(),
+                Some(json!({"parentKey": "ITEM11"}))
+            ),
+            (
+                "notes.list".to_string(),
+                Some(json!({"parentKey": "ITEM11"}))
+            ),
+        ]
+    );
+
+    match original_store {
+        Some(value) => std::env::set_var("ZOTRON_ARTIFACT_STORE", value),
+        None => std::env::remove_var("ZOTRON_ARTIFACT_STORE"),
+    }
+    let _ = fs::remove_dir_all(&store);
+}
+
+#[test]
 fn ocr_status_missing_collection_returns_coded_error() {
     let mut client = FakeClient::with_response(json!([
         {"key": "OTHER", "name": "Other", "children": []}
     ]));
 
-    let err = run_ocr_with_client(
-        ["zotron-ocr", "status", "--collection", "Missing"],
+    let err = run_with_client(
+        ["zotron", "ocr", "status", "--collection", "Missing"],
         &mut client,
     )
     .expect_err("missing collection should fail");
@@ -790,7 +846,7 @@ fn ocr_status_paginates_collection_items_before_counting_ocr() {
     let first_page = (0..500)
         .map(|idx| {
             let item_key = format!("ITEM{idx:03}");
-            zotron_types::write_machine_artifact(
+            zotron_types::write_legacy_machine_artifact(
                 &store,
                 &item_key,
                 &format!("ATT{idx:03}"),
@@ -801,7 +857,7 @@ fn ocr_status_paginates_collection_items_before_counting_ocr() {
             json!({"key": item_key, "title": format!("Paper {idx}")})
         })
         .collect::<Vec<_>>();
-    zotron_types::write_machine_artifact(
+    zotron_types::write_legacy_machine_artifact(
         &store,
         "ITEM500",
         "ATT500",
@@ -816,8 +872,8 @@ fn ocr_status_paginates_collection_items_before_counting_ocr() {
         json!({"items": [{"key": "ITEM500", "title": "Paper 500"}]}),
     ]);
 
-    let out = run_ocr_with_client(
-        ["zotron-ocr", "status", "--collection", "Research"],
+    let out = run_with_client(
+        ["zotron", "ocr", "status", "--collection", "Research"],
         &mut client,
     )
     .expect("ocr status succeeds with pagination");
@@ -879,8 +935,8 @@ fn rag_status_prefers_xdg_data_home_over_home_default_path() {
     .expect("write rag store");
 
     let mut client = FakeClient::default();
-    let out = run_rag_with_client(
-        ["zotron-rag", "status", "--collection", "Research"],
+    let out = run_with_client(
+        ["zotron", "rag", "status", "--collection", "Research"],
         &mut client,
     )
     .expect("rag status succeeds from xdg path");
@@ -907,7 +963,7 @@ fn rag_status_prefers_xdg_data_home_over_home_default_path() {
 #[test]
 fn rag_hits_missing_collection_returns_coded_error_instead_of_raw_json() {
     let mut client = FakeClient::default();
-    let err = run_rag_with_client(["zotron-rag", "hits", "query", "--zotero"], &mut client)
+    let err = run_with_client(["zotron", "rag", "hits", "query", "--zotero"], &mut client)
         .expect_err("missing collection should fail");
 
     assert_eq!(
@@ -930,7 +986,7 @@ fn rag_fixture_covered_commands_match_python_cli_parity_contracts() {
 
     for name in rag_fixture_names() {
         let fixture = load_rag_fixture(&name);
-        let mut args = vec!["zotron-rag".to_string()];
+        let mut args = vec!["zotron".to_string(), "rag".to_string()];
         args.extend(
             fixture["command"]
                 .as_array()
@@ -940,7 +996,7 @@ fn rag_fixture_covered_commands_match_python_cli_parity_contracts() {
         );
 
         let mut client = FakeClient::with_responses(expected_results(&fixture));
-        let out = run_rag_with_client(args.iter().map(String::as_str), &mut client)
+        let out = run_with_client(args.iter().map(String::as_str), &mut client)
             .unwrap_or_else(|err| panic!("{name} should succeed: {err}"));
 
         assert_eq!(
@@ -962,18 +1018,14 @@ fn rag_fixture_covered_commands_match_python_cli_parity_contracts() {
 }
 
 #[test]
-fn default_package_exposes_only_stable_zotron_binary() {
+fn default_package_exposes_only_zotron_binary() {
     let manifest_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
     let manifest = fs::read_to_string(&manifest_path)
         .unwrap_or_else(|err| panic!("read {manifest_path:?}: {err}"));
 
     assert!(
         manifest.contains("default = []"),
-        "zotron-cli should keep default features empty so the basic package exposes only stable bins"
-    );
-    assert!(
-        manifest.contains("unstable-rust-ocr-rag-bins = []"),
-        "unfinished Rust OCR/RAG binaries should require an explicit opt-in feature"
+        "zotron-cli should keep default features empty"
     );
 
     let zotron_bin = manifest_section(&manifest, "name = \"zotron\"");
@@ -982,11 +1034,47 @@ fn default_package_exposes_only_stable_zotron_binary() {
         "the stable zotron binary must remain available by default"
     );
 
-    for bin_name in ["zotron-ocr", "zotron-rag"] {
-        let section = manifest_section(&manifest, &format!("name = \"{bin_name}\""));
+    assert!(
+        !manifest.contains("name = \"zotron-ocr\""),
+        "standalone zotron-ocr binary must not be exposed"
+    );
+    assert!(
+        !manifest.contains("name = \"zotron-rag\""),
+        "standalone zotron-rag binary must not be exposed"
+    );
+    assert!(
+        !manifest.contains("unstable-rust-ocr-rag-bins"),
+        "standalone OCR/RAG compatibility feature should be removed, not hidden"
+    );
+}
+
+#[test]
+fn plugin_zotron_wrapper_forwards_ocr_and_rag_to_rust_binary() {
+    let plugin_root = repo_root().join("claude-plugin");
+    let wrapper = plugin_root.join("bin/zotron");
+    let rust_bin = env!("CARGO_BIN_EXE_zotron");
+
+    for (args, expected) in [
+        (&["ocr", "providers"][..], "mineru"),
+        (&["rag", "embedding-providers"][..], "doubao"),
+    ] {
+        let output = ProcessCommand::new("bash")
+            .arg(&wrapper)
+            .args(args)
+            .env("CODEX_PLUGIN_ROOT", &plugin_root)
+            .env("ZOTRON_RUST_BIN", rust_bin)
+            .output()
+            .unwrap_or_else(|err| panic!("run plugin zotron wrapper {args:?}: {err}"));
+
         assert!(
-            section.contains("required-features = [\"unstable-rust-ocr-rag-bins\"]"),
-            "{bin_name} must stay out of the default basic package surface"
+            output.status.success(),
+            "plugin wrapper {args:?} should succeed; stderr={}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains(expected),
+            "plugin wrapper {args:?} stdout should contain {expected:?}; stdout={stdout}"
         );
     }
 }

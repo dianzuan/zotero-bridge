@@ -2,6 +2,8 @@
 
 Date: 2026-05-07
 
+Update: 2026-05-08
+
 This milestone plan turns the revised PDF strategy into executable delivery
 stages. Zotron is not an LLM question-answering service. It is the evidence and
 annotation substrate for Codex / Claude Code: parse, index, retrieve, locate,
@@ -27,12 +29,17 @@ then apply Zotero-native annotations.
   UI/search continues to show real literature.
 - Sync-worthy evidence artifacts may live as hidden sidecars under the existing
   PDF attachment storage directory. They do not create extra Zotero items:
-  `storage/<attachment-key>/.zotron/manifest.json`,
-  `storage/<attachment-key>/.zotron/zotron-blocks.jsonl`, and
-  `storage/<attachment-key>/.zotron/zotron-chunks.jsonl`.
-- Embedding vectors are rebuildable machine cache. They default to the
-  cross-platform Zotron artifact cache, not synced sidecar storage, unless a
-  user explicitly opts in.
+  `storage/<attachment-key>/.zotron/ocr/latest.raw.json`,
+  `storage/<attachment-key>/.zotron/ocr/latest.blocks.jsonl`,
+  `storage/<attachment-key>/.zotron/chunks/chunks.v1.jsonl`, and
+  `storage/<attachment-key>/.zotron/embeddings/vectors.jsonl`.
+- Embedding vectors are rebuildable machine cache. They now use the same hidden
+  per-PDF sidecar by default so the storage contract is easy to inspect and can
+  be synced with the PDF directory when the user syncs that directory. External
+  cache paths remain a non-default option for large or local-only deployments.
+- Public CLI is a single command: `zotron`. OCR and RAG are subcommands
+  (`zotron ocr ...`, `zotron rag ...`); standalone `zotron-ocr` and
+  `zotron-rag` are legacy Python reference names, not Rust product commands.
 - Zotero fulltext is a cheap fallback for plain text retrieval only; it is not a
   structural parser.
 - Zotron does not provide `ask-pdf`. Agents do reasoning and synthesis.
@@ -76,9 +83,9 @@ Deliverables:
 - MinerU Cloud precise parsing adapter:
   submit task or signed upload, poll task status, download `full_zip_url`.
 - Normalized block JSONL artifact:
-  `storage/<attachment-key>/.zotron/zotron-blocks.jsonl`.
+  `storage/<attachment-key>/.zotron/ocr/latest.blocks.jsonl`.
 - Provider raw artifact:
-  `storage/<attachment-key>/.zotron/zotron-ocr.raw.zip`.
+  `storage/<attachment-key>/.zotron/ocr/latest.raw.json`.
 
 Block contract:
 
@@ -118,10 +125,9 @@ Deliverables:
   units, and cell values.
 - Optional embedding generation over chunks/blocks.
 - Chunk artifact:
-  `storage/<attachment-key>/.zotron/zotron-chunks.jsonl`.
+  `storage/<attachment-key>/.zotron/chunks/chunks.v1.jsonl`.
 - Optional embedding artifact:
-  cross-platform machine cache path, e.g.
-  `<zotron-artifact-cache>/items/<item-key>/attachments/<attachment-key>/zotron-embed.npz`.
+  `storage/<attachment-key>/.zotron/embeddings/vectors.jsonl`.
 
 Acceptance:
 
@@ -133,7 +139,7 @@ Acceptance:
 - Every chunk preserves `item_key`, `attachment_key`, `block_keys`,
   page range, section path, and text.
 - Retrieval can run with lexical search only; embeddings are not mandatory.
-- Removing `zotron-embed.npz` forces re-embedding but does not destroy
+- Removing `vectors.jsonl` forces re-embedding but does not destroy
   provenance because chunks and blocks remain readable.
 
 ## Milestone 3: `retrieve-blocks`
@@ -219,15 +225,15 @@ Acceptance:
 
 These files are related but not interchangeable:
 
-- `zotron-ocr.raw.zip`: provider output. It preserves what MinerU/OCR/parser
+- `latest.raw.json`: provider output. It preserves what MinerU/OCR/parser
   returned so normalization bugs can be fixed without re-running OCR.
-- `zotron-blocks.jsonl`: normalized document structure. One row is usually a
+- `latest.blocks.jsonl`: normalized document structure. One row is usually a
   paragraph, heading, table, figure caption, or other layout block with page and
   bbox provenance.
-- `zotron-chunks.jsonl`: retrieval text units built from blocks. One chunk may
+- `chunks.v1.jsonl`: retrieval text units built from blocks. One chunk may
   contain several blocks, and every chunk keeps `block_keys` so it can be traced
   back to PDF locations.
-- `zotron-embed.npz`: numeric vectors for chunks. It accelerates semantic
+- `vectors.jsonl`: numeric vectors for chunks. It accelerates semantic
   search but is rebuildable from chunks and the selected embedding model.
 - `manifest.json`: version and checksum map tying raw, blocks, chunks, embedding
   model, parser, and source PDF together.

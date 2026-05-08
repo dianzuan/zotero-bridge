@@ -75,6 +75,40 @@ describe("annotations handler", () => {
 
       expect(result).to.deep.equal([]);
     });
+
+    it("accepts Zotero 9 annotation item refs from getAnnotations", async () => {
+      const ann: any = {
+        id: 12, key: "ANN12", itemType: "annotation", itemTypeID: 99,
+        dateAdded: "", dateModified: "", deleted: false,
+        getField: () => "",
+        isNote: () => false, isAttachment: () => false,
+        isAnnotation: () => true,
+        getCreators: () => [], getTags: () => [], getCollections: () => [], getRelations: () => ({}),
+        annotationType: "underline",
+        annotationText: "underlined text",
+        annotationComment: "comment",
+        annotationColor: "#ff6666",
+        annotationPosition: JSON.stringify({ pageIndex: 0, rects: [[10, 20, 30, 40]] }),
+      };
+      const parent: any = {
+        id: 2,
+        libraryID: 1,
+        getAnnotations: () => [ann],
+      };
+      installZotero({
+        Items: { getAsync: sinon.stub().withArgs(2).resolves(parent) },
+        ItemFields: { getItemTypeFields: () => [], getName: () => "" },
+        CreatorTypes: { getName: () => "author" },
+        Collections: { get: () => null },
+      });
+
+      const { annotationsHandlers } = await import("../../src/handlers/annotations");
+      const result = await annotationsHandlers.list({ parentKey: 2 });
+
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].key).to.equal("ANN12");
+      expect(result[0].annotationType).to.equal("underline");
+    });
   });
 
   describe("create", () => {
@@ -119,10 +153,42 @@ describe("annotations handler", () => {
       expect(createdItem.annotationText).to.equal("selected text");
       expect(createdItem.annotationComment).to.equal("my note");
       expect(createdItem.annotationColor).to.equal("#ffd400");
-      expect(createdItem.annotationSortIndex).to.equal(0);
+      expect(createdItem.annotationSortIndex).to.equal("00001|000000|00020");
       expect(JSON.parse(createdItem.annotationPosition)).to.deep.equal({
         pageIndex: 1, rects: [[10, 20, 30, 40]],
       });
+    });
+
+    it("preserves explicit Zotero PDF sortIndex strings", async () => {
+      const parent: any = { id: 5, libraryID: 1 };
+      const saveTxStub = sinon.stub().resolves();
+      let createdItem: any = null;
+
+      installZotero({
+        Items: { getAsync: sinon.stub().withArgs(5).resolves(parent) },
+        Item: function (itemType: string) {
+          createdItem = {
+            itemType,
+            libraryID: 0,
+            parentID: 0,
+            key: "NEWANN02",
+            saveTx: saveTxStub,
+          };
+          return createdItem;
+        },
+      });
+
+      const { annotationsHandlers } = await import("../../src/handlers/annotations");
+      await annotationsHandlers.create({
+        parentKey: 5,
+        type: "underline",
+        text: "selected text",
+        color: "#ff6666",
+        position: { pageIndex: 0, rects: [[10, 20, 30, 40]] },
+        sortIndex: "00000|000000|00165",
+      });
+
+      expect(createdItem.annotationSortIndex).to.equal("00000|000000|00165");
     });
 
     it("rejects invalid annotation type with -32602", async () => {

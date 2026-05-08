@@ -2,7 +2,7 @@
 
 Date: 2026-05-07
 
-This manifest tracks the migration from the legacy Python CLI to the target Rust CLI + Zotero-side JS/XPI RPC stack across `zotron`, `zotron-ocr`, and `zotron-rag`. Python is retained as reference code and parity evidence only; new product behavior should land in Rust and/or the JS XPI unless explicitly marked as a compatibility-only Python fix.
+This manifest tracks the migration from the legacy Python CLI to the target Rust CLI + Zotero-side JS/XPI RPC stack. As of 2026-05-08, the Rust product surface is a single `zotron` binary; OCR and RAG are subcommands (`zotron ocr ...`, `zotron rag ...`). Legacy Python names `zotron-ocr` and `zotron-rag` are retained only as reference/migration labels in old material, not as current user-facing commands. Python is retained as reference code and parity evidence only; new product behavior should land in Rust and/or the JS XPI unless explicitly marked as a compatibility-only Python fix.
 
 ## Migration boundary
 

@@ -15,6 +15,17 @@ function makeScopedSearch(): Zotero.Search {
   return s;
 }
 
+type SearchCondition = {
+  field: string;
+  op?: string;
+  operator?: string;
+  value: string;
+};
+
+function conditionOperator(cond: SearchCondition): string {
+  return cond.op ?? cond.operator ?? "";
+}
+
 export const searchHandlers = {
   async quick(params: { query: string; limit?: number }) {
     const limit = params.limit ?? 25;
@@ -28,10 +39,10 @@ export const searchHandlers = {
     return result;
   },
 
-  async advanced(params: { conditions: Array<{ field: string; op: string; value: string }>; limit?: number }) {
+  async advanced(params: { conditions: SearchCondition[]; limit?: number }) {
     const s = makeScopedSearch();
     for (const cond of params.conditions) {
-      s.addCondition(cond.field as any, cond.op as any, cond.value);
+      s.addCondition(cond.field as any, conditionOperator(cond) as any, cond.value);
     }
     s.addCondition("noChildren", "true");
     const ids = await s.search();
@@ -92,12 +103,12 @@ export const searchHandlers = {
 
   async createSavedSearch(params: {
     name: string;
-    conditions: Array<{ field: string; op: string; value: string }>;
+    conditions: SearchCondition[];
   }) {
     const s = makeScopedSearch();
     s.name = params.name;
     for (const cond of params.conditions) {
-      s.addCondition(cond.field as any, cond.op as any, cond.value);
+      s.addCondition(cond.field as any, conditionOperator(cond) as any, cond.value);
     }
     await s.saveTx();
     return { ok: true, key: s.key, name: s.name };

@@ -9,7 +9,7 @@ Run this when the user has just installed the Zotron plugin or when `zotron ping
 
 ## Goal
 
-End state: `zotron ping` succeeds and the agent can call `zotron`, `zotron-rag`, and `zotron-ocr`.
+End state: `zotron ping` succeeds and the agent can call the single `zotron` CLI. OCR and RAG are subcommands: `zotron ocr ...` and `zotron rag ...`.
 
 ## Distribution model
 
@@ -36,7 +36,7 @@ PLUGIN_ROOT="${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
 uv tool install --force --editable "$PLUGIN_ROOT/python"
 ```
 
-This ensures `zotron`, `zotron-rag`, and `zotron-ocr` binaries are up to date. The plugin update only refreshes skill docs — the CLI binary must be reinstalled separately.
+This ensures the `zotron` binary is up to date. The plugin update only refreshes skill docs — the CLI binary must be reinstalled separately.
 
 3. Run the setup script.
 

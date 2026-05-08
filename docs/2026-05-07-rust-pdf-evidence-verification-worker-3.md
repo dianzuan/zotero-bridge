@@ -7,7 +7,7 @@ Team: `tdd-continue-rust-pdf-evidence`
 
 - Artifact persistence defaults to the external Zotron artifact store, not Zotero-visible attachments.
 - Zotero attachment persistence remains an explicit opt-in contract.
-- `zotron-ocr status` checks external chunk artifacts before legacy Zotero attachment/note probes.
+- `zotron ocr status` checks hidden per-PDF sidecar chunk artifacts before legacy Zotero attachment/note probes.
 - Provider execution is locked behind injected Rust transports with no live credentials in tests.
 - `zotron-rpc` includes concrete runtime adapters for provider HTTP calls and local JSON-emitting commands.
 - OCR provider coverage includes GLM, PaddleOCR-VL, and MinerU.

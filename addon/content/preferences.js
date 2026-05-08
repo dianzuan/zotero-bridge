@@ -4,25 +4,19 @@
 var PREF = "zotron.";
 
 var DEFAULT_OCR_PROVIDER = "glm";
-var DEFAULT_EMB_PROVIDER = "doubao";
+var DEFAULT_EMB_PROVIDER = "volcengine";
 
 var OCR_CONFIGS = {
-  glm:    { label: "GLM-OCR",      url: "https://open.bigmodel.cn/api/paas/v4/layout_parsing",                                 model: "glm-ocr" },
-  qwen:   { label: "Qwen-VL-OCR",  url: "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation", model: "qwen-vl-ocr" },
-  custom: { label: "Custom OCR",   url: "",                                                                                        model: "custom-ocr-model" },
+  glm:    { label: "GLM-OCR",      url: "https://open.bigmodel.cn/api/paas/v4/layout_parsing", model: "glm-ocr" },
+  paddle: { label: "PaddleOCR-VL", url: "<your-aistudio-layout-parsing-endpoint>", model: "PaddleOCR-VL-1.5" },
+  mineru: { label: "MinerU",       url: "https://mineru.net/api/v4/extract/task", model: "vlm" },
+  custom: { label: "Custom OCR",   url: "", model: "custom-ocr-model" },
 };
 
 var EMB_CONFIGS = {
-  doubao:      { label: "Doubao",       url: "https://ark.cn-beijing.volces.com/api/v3/embeddings/multimodal", model: "doubao-embedding-vision-251215" },
-  ollama:      { label: "Ollama",       url: "http://localhost:11434",                                           model: "qwen3-embedding:4b" },
-  zhipu:       { label: "Zhipu",        url: "https://open.bigmodel.cn/api/paas/v4/embeddings",                 model: "embedding-3" },
-  dashscope:   { label: "DashScope",    url: "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings",    model: "text-embedding-v4" },
-  siliconflow: { label: "SiliconFlow",  url: "https://api.siliconflow.cn/v1/embeddings",                        model: "BAAI/bge-m3" },
-  jina:        { label: "Jina",         url: "https://api.jina.ai/v1/embeddings",                               model: "jina-embeddings-v3" },
-  voyage:      { label: "Voyage AI",    url: "https://api.voyageai.com/v1/embeddings",                          model: "voyage-4" },
-  cohere:      { label: "Cohere",       url: "https://api.cohere.com/v2/embed",                                 model: "embed-v4.0" },
-  gemini:      { label: "Google Gemini", url: "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent", model: "gemini-embedding-001" },
-  openai:      { label: "OpenAI",       url: "https://api.openai.com/v1/embeddings",                            model: "text-embedding-3-small" },
+  volcengine: { label: "Volcengine", url: "https://ark.cn-beijing.volces.com/api/v3/embeddings", model: "doubao-embedding-text-240715" },
+  dashscope:  { label: "DashScope",  url: "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings", model: "text-embedding-v4" },
+  custom:     { label: "Custom",     url: "", model: "custom-embedding-model" },
 };
 
 var I18N = {
@@ -216,26 +210,6 @@ function testEmb() {
     reqUrl = url + "/api/embeddings";
     body = JSON.stringify({ model: model, prompt: "test" });
     headers = { "Content-Type": "application/json" };
-  } else if (provider === "doubao") {
-    reqUrl = url;
-    body = JSON.stringify({ model: model, input: [{ type: "text", text: "test" }] });
-    headers = { "Content-Type": "application/json", "Authorization": "Bearer " + key };
-  } else if (provider === "cohere") {
-    reqUrl = url;
-    body = JSON.stringify({ model: model, texts: ["test"], input_type: "search_query", embedding_types: ["float"] });
-    headers = { "Content-Type": "application/json", "Authorization": "Bearer " + key };
-  } else if (provider === "gemini") {
-    reqUrl = url;
-    body = JSON.stringify({ taskType: "RETRIEVAL_QUERY", content: { parts: [{ text: "test" }] } });
-    headers = { "Content-Type": "application/json", "x-goog-api-key": key };
-  } else if (provider === "voyage") {
-    reqUrl = url;
-    body = JSON.stringify({ model: model, input: "test", input_type: "query" });
-    headers = { "Content-Type": "application/json", "Authorization": "Bearer " + key };
-  } else if (provider === "jina") {
-    reqUrl = url;
-    body = JSON.stringify({ model: model, input: "test", task: "retrieval.query" });
-    headers = { "Content-Type": "application/json", "Authorization": "Bearer " + key };
   } else {
     reqUrl = url;
     body = JSON.stringify({ model: model, input: "test" });
@@ -255,11 +229,7 @@ function testEmb() {
         var data = JSON.parse(xhr.responseText);
         var dim = provider === "ollama"
           ? (data.embedding ? data.embedding.length : "?")
-          : provider === "cohere"
-            ? (data.embeddings && data.embeddings.float && data.embeddings.float[0] ? data.embeddings.float[0].length : "?")
-            : provider === "gemini"
-              ? (data.embedding && data.embedding.values ? data.embedding.values.length : "?")
-              : (data.data && data.data[0] ? data.data[0].embedding.length : "?");
+          : (data.data && data.data[0] ? data.data[0].embedding.length : "?");
         setStatus("zotron-emb-status", t("okDim") + ": " + dim, "#27ae60");
       } catch(e) {
         setStatus("zotron-emb-status", t("okHttp") + " (HTTP " + xhr.status + ")", "#27ae60");

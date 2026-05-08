@@ -10,10 +10,8 @@
   "rpc": {
     "method": "settings.setAll",
     "params": {
-      "settings": {
-        "extensions.zotero.debug.log": false,
-        "extensions.zotero.sync.storage.enabled": true
-      }
+      "extensions.zotero.debug.log": false,
+      "extensions.zotero.sync.storage.enabled": true
     },
     "result": {
       "ok": true,

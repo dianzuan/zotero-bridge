@@ -105,7 +105,7 @@ zotron notes get <note-key>
 zotron annotations list --parent YR5BUGHG
 ```
 
-Zotero automatically indexes PDFs. `items fulltext` finds the first PDF attachment and returns its cached text — no OCR needed for most papers. Use `zotron-ocr` only for scanned PDFs or when fulltext is empty/garbled.
+Zotero automatically indexes PDFs. `items fulltext` finds the first PDF attachment and returns its cached text — no OCR needed for most papers. Use `zotron ocr ...` only for scanned PDFs or when fulltext is empty/garbled.
 
 For searching relevant passages across a collection (not full text), see [rag.md](rag.md).
 

@@ -72,6 +72,17 @@ function setPreferenceDefaults() {
     setPref("embedding.model", PREF_DEFAULTS["embedding.model"]);
     setPref("embedding.apiUrl", PREF_DEFAULTS["embedding.apiUrl"]);
   }
+
+  const hasOldDoubaoMultimodalDefault =
+    getRawPref("embedding.provider") === "doubao"
+    && getRawPref("embedding.model") === "doubao-embedding-vision-251215"
+    && getRawPref("embedding.apiUrl") === "https://ark.cn-beijing.volces.com/api/v3/embeddings/multimodal";
+
+  if (hasOldDoubaoMultimodalDefault) {
+    setPref("embedding.provider", PREF_DEFAULTS["embedding.provider"]);
+    setPref("embedding.model", PREF_DEFAULTS["embedding.model"]);
+    setPref("embedding.apiUrl", PREF_DEFAULTS["embedding.apiUrl"]);
+  }
 }
 
 export async function onStartup() {

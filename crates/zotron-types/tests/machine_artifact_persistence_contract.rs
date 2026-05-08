@@ -6,16 +6,16 @@ use zotron_types::{
 };
 
 #[test]
-fn machine_artifact_persist_plan_defaults_to_external_store_without_zotero_attachment_rpc() {
+fn machine_artifact_persist_plan_defaults_to_hidden_attachment_sidecar_without_zotero_rpc() {
     let plan =
         machine_artifact_persist_plan("ITEMKEY", "ATTACHKEY", MachineArtifactKind::OcrRaw, false);
 
-    assert_eq!(plan.storage, MachineArtifactStorage::ExternalStore);
+    assert_eq!(plan.storage, MachineArtifactStorage::AttachmentSidecar);
     assert_eq!(
         plan.relative_path.to_string_lossy().replace('\\', "/"),
-        "items/ITEMKEY/attachments/ATTACHKEY/zotron-ocr.raw.zip"
+        ".zotron/ocr/latest.raw.json"
     );
-    assert_eq!(plan.file_name, "zotron-ocr.raw.zip");
+    assert_eq!(plan.file_name, "latest.raw.json");
     assert_eq!(plan.zotero_attachment_title, None);
     assert!(
         !plan.should_call_zotero_attachments_add,
@@ -180,7 +180,7 @@ fn provider_raw_markdown_and_image_assets_persist_as_machine_artifacts() {
         record
             .relative_path
             .to_string_lossy()
-            .ends_with("zotron-ocr.raw.zip")
+            .ends_with(".zotron/ocr/latest.raw.json")
     }));
     assert_eq!(
         String::from_utf8(
@@ -218,4 +218,6 @@ fn evidence_artifact_filter_covers_native_provider_sidecars() {
 
     assert!(is_zotron_evidence_artifact("ITEM.zotron-ocr.native.md"));
     assert!(is_zotron_evidence_artifact("ITEM.zotron-ocr.assets.json"));
+    assert!(is_zotron_evidence_artifact("latest.native.md"));
+    assert!(is_zotron_evidence_artifact("latest.assets.json"));
 }

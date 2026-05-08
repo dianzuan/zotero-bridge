@@ -63,8 +63,12 @@ describe("rag handler", () => {
         title: "产业贸易中心性、贸易外向度与金融风险",
         text: "本文利用世界投入产出表和金融风险指标构造识别策略。",
         section_heading: "三、研究设计",
+        section_path: ["三、研究设计"],
+        attachment_key: "ATT42",
         chunk_key: "ATT42:c000001",
         block_keys: ["ATT42:p12:b08"],
+        page_range: [12, 12],
+        evidence_refs: [{ block_key: "ATT42:p12:b08", page_idx: 12, bbox: [10, 20, 300, 40] }],
       },
       {
         item_key: "ITEM42",
@@ -112,7 +116,71 @@ describe("rag handler", () => {
     expect(result.hits[0].venue).to.equal("中国工业经济");
     expect(result.hits[0].doi).to.equal("10.test/example");
     expect(result.hits[0].block_keys).to.deep.equal(["ATT42:p12:b08"]);
+    expect(result.hits[0].attachment_key).to.equal("ATT42");
+    expect(result.hits[0].section_path).to.deep.equal(["三、研究设计"]);
+    expect(result.hits[0].page_idx).to.equal(12);
+    expect(result.hits[0].page_range).to.deep.equal([12, 12]);
+    expect(result.hits[0].bbox).to.deep.equal([10, 20, 300, 40]);
+    expect(result.hits[0].evidence_refs).to.deep.equal([
+      { block_key: "ATT42:p12:b08", page_idx: 12, bbox: [10, 20, 300, 40] },
+    ]);
     expect(result.hits[0].score).to.be.greaterThan(0);
+  });
+
+  it("searchHits reads hidden per-PDF .zotron sidecar chunks before visible artifact attachments", async () => {
+    const item = makeItem();
+    const pdfAttachment = {
+      id: 4201,
+      key: "ATT42",
+      isAttachment: () => true,
+      attachmentContentType: "application/pdf",
+      getField: sinon.stub().callsFake((name: string) => (
+        name === "title" ? "Full Text PDF" : ""
+      )),
+      getFilePathAsync: sinon.stub().resolves("C:\\Users\\bslhz\\Zotero\\storage\\ATT42\\paper.pdf"),
+    };
+    installZotero({
+      Items: {
+        getAsync: sinon.stub().callsFake(async (id: number | number[]) => {
+          if (Array.isArray(id)) return [item];
+          if (id === 42) return item;
+          return pdfAttachment;
+        }),
+      },
+      File: {
+        pathToFile: sinon.stub().returns({ exists: () => true }),
+        getContentsAsync: sinon.stub().callsFake(async (path: string) => {
+          if (path.endsWith("\\.zotron\\chunks\\chunks.v1.jsonl")) {
+            return JSON.stringify({
+              item_key: "ITEM42",
+              attachment_key: "ATT42",
+              title: "Title",
+              text: "宏观因子风险配置",
+              chunk_key: "ATT42:c0",
+              block_keys: ["ATT42:p1:b0"],
+              evidence_refs: [{ block_key: "ATT42:p1:b0", page_idx: 1, bbox: [1, 2, 3, 4] }],
+            });
+          }
+          return "";
+        }),
+      },
+    });
+
+    delete require.cache[require.resolve("../../src/handlers/rag")];
+    const { ragHandlers } = await import("../../src/handlers/rag");
+    const result = await ragHandlers.searchHits({
+      query: "宏观因子",
+      keys: [42],
+    });
+
+    expect(result.total).to.equal(1);
+    expect(result.hits[0]).to.deep.include({
+      item_key: "ITEM42",
+      attachment_key: "ATT42",
+      chunk_key: "ATT42:c0",
+      page_idx: 1,
+    });
+    expect(result.hits[0].bbox).to.deep.equal([1, 2, 3, 4]);
   });
 
   it("searchHits reports embedding artifact metadata while safely using lexical fallback", async () => {

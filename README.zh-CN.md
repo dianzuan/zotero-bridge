@@ -101,7 +101,7 @@ codex plugin marketplace add dianzuan/zotron
 $zotron-setup
 ```
 
-setup skill 会暴露插件自带的 `zotron`、`zotron-rag`、`zotron-ocr` shims；需要时把 release 里的 `zotron.xpi` 下载到 Downloads，并带你走 Zotero 原生的 **工具 → 插件 → ⚙ → 从文件安装附加组件 → 重启**。仓库不再跟踪生成的 XPI；安装来源是 release。GitHub 访问不通时，可以用 `ZOTRON_XPI_URLS` 配置空格/逗号/分号分隔的镜像 URL 列表。
+setup skill 只暴露插件自带的 `zotron` CLI。OCR 和 RAG 都放在这个单一命令下面：`zotron ocr ...`、`zotron rag ...`；旧的 `zotron-ocr` / `zotron-rag` 独立入口不再属于 Rust 产品面。需要时 setup 会把 release 里的 `zotron.xpi` 下载到 Downloads，并带你走 Zotero 原生的 **工具 → 插件 → ⚙ → 从文件安装附加组件 → 重启**。仓库不再跟踪生成的 XPI；安装来源是 release。GitHub 访问不通时，可以用 `ZOTRON_XPI_URLS` 配置空格/逗号/分号分隔的镜像 URL 列表。
 
 Zotero 重启后：
 
@@ -110,7 +110,7 @@ zotron ping
 zotron search quick "数字经济" --limit 10
 ```
 
-`zotron ping` 成功后，Codex 可以通过已安装的 plugin skill 直接调用 `zotron`、`zotron-rag`、`zotron-ocr` 或裸 HTTP。
+`zotron ping` 成功后，Codex 可以通过已安装的 plugin skill 直接调用 `zotron` 子命令或裸 HTTP。
 
 ### 路径 C —— Python CLI / SDK
 
@@ -165,28 +165,47 @@ curl -s -X POST http://localhost:23119/zotron/rpc \
 
 ## 带引用的 RAG
 
-RAG 层（`claude-plugin/python/zotron/rag/`）把每个检索到的片段封装成 `Citation`，带 Zotero item key、附件 ID、章节、chunk 索引、相似度分数、原文，以及一个 `zotero://` URI 用于一键回 Zotero 核对。
+Rust RAG 层把每个检索到的片段封装成带 provenance 的 hit，包含 Zotero item key、attachment key、章节/章节路径、可用时的页码和 bbox、分数、原文，以及一个 `zotero://` URI 用于一键回 Zotero 核对。
 
 ```bash
-zotron-rag index --collection 数字经济
-zotron-rag cite "数字经济对就业的影响" --collection 数字经济 --output json
+zotron rag status --collection 数字经济
+zotron rag hits --zotero "数字经济对就业的影响" --collection 数字经济 --output jsonl
 ```
 
-`--output json` 是面向 AI 的稳定契约：
+`--output jsonl` 是面向 AI 的稳定契约：
 
 ```json
-{ "itemKey": "ABC123", "attachmentKey": "ATT42XY", "title": "...", "authors": "...",
-  "section": "第三章 实证分析", "chunkIndex": 7, "text": "...",
-  "score": 0.87, "zoteroUri": "zotero://select/library/items/ABC123" }
+{
+  "item_key": "ABC123",
+  "attachment_key": "ATT42XY",
+  "title": "...",
+  "authors": ["..."],
+  "section_heading": "第三章 实证分析",
+  "section_path": ["第三章 实证分析"],
+  "chunk_key": "ATT42XY:c7",
+  "block_keys": ["ATT42XY:p1:b7"],
+  "page_idx": 1,
+  "bbox": [72.0, 180.0, 510.0, 220.0],
+  "evidence_refs": [{"block_key": "ATT42XY:p1:b7", "page_idx": 1, "bbox": [72.0, 180.0, 510.0, 220.0]}],
+  "score": 0.87,
+  "zotero_uri": "zotero://select/library/items/ABC123",
+  "text": "..."
+}
 ```
 
-2026 RAG/OCR roadmap 会把这一层扩展成 Zotero-native artifacts 和适合 academic-zh 消费的 JSONL hit stream。稳定目标是：
+2026 RAG/OCR roadmap 把机器文件放进每个 PDF 的隐藏 sidecar 目录。稳定目标是：
 
-- provider raw evidence 存在 `<item-key>.zotron-ocr.raw.zip`；
-- 统一后的 OCR/parser blocks 存在 `<item-key>.zotron-blocks.jsonl`；
-- retrieval chunks 存在 `<item-key>.zotron-chunks.jsonl`；
-- vectors 和索引元数据存在 `<item-key>.zotron-embed.npz`；
-- retrieval hits 一行一个 JSON 对象，必须包含 `item_key`、`title`、`text`，并建议带上 `zotero_uri`、`chunk_key`、`block_keys`、`section_heading`、`query`、`score` 等 provenance 字段。XPI 已暴露 `rag.searchHits` / `rag.searchCards` 做 Zotero-native chunk artifact 检索；`zotron-rag hits --zotero` 会调用这个 JSON-RPC backend。
+```text
+storage/<attachment-key>/.zotron/
+├── ocr/latest.raw.json
+├── ocr/latest.blocks.jsonl
+├── ocr/latest.native.md
+├── ocr/latest.assets.json
+├── chunks/chunks.v1.jsonl
+└── embeddings/vectors.jsonl
+```
+
+retrieval hits 一行一个 JSON 对象，必须包含 `item_key`、`title`、`text`，并建议带上 `attachment_key`、`zotero_uri`、`chunk_key`、`block_keys`、`section_heading`、`section_path`、`page_idx`、`bbox`、`evidence_refs`、`query`、`score` 等 provenance 字段。XPI 暴露 `rag.searchHits` 做 Zotero-native chunk sidecar 检索；`zotron rag hits --zotero` 会调用这个 JSON-RPC backend。
 
 Markdown 可以作为派生的便利输出，但不能作为 OCR/RAG 的唯一 truth，因为它会丢 page、bbox、table、figure、provider 和 reading-order provenance。
 
@@ -216,7 +235,7 @@ npm run build && \
 
 - `ocr.*` —— 给未来的 `attachments.ocr` 方法
 - `embedding.*` —— 给未来的语义搜索 / 分块
-- `rag.searchHits` / `rag.searchCards` —— 基于 Zotero 附件 chunk artifacts 的 retrieval hits
+- `rag.searchHits` —— 基于每个 PDF 隐藏 chunk sidecar 的 retrieval hits，旧的 Zotero 可见附件 artifact 只作为 fallback
 
 当前 storage 和 retrieval contract 见 [`docs/2026-04-27-rag-ocr-roadmap.md`](docs/2026-04-27-rag-ocr-roadmap.md)。后续一等 RAG/OCR 实现应保留 provider raw 输出，normalize 成 blocks/chunks，并暴露 academic-zh 兼容的 retrieval hits，不能把 markdown 当作唯一 truth。
 

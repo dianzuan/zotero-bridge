@@ -9,9 +9,9 @@ import { validateAnnotationParams } from "../utils/annotation";
 export const annotationsHandlers = {
   async list(params: { parentKey: number | string }) {
     const item = await requireItem(params.parentKey);
-    const annIDs: number[] = (item as any).getAnnotations?.() ?? [];
-    if (annIDs.length === 0) return [];
-    const anns = (await Zotero.Items.getAsync(annIDs)) as any[];
+    const annotationRefs: any[] = (item as any).getAnnotations?.() ?? [];
+    if (annotationRefs.length === 0) return [];
+    const anns = await resolveAnnotationRefs(item.libraryID, annotationRefs);
     return anns.map((a: any) => {
       const data = serializeItem(a);
       data.annotationType = a.annotationType;
@@ -51,11 +51,10 @@ export const annotationsHandlers = {
     if (params.comment) (ann as any).annotationComment = params.comment;
     if (params.color) (ann as any).annotationColor = params.color;
     (ann as any).annotationPosition = JSON.stringify(params.position);
-    (ann as any).annotationSortIndex = params.sortIndex === undefined
-      ? 0
-      : typeof params.sortIndex === "number"
-        ? params.sortIndex
-        : Number(String(params.sortIndex).trim());
+    (ann as any).annotationSortIndex = normalizeAnnotationSortIndex(
+      params.position,
+      params.sortIndex,
+    );
     await ann.saveTx();
     return { ok: true, key: ann.key };
   },
@@ -66,5 +65,51 @@ export const annotationsHandlers = {
     return { ok: true, key: item.key };
   },
 };
+
+async function resolveAnnotationRefs(libraryID: number, refs: any[]): Promise<any[]> {
+  if (refs.every((ref) => typeof ref === "number" && Number.isFinite(ref))) {
+    return (await Zotero.Items.getAsync(refs)) as any[];
+  }
+
+  const anns: any[] = [];
+  for (const ref of refs) {
+    if (ref && typeof ref === "object" && typeof ref.isAnnotation === "function") {
+      anns.push(ref);
+    } else if (ref && typeof ref === "object" && Number.isFinite(ref.id)) {
+      const ann = await Zotero.Items.getAsync(ref.id);
+      if (ann) anns.push(ann);
+    } else if (ref && typeof ref === "object" && typeof ref.key === "string") {
+      const ann = await Zotero.Items.getByLibraryAndKeyAsync(libraryID, ref.key);
+      if (ann) anns.push(ann);
+    } else if (typeof ref === "string") {
+      const ann = await Zotero.Items.getByLibraryAndKeyAsync(libraryID, ref);
+      if (ann) anns.push(ann);
+    }
+  }
+  return anns;
+}
+
+function normalizeAnnotationSortIndex(position: any, sortIndex: unknown): string {
+  if (typeof sortIndex === "string" && /^\d{5}\|\d{6}\|\d{5}$/.test(sortIndex.trim())) {
+    return sortIndex.trim();
+  }
+
+  const page = padInt(position.pageIndex, 5);
+  const yOffset = sortIndex === undefined
+    ? firstRectY(position)
+    : Number(String(sortIndex).trim());
+  return `${page}|000000|${padInt(yOffset, 5)}`;
+}
+
+function firstRectY(position: any): number {
+  const firstRect = Array.isArray(position?.rects) ? position.rects[0] : undefined;
+  const y = Array.isArray(firstRect) ? firstRect[1] : 0;
+  return typeof y === "number" && Number.isFinite(y) ? y : 0;
+}
+
+function padInt(value: unknown, width: number): string {
+  const normalized = Math.max(0, Math.floor(Number(value) || 0));
+  return String(normalized).padStart(width, "0").slice(-width);
+}
 
 registerHandlers("annotations", annotationsHandlers);

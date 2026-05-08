@@ -354,5 +354,5 @@ Normalization target:
   Paddle's `result.layoutParsingResults`, Paddle JSONL async result shape, and
   MinerU content-list JSON, not just the current `{pages:[{blocks:[...]}]}`
   scaffold.
-- Keep provider raw output as `zotron-ocr.raw.zip` or equivalent audit artifact
+- Keep provider raw output as `.zotron/ocr/latest.raw.json` or equivalent audit artifact
   before normalization.

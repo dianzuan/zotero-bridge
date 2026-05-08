@@ -25,11 +25,9 @@ All operations go through `zotron rpc <method> '<json_params>'`:
 | Add by DOI | `zotron rpc items.addByDOI '{"doi":"..."}'` |
 | Add note to paper | `zotron rpc notes.create '{"parentId":N,"content":"<p>...</p>"}'` |
 | Library stats | `zotron rpc system.libraryStats` |
-| OCR a collection | `zotron-ocr --collection "NAME"` |
-| Check OCR status | `zotron-ocr status --collection "NAME"` |
-| Build RAG index | `zotron-rag index --collection "NAME"` |
-| Semantic paragraph search | `zotron-rag search --collection "NAME" "query"` |
-| Check RAG index status | `zotron-rag status --collection "NAME"` |
+| Check OCR status | `zotron ocr status --collection "NAME"` |
+| Check RAG artifact status | `zotron rag status --collection "NAME"` |
+| Semantic paragraph search | `zotron rag hits --zotero --collection "NAME" "query"` |
 
 ## Workflow
 
@@ -44,15 +42,14 @@ All operations go through `zotron rpc <method> '<json_params>'`:
 When the user wants to write a literature review for a specific topic:
 
 1. **Check collection** — `collections.tree` to find the relevant collection
-2. **Check OCR status** — `zotron-ocr status --collection "NAME"`
-3. **OCR if needed** — `zotron-ocr --collection "NAME"`
-4. **Check RAG index** — `zotron-rag status --collection "NAME"`
-5. **Build index if needed** — `zotron-rag index --collection "NAME"`
-6. **Semantic search** — `zotron-rag search --collection "NAME" "research question"`
+2. **Check OCR status** — `zotron ocr status --collection "NAME"`
+3. **OCR/layout parse if needed** — `zotron ocr provider-json --provider mineru --input /tmp/request.json --output /tmp/result.json`
+4. **Check RAG artifacts** — `zotron rag status --collection "NAME"`
+5. **Semantic search** — `zotron rag hits --zotero --collection "NAME" "research question"`
 7. **Synthesize** — combine relevant paragraphs into literature review
 8. **Export citations** — `zotron rpc export.bibliography` for referenced papers
 
-Prefer `zotron-rag search` over `attachments.getFulltext` — it returns only relevant paragraphs and saves ~90% tokens.
+Prefer `zotron rag hits --zotero` over `attachments.getFulltext` when chunk sidecars exist — it returns only relevant paragraphs and saves tokens.
 
 ## Error handling
 

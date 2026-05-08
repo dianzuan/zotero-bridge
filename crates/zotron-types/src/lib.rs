@@ -53,7 +53,7 @@ pub struct JsonRpcResponse {
     pub id: Option<Value>,
 }
 
-/// Typed contract for academic-zh retrieval hits emitted by `zotron-rag hits`.
+/// Typed contract for academic-zh retrieval hits emitted by `zotron rag hits`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AcademicZhHit {
     pub item_key: String,
@@ -74,6 +74,18 @@ pub struct AcademicZhHit {
     pub doi: Option<String>,
     #[serde(default, alias = "block_ids")]
     pub block_keys: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attachment_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_idx: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_range: Option<[u64; 2]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bbox: Option<[f64; 4]>,
+    #[serde(default)]
+    pub section_path: Vec<String>,
+    #[serde(default)]
+    pub evidence_refs: Vec<PdfEvidenceRef>,
 }
 
 /// OCR provider request families supported by the Rust evidence contract.
@@ -283,6 +295,14 @@ pub struct PdfEvidenceBlock {
     pub text: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PdfEvidenceRef {
+    pub block_key: String,
+    pub page_idx: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bbox: Option<[f64; 4]>,
+}
+
 /// Structure-aware retrieval chunk. It preserves block provenance and avoids
 /// legacy public `*_id` fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -299,6 +319,8 @@ pub struct StructureChunk {
     pub page_start: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub page_end: Option<u64>,
+    #[serde(default)]
+    pub evidence_refs: Vec<PdfEvidenceRef>,
 }
 
 impl StructureChunk {
@@ -330,6 +352,14 @@ impl StructureChunk {
             page_range: [page_start, page_end],
             page_start: Some(page_start),
             page_end: Some(page_end),
+            evidence_refs: blocks
+                .iter()
+                .map(|block| PdfEvidenceRef {
+                    block_key: block.block_key.clone(),
+                    page_idx: block.page_idx,
+                    bbox: block.bbox,
+                })
+                .collect(),
         }
     }
 }
@@ -753,13 +783,19 @@ pub fn execute_embedding_provider_request(
 }
 
 pub fn is_zotron_evidence_artifact(title: &str) -> bool {
-    const SUFFIXES: [&str; 6] = [
+    const SUFFIXES: [&str; 12] = [
         ".zotron-ocr.raw.zip",
         ".zotron-blocks.jsonl",
         ".zotron-chunks.jsonl",
         ".zotron-embed.npz",
         ".zotron-ocr.native.md",
         ".zotron-ocr.assets.json",
+        "latest.raw.json",
+        "latest.blocks.jsonl",
+        "chunks.v1.jsonl",
+        "vectors.jsonl",
+        "latest.native.md",
+        "latest.assets.json",
     ];
     SUFFIXES.iter().any(|suffix| title.ends_with(suffix))
 }
@@ -782,12 +818,23 @@ pub enum MachineArtifactKind {
 impl MachineArtifactKind {
     pub fn file_name(self) -> &'static str {
         match self {
-            Self::OcrRaw => "zotron-ocr.raw.zip",
-            Self::Blocks => "zotron-blocks.jsonl",
-            Self::Chunks => "zotron-chunks.jsonl",
-            Self::EmbeddingVectors => "zotron-embed.npz",
-            Self::OcrNativeMarkdown => "zotron-ocr.native.md",
-            Self::OcrNativeAssets => "zotron-ocr.assets.json",
+            Self::OcrRaw => "latest.raw.json",
+            Self::Blocks => "latest.blocks.jsonl",
+            Self::Chunks => "chunks.v1.jsonl",
+            Self::EmbeddingVectors => "vectors.jsonl",
+            Self::OcrNativeMarkdown => "latest.native.md",
+            Self::OcrNativeAssets => "latest.assets.json",
+        }
+    }
+
+    pub fn sidecar_relative_path(self) -> PathBuf {
+        match self {
+            Self::OcrRaw => PathBuf::from("ocr").join(self.file_name()),
+            Self::Blocks => PathBuf::from("ocr").join(self.file_name()),
+            Self::Chunks => PathBuf::from("chunks").join(self.file_name()),
+            Self::EmbeddingVectors => PathBuf::from("embeddings").join(self.file_name()),
+            Self::OcrNativeMarkdown => PathBuf::from("ocr").join(self.file_name()),
+            Self::OcrNativeAssets => PathBuf::from("ocr").join(self.file_name()),
         }
     }
 }
@@ -795,6 +842,7 @@ impl MachineArtifactKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MachineArtifactStorage {
+    AttachmentSidecar,
     ExternalStore,
     ZoteroAttachment,
 }
@@ -819,6 +867,18 @@ pub struct MachineArtifactRecord {
 }
 
 pub fn machine_artifact_relative_path(
+    _item_key: &str,
+    _attachment_key: &str,
+    kind: MachineArtifactKind,
+) -> PathBuf {
+    machine_artifact_sidecar_relative_path(kind)
+}
+
+pub fn machine_artifact_sidecar_relative_path(kind: MachineArtifactKind) -> PathBuf {
+    PathBuf::from(".zotron").join(kind.sidecar_relative_path())
+}
+
+pub fn legacy_machine_artifact_relative_path(
     item_key: &str,
     attachment_key: &str,
     kind: MachineArtifactKind,
@@ -827,7 +887,14 @@ pub fn machine_artifact_relative_path(
         .join(item_key)
         .join("attachments")
         .join(attachment_key)
-        .join(kind.file_name())
+        .join(match kind {
+            MachineArtifactKind::OcrRaw => "zotron-ocr.raw.zip",
+            MachineArtifactKind::Blocks => "zotron-blocks.jsonl",
+            MachineArtifactKind::Chunks => "zotron-chunks.jsonl",
+            MachineArtifactKind::EmbeddingVectors => "zotron-embed.npz",
+            MachineArtifactKind::OcrNativeMarkdown => "zotron-ocr.native.md",
+            MachineArtifactKind::OcrNativeAssets => "zotron-ocr.assets.json",
+        })
 }
 
 pub fn machine_artifact_persist_plan(
@@ -836,18 +903,30 @@ pub fn machine_artifact_persist_plan(
     kind: MachineArtifactKind,
     attach_to_zotero: bool,
 ) -> MachineArtifactPersistPlan {
-    let relative_path = machine_artifact_relative_path(item_key, attachment_key, kind);
-    let file_name = kind.file_name().to_string();
+    let relative_path = if attach_to_zotero {
+        legacy_machine_artifact_relative_path(item_key, attachment_key, kind)
+    } else {
+        machine_artifact_sidecar_relative_path(kind)
+    };
+    let file_name = if attach_to_zotero {
+        relative_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_else(|| kind.file_name())
+            .to_string()
+    } else {
+        kind.file_name().to_string()
+    };
+    let zotero_attachment_title = attach_to_zotero.then(|| format!("{item_key}.{file_name}"));
     MachineArtifactPersistPlan {
         storage: if attach_to_zotero {
             MachineArtifactStorage::ZoteroAttachment
         } else {
-            MachineArtifactStorage::ExternalStore
+            MachineArtifactStorage::AttachmentSidecar
         },
         relative_path,
         file_name,
-        zotero_attachment_title: attach_to_zotero
-            .then(|| format!("{item_key}.{}", kind.file_name())),
+        zotero_attachment_title,
         should_call_zotero_attachments_add: attach_to_zotero,
     }
 }
@@ -1045,9 +1124,9 @@ pub fn provider_native_image_assets(payload: &Value) -> Option<Value> {
 
 /// Persist raw OCR provider JSON plus native Markdown/image asset sidecars.
 ///
-/// The raw payload is always written as `zotron-ocr.raw.zip` for compatibility
-/// with the existing artifact vocabulary, while extracted native Markdown and
-/// image references are written only when the provider returned them.
+/// The raw payload is written as hidden sidecar `ocr/latest.raw.json` by
+/// default, while extracted native Markdown and image references are written
+/// only when the provider returned them.
 pub fn write_ocr_provider_artifacts(
     store_root: impl AsRef<Path>,
     item_key: &str,
@@ -1118,6 +1197,30 @@ pub fn machine_artifact_absolute_path(
     ))
 }
 
+pub fn legacy_machine_artifact_absolute_path(
+    store_root: impl AsRef<Path>,
+    item_key: &str,
+    attachment_key: &str,
+    kind: MachineArtifactKind,
+) -> PathBuf {
+    store_root
+        .as_ref()
+        .join(legacy_machine_artifact_relative_path(
+            item_key,
+            attachment_key,
+            kind,
+        ))
+}
+
+pub fn machine_artifact_sidecar_absolute_path(
+    attachment_storage_dir: impl AsRef<Path>,
+    kind: MachineArtifactKind,
+) -> PathBuf {
+    attachment_storage_dir
+        .as_ref()
+        .join(machine_artifact_sidecar_relative_path(kind))
+}
+
 pub fn write_machine_artifact(
     store_root: impl AsRef<Path>,
     item_key: &str,
@@ -1138,6 +1241,67 @@ pub fn write_machine_artifact(
         relative_path,
         absolute_path,
     })
+}
+
+pub fn write_machine_artifact_sidecar(
+    attachment_storage_dir: impl AsRef<Path>,
+    item_key: &str,
+    attachment_key: &str,
+    kind: MachineArtifactKind,
+    bytes: &[u8],
+) -> io::Result<MachineArtifactRecord> {
+    let relative_path = machine_artifact_sidecar_relative_path(kind);
+    let absolute_path = attachment_storage_dir.as_ref().join(&relative_path);
+    if let Some(parent) = absolute_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(&absolute_path, bytes)?;
+    Ok(MachineArtifactRecord {
+        item_key: item_key.to_string(),
+        attachment_key: attachment_key.to_string(),
+        kind,
+        relative_path,
+        absolute_path,
+    })
+}
+
+pub fn write_legacy_machine_artifact(
+    store_root: impl AsRef<Path>,
+    item_key: &str,
+    attachment_key: &str,
+    kind: MachineArtifactKind,
+    bytes: &[u8],
+) -> io::Result<MachineArtifactRecord> {
+    let relative_path = legacy_machine_artifact_relative_path(item_key, attachment_key, kind);
+    let absolute_path = store_root.as_ref().join(&relative_path);
+    if let Some(parent) = absolute_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(&absolute_path, bytes)?;
+    Ok(MachineArtifactRecord {
+        item_key: item_key.to_string(),
+        attachment_key: attachment_key.to_string(),
+        kind,
+        relative_path,
+        absolute_path,
+    })
+}
+
+pub fn read_machine_artifact_sidecar(
+    attachment_storage_dir: impl AsRef<Path>,
+    kind: MachineArtifactKind,
+) -> io::Result<Vec<u8>> {
+    fs::read(machine_artifact_sidecar_absolute_path(
+        attachment_storage_dir,
+        kind,
+    ))
+}
+
+pub fn machine_artifact_exists_in_sidecar(
+    attachment_storage_dir: impl AsRef<Path>,
+    kind: MachineArtifactKind,
+) -> bool {
+    machine_artifact_sidecar_absolute_path(attachment_storage_dir, kind).exists()
 }
 
 pub fn read_machine_artifact(
@@ -1189,6 +1353,14 @@ pub fn machine_artifact_exists_for_item(
     item_key: &str,
     kind: MachineArtifactKind,
 ) -> bool {
+    let legacy_file_name = match kind {
+        MachineArtifactKind::OcrRaw => "zotron-ocr.raw.zip",
+        MachineArtifactKind::Blocks => "zotron-blocks.jsonl",
+        MachineArtifactKind::Chunks => "zotron-chunks.jsonl",
+        MachineArtifactKind::EmbeddingVectors => "zotron-embed.npz",
+        MachineArtifactKind::OcrNativeMarkdown => "zotron-ocr.native.md",
+        MachineArtifactKind::OcrNativeAssets => "zotron-ocr.assets.json",
+    };
     let attachments_dir = store_root
         .as_ref()
         .join("items")
@@ -1200,7 +1372,7 @@ pub fn machine_artifact_exists_for_item(
     entries.filter_map(Result::ok).any(|entry| {
         entry
             .path()
-            .join(kind.file_name())
+            .join(legacy_file_name)
             .try_exists()
             .unwrap_or(false)
     })

@@ -12,7 +12,8 @@ use serde_json::Value;
 use zotron_rpc::{StdProviderCommandRunner, UreqProviderHttpTransport, ZoteroRpc};
 use zotron_types::{
     build_ocr_provider_request, builtin_ocr_provider_specs, execute_embedding_provider_request,
-    is_zotron_evidence_artifact, machine_artifact_exists_for_item, machine_artifact_store_root,
+    is_zotron_evidence_artifact, machine_artifact_exists_for_item,
+    machine_artifact_exists_in_sidecar, machine_artifact_store_root,
     ocr_provider_spec as raw_ocr_provider_spec, parse_ocr_provider_response, ArtifactStorePlatform,
     EmbeddingRequestInput, MachineArtifactKind, OcrRequestInput, ProviderCommandRunner,
     ProviderHttpInvocation, ProviderHttpTransport, DEFAULT_RPC_URL,
@@ -214,16 +215,6 @@ struct Cli {
     command: Command,
 }
 
-#[derive(Debug, Parser)]
-#[command(
-    name = "zotron-ocr",
-    about = "OCR PDFs in Zotero and write raw/block/chunk artifacts."
-)]
-struct OcrCli {
-    #[command(subcommand)]
-    command: OcrCommand,
-}
-
 #[derive(Debug, Subcommand)]
 enum OcrCommand {
     /// Print supported OCR provider contracts.
@@ -340,6 +331,16 @@ enum Command {
         #[command(subcommand)]
         command: AnnotationsCommand,
     },
+    /// OCR PDFs and manage raw/block/chunk evidence artifacts.
+    Ocr {
+        #[command(subcommand)]
+        command: OcrCommand,
+    },
+    /// Build and search retrieval artifacts.
+    Rag {
+        #[command(subcommand)]
+        command: RagCommand,
+    },
     /// Batch fill missing PDFs in a collection via Zotero's resolver chain.
     #[command(name = "find-pdfs")]
     FindPdfs {
@@ -360,16 +361,6 @@ struct RagHitsOptions {
     include_fulltext_spans: bool,
     top_k: u64,
     output: String,
-}
-
-#[derive(Debug, Parser)]
-#[command(
-    name = "zotron-rag",
-    about = "RAG index and search for Zotero collections"
-)]
-struct RagCli {
-    #[command(subcommand)]
-    command: RagCommand,
 }
 
 #[derive(Debug, Subcommand)]
@@ -777,6 +768,7 @@ enum SettingsCommand {
         url: String,
     },
     /// List all Zotero preferences as a key->value dict.
+    #[command(alias = "get-all")]
     List {
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
@@ -1236,56 +1228,6 @@ pub fn run_with_client(
     run_command(cli.command, client)
 }
 
-pub fn run_ocr(
-    args: impl IntoIterator<Item = impl Into<std::ffi::OsString> + Clone>,
-) -> Result<String, String> {
-    let cli = match parse_cli::<OcrCli>(args)? {
-        ParseOutcome::Command(cli) => cli,
-        ParseOutcome::Display(output) => return Ok(output),
-    };
-    let url = match &cli.command {
-        OcrCommand::Providers => DEFAULT_RPC_URL.to_string(),
-        OcrCommand::ProviderJson { .. } => DEFAULT_RPC_URL.to_string(),
-        OcrCommand::Status { url, .. } => url.clone(),
-    };
-    let mut client = ZoteroRpc::new(url);
-    run_ocr_command(cli.command, &mut client)
-}
-
-pub fn run_ocr_with_client(
-    args: impl IntoIterator<Item = impl Into<std::ffi::OsString> + Clone>,
-    client: &mut impl RpcCaller,
-) -> Result<String, String> {
-    let cli = match parse_cli::<OcrCli>(args)? {
-        ParseOutcome::Command(cli) => cli,
-        ParseOutcome::Display(output) => return Ok(output),
-    };
-    run_ocr_command(cli.command, client)
-}
-
-pub fn run_rag(
-    args: impl IntoIterator<Item = impl Into<std::ffi::OsString> + Clone>,
-) -> Result<String, String> {
-    let cli = match parse_cli::<RagCli>(args)? {
-        ParseOutcome::Command(cli) => cli,
-        ParseOutcome::Display(output) => return Ok(output),
-    };
-    let url = rag_command_url(&cli.command);
-    let mut client = ZoteroRpc::new(url);
-    run_rag_command(cli.command, &mut client)
-}
-
-pub fn run_rag_with_client(
-    args: impl IntoIterator<Item = impl Into<std::ffi::OsString> + Clone>,
-    client: &mut impl RpcCaller,
-) -> Result<String, String> {
-    let cli = match parse_cli::<RagCli>(args)? {
-        ParseOutcome::Command(cli) => cli,
-        ParseOutcome::Display(output) => return Ok(output),
-    };
-    run_rag_command(cli.command, client)
-}
-
 fn rag_command_url(command: &RagCommand) -> String {
     match command {
         RagCommand::EmbeddingProviders => DEFAULT_RPC_URL.to_string(),
@@ -1301,6 +1243,12 @@ fn command_url(command: &Command) -> String {
         | Command::Rpc { url, .. }
         | Command::Push { url, .. }
         | Command::FindPdfs { url, .. } => url.clone(),
+        Command::Ocr { command } => match command {
+            OcrCommand::Providers => DEFAULT_RPC_URL.to_string(),
+            OcrCommand::ProviderJson { .. } => DEFAULT_RPC_URL.to_string(),
+            OcrCommand::Status { url, .. } => url.clone(),
+        },
+        Command::Rag { command } => rag_command_url(command),
         Command::System { command } => match command {
             SystemCommand::Version { url }
             | SystemCommand::Libraries { url }
@@ -1496,6 +1444,8 @@ fn run_ocr_status_command(
 
 fn has_ocr_artifact(client: &mut impl RpcCaller, item_key: &Value) -> Result<bool, String> {
     if let Some(item_key) = item_key.as_str() {
+        // Legacy external store lookup for artifacts produced before the
+        // per-attachment hidden sidecar became the default.
         if machine_artifact_exists_for_item(
             machine_artifact_store_root(),
             item_key,
@@ -1511,6 +1461,21 @@ fn has_ocr_artifact(client: &mut impl RpcCaller, item_key: &Value) -> Result<boo
     )?;
     Ok(attachments.as_array().is_some_and(|attachments| {
         attachments.iter().any(|attachment| {
+            let has_sidecar_chunks = attachment
+                .get("path")
+                .and_then(Value::as_str)
+                .map(local_path_from_zotero_path)
+                .as_deref()
+                .map(Path::new)
+                .and_then(Path::parent)
+                .is_some_and(|dir| {
+                    machine_artifact_exists_in_sidecar(dir, MachineArtifactKind::Chunks)
+                });
+            if has_sidecar_chunks {
+                return true;
+            }
+
+            // Read-only fallback for old Zotero-visible artifact attachments.
             attachment
                 .get("title")
                 .and_then(Value::as_str)
@@ -1519,18 +1484,42 @@ fn has_ocr_artifact(client: &mut impl RpcCaller, item_key: &Value) -> Result<boo
     }))
 }
 
+fn local_path_from_zotero_path(path: &str) -> String {
+    if is_wsl() && path.as_bytes().get(1) == Some(&b':') {
+        return ProcessCommand::new("wslpath")
+            .arg("-u")
+            .arg(path)
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .and_then(|output| String::from_utf8(output.stdout).ok())
+            .map(|converted| converted.trim().to_string())
+            .filter(|converted| !converted.is_empty())
+            .unwrap_or_else(|| path.to_string());
+    }
+    path.to_string()
+}
+
 fn has_ocr_note(client: &mut impl RpcCaller, item_key: &Value) -> Result<bool, String> {
     let notes = client.call(
-        "notes.get",
+        "notes.list",
         Some(serde_json::json!({"parentKey": item_key.clone()})),
     )?;
     Ok(notes.as_array().is_some_and(|notes| {
         notes.iter().any(|note| {
             note.get("tags")
                 .and_then(Value::as_array)
-                .is_some_and(|tags| tags.iter().any(|tag| tag == "ocr"))
+                .is_some_and(|tags| tags.iter().any(tag_is_ocr))
         })
     }))
+}
+
+fn tag_is_ocr(tag: &Value) -> bool {
+    tag.as_str() == Some("ocr")
+        || tag
+            .get("tag")
+            .and_then(Value::as_str)
+            .is_some_and(|tag| tag == "ocr")
 }
 
 fn find_collection_in_tree(
@@ -1606,6 +1595,12 @@ fn run_command(command: Command, client: &mut impl RpcCaller) -> Result<String, 
         Command::Settings { command } => run_settings_command(command, client)?,
         Command::Tags { command } => run_tags_command(command, client)?,
         Command::Annotations { command } => run_annotations_command(command, client)?,
+        Command::Ocr { command } => {
+            return run_ocr_command(command, client);
+        }
+        Command::Rag { command } => {
+            return run_rag_command(command, client);
+        }
         Command::Export { .. } => unreachable!("export commands return raw output above"),
         Command::FindPdfs {
             collection, limit, ..
@@ -1753,7 +1748,7 @@ fn run_rag_hits_command(
 ) -> Result<String, String> {
     if !options.zotero {
         return Err(
-            "zotron-rag hits currently supports only the fixture-covered --zotero backend in Rust"
+            "zotron rag hits currently supports only the fixture-covered --zotero backend in Rust"
                 .to_string(),
         );
     }
@@ -3024,15 +3019,14 @@ fn run_settings_command(
                 .map_err(|err| format!("INVALID_JSON: Could not read JSON: {err}"))?;
             let settings: Value = serde_json::from_str(&raw)
                 .map_err(|err| format!("INVALID_JSON: Could not parse JSON: {err}"))?;
-            let params = serde_json::json!({"settings": settings});
             if dry_run {
                 (
-                    dry_run_value("settings.setAll", params),
+                    dry_run_value("settings.setAll", settings),
                     JsonStyle::PythonCompact,
                 )
             } else {
                 (
-                    client.call("settings.setAll", Some(params))?,
+                    client.call("settings.setAll", Some(settings))?,
                     JsonStyle::PythonCompact,
                 )
             }
@@ -3245,7 +3239,9 @@ fn parse_annotation_sort_index(raw: String) -> Result<Value, String> {
     let valid = match &parsed {
         Value::Number(number) => number.as_f64().is_some_and(f64::is_finite),
         Value::String(value) => {
-            !value.trim().is_empty() && value.trim().parse::<f64>().is_ok_and(f64::is_finite)
+            is_zotero_pdf_sort_index(value.trim())
+                || (!value.trim().is_empty()
+                    && value.trim().parse::<f64>().is_ok_and(f64::is_finite))
         }
         _ => false,
     };
@@ -3256,6 +3252,20 @@ fn parse_annotation_sort_index(raw: String) -> Result<Value, String> {
             "INVALID_ARGS: --sort-index must be a finite number or numeric string, got {parsed}"
         ))
     }
+}
+
+fn is_zotero_pdf_sort_index(value: &str) -> bool {
+    let mut parts = value.split('|');
+    matches!(
+        (parts.next(), parts.next(), parts.next(), parts.next()),
+        (Some(page), Some(offset), Some(y), None)
+            if page.len() == 5
+                && offset.len() == 6
+                && y.len() == 5
+                && page.chars().all(|ch| ch.is_ascii_digit())
+                && offset.chars().all(|ch| ch.is_ascii_digit())
+                && y.chars().all(|ch| ch.is_ascii_digit())
+    )
 }
 
 fn run_attachments_command(
