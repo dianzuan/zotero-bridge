@@ -85,6 +85,8 @@ Zotero Data Directory/
 - 不把 raw markdown 当唯一 truth。markdown 可以派生，但不能丢掉 page、bbox、table、figure、provider 原始字段。
 - 不在 zotron 里直接生成最终 paper cards，除非同时保留 span provenance。paper card 聚合交给 academic-zh。
 - 不默认复制 PDF 里的所有图片。默认保留 image reference / bbox / caption；需要视觉复核时再裁剪。
+- 不做通用看图式 OCR fallback；不要把 PDF page 喂给视觉模型后让它按 prompt
+  生成 OCR-like Markdown/JSON。主路径必须保留 parser/provider 的原始结构输出。
 - 不做 graph RAG / citation graph。这是另一个阶段。
 
 ## 2. 三层数据模型
@@ -288,15 +290,11 @@ Provider 分三类，不要混成一种。
 | 层级 | Provider | 状态 |
 |---|---|---|
 | 默认 live | GLM-OCR | 默认 OCR provider；走智谱 layout parsing endpoint |
-| live fallback | Qwen-VL-OCR | DashScope `qwen-vl-ocr` 浅接入；还需补官方 `ocr_options`、逐页渲染和返回格式解析 |
-| live fallback | custom / OpenAI-compatible vision | 用户自带 endpoint；适合临时 VLM OCR |
 | parser scaffold | MinerU | 已有 raw parser scaffold；待接本地 CLI transport |
 | parser scaffold | Mistral OCR | 已有 raw parser scaffold；待接 `/v1/ocr` transport |
 | parser scaffold | PaddleOCR-VL | 已有 raw parser scaffold；待接本地/服务端 transport |
 | spec only | Mathpix | 公式/表格/STEM 专项候选 |
 | spec only | olmOCR | 自托管英文 PDF linearization 候选 |
-| spec only | Doubao OCR | VLM OCR fallback 候选 |
-| spec only | openai-vision-compat | generic VLM OCR preset |
 
 ### 4.1 结构化 document parser 优先
 
@@ -315,15 +313,19 @@ Provider 分三类，不要混成一种。
 - Mistral OCR 官方 `mistral-ocr-latest` / `/v1/ocr` 返回 markdown、图片 bbox 和文档结构 metadata；新版还支持 table_format、header/footer、confidence scores 等参数，适合云端结构化 OCR。
 - PaddleOCR/PaddleOCR-VL 是本地/服务化优先的开源路线；PaddleOCR-VL 1.5 面向 document parsing，适合做自托管 provider。
 
-### 4.2 VLM OCR 作为 fallback
+### 4.2 图表处理边界
 
-Qwen-VL-OCR、Doubao OCR、OpenAI-compatible vision endpoint 更像“按 prompt 输出文本/JSON”的 VLM 通道。它们可以补充支持，但 provenance 稳定性通常弱于 document parser。
+Zotron 不把图像内容改写成合成文本作为检索证据。图像、插图、截图类 block
+默认只保留 provider 返回的引用、caption、bbox、page 和原始 metadata；需要视觉
+复核时再裁剪，不默认复制所有图片。
 
 MVP 策略：
 
-- 支持它们返回 markdown/text。
-- 若 prompt 可控，可要求输出 JSON blocks。
-- 但不要把 VLM fallback 的 bbox/provenance 质量和 MinerU/Paddle/Mistral 等同看待。
+- 表格正常进入主线：如果 provider 返回结构化 table 或 faithful Markdown table，
+  就 normalize 成 table block/chunk，并保留原始 provider 字段。
+- Figure/image block 不默认进入全文语义检索文本；除非有 caption 或文档 parser
+  明确给出可引用文本。
+- 不引入 Qwen/Doubao/OpenAI-compatible vision 这类 prompt-only OCR fallback。
 
 ### 4.3 公式/表格专项
 
@@ -580,7 +582,6 @@ agent-plugin/
 
 - `OCREngineSpec` / registry。
 - Adapter：GLM、Mistral、MinerU、PaddleOCR-VL。
-- VLM fallback：Qwen / custom OpenAI-compatible。
 - Provider raw -> zotron blocks normalizer。
 
 验收：
@@ -700,7 +701,7 @@ agent-plugin/
   默认必须写入 attachment sidecar 或本机 artifact cache。
 - `.npz` 不是人读格式，所以必须保留 `.zotron-chunks.jsonl`。
 - Provider bbox 坐标系可能不同，需要记录 coordinate system。
-- VLM fallback 的 provenance 弱，不能和 parser provider 混同评分。
+- 看图式 OCR-like provider 不进入主线，避免 prompt 生成文本污染原始证据。
 - Full Zotero storage sync 会占配额；图片 crop 默认不复制是必要约束。
 - 一次改动较大，应按 phase 合并，避免一个 PR 同时改 OCR、embedding、README、RPC。
 

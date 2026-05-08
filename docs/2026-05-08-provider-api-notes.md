@@ -6,12 +6,32 @@ These notes capture provider-specific API shapes collected while preparing live
 OCR and embedding integration. They are reference material for the Rust
 migration; do not put credentials in this file.
 
+## Scope Decision
+
+Zotron's OCR/parser pipeline should preserve source-document evidence rather
+than ask a general vision model to rewrite page images. The mainline providers
+must expose document-parser style structure such as text spans, tables,
+reading order, page numbers, and bbox/layout metadata.
+
+Out of scope for the current milestone:
+
+- Generic image-to-text or OCR-like VLM fallback providers.
+- Prompt-only conversion of PDF pages into invented Markdown/JSON.
+- Treating figures as textual evidence. Figure/image blocks should keep
+  references, captions, bbox, and raw provider metadata; they should not be
+  summarized into synthetic text by default.
+
+Tables are in scope when a document parser returns structured table content or
+faithful Markdown. Provider raw output remains the audit source, and Markdown is
+only a convenience projection.
+
 ## GLM-OCR
 
 Source: https://docs.bigmodel.cn/api-reference/%E6%A8%A1%E5%9E%8B-api/%E6%96%87%E6%A1%A3%E8%A7%A3%E6%9E%90
 
-Purpose: synchronous document and image layout parsing with Markdown, layout
-details, and optional visualization output.
+Purpose: synchronous document layout parsing with Markdown, layout details, and
+optional visualization output. The provider supports images, but Zotron's core
+path is PDF/document parsing rather than generic image-to-text.
 
 Environment:
 
@@ -45,7 +65,8 @@ Request body:
 Required fields:
 
 - `model`: must be `glm-ocr`.
-- `file`: image or PDF document, either URL or base64.
+- `file`: PDF document URL/base64 for the Zotron mainline path. The upstream
+  API also accepts images, but generic image-to-text is not a Zotron milestone.
 
 Documented limits:
 
@@ -140,7 +161,7 @@ Notes:
   `markdown.images`, and `outputImages`.
 
 The Rust scaffold currently does not match this contract. It still builds an
-OpenAI/VLM-style message payload for `paddleocr-vl`; it must be changed before
+chat/message-style payload for `paddleocr-vl`; it must be changed before
 live Paddle sync calls can work.
 
 ### Async OCR jobs endpoint
