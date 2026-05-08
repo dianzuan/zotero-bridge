@@ -19,7 +19,11 @@ fn ocr_registry_exposes_key_first_contract_providers() {
     assert_eq!(paddle.request_style, "paddleocr-vl");
 
     let mineru = ocr_provider_spec("mineru").expect("mineru provider exists");
-    assert_eq!(mineru.auth, "none");
+    assert_eq!(mineru.request_style, "mineru-cloud-precise");
+    assert_eq!(mineru.auth, "bearer");
+
+    let mineru_cli = ocr_provider_spec("mineru-cli").expect("mineru cli provider exists");
+    assert_eq!(mineru_cli.auth, "none");
 
     let err = ocr_provider_spec("missing").expect_err("unknown provider is explicit");
     assert!(err.contains("Unknown OCR provider"));
@@ -130,6 +134,33 @@ fn chunks_respect_max_chars_within_a_section() {
         chunks.iter().all(|chunk| chunk.text.chars().count() <= 34),
         "no emitted chunk should exceed max_chars when individual blocks fit"
     );
+}
+
+#[test]
+fn table_blocks_are_standalone_chunks_with_caption_context() {
+    let payload = json!({"blocks": [
+        {"page": 1, "type": "heading", "text": "第二节 数据"},
+        {"page": 1, "type": "paragraph", "text": "样本覆盖全部A股公司。"},
+        {"page": 1, "type": "table", "caption": "表1 描述统计", "headers": ["变量", "均值"], "rows": [["ROA", "0.08"]], "bbox": [10, 20, 300, 120]},
+        {"page": 1, "type": "paragraph", "text": "统计结果显示盈利能力分化。"}
+    ]});
+    let blocks = blocks_from_provider_payload(&payload, "ITEM", "ATT", "mineru");
+
+    let chunks = chunks_from_blocks(&blocks, 512);
+
+    assert_eq!(
+        chunks.len(),
+        3,
+        "table evidence must not merge into neighboring paragraphs"
+    );
+    assert_eq!(chunks[0].block_keys, vec!["ATT:p1:b1"]);
+    assert_eq!(chunks[1].block_keys, vec!["ATT:p1:b2"]);
+    assert_eq!(chunks[1].section_path, vec!["第二节 数据"]);
+    assert_eq!(chunks[1].page_start, Some(1));
+    assert!(chunks[1].text.contains("表1 描述统计"));
+    assert!(chunks[1].text.contains("变量"));
+    assert!(chunks[1].text.contains("ROA"));
+    assert_eq!(chunks[2].block_keys, vec!["ATT:p1:b3"]);
 }
 
 #[test]
@@ -264,6 +295,7 @@ fn ocr_request_builders_emit_provider_specific_transport_contracts() {
         file_name: "paper.pdf".to_string(),
         mime_type: "application/pdf".to_string(),
         content_base64: "JVBERi0x".to_string(),
+        source_url: Some("https://example.test/paper.pdf".to_string()),
         local_path: Some("/tmp/paper.pdf".to_string()),
         output_dir: Some("/tmp/mineru-out".to_string()),
     };
@@ -289,14 +321,27 @@ fn ocr_request_builders_emit_provider_specific_transport_contracts() {
 
     let mineru = build_ocr_provider_request("mineru", &input).expect("mineru request builds");
     assert_eq!(mineru.provider, "mineru");
-    assert_eq!(mineru.style, "mineru-cli");
-    assert_eq!(mineru.method, None);
-    assert_eq!(mineru.auth_header, None);
+    assert_eq!(mineru.style, "mineru-cloud-precise");
+    assert_eq!(mineru.method, Some("POST"));
+    assert_eq!(mineru.url, Some("https://mineru.net/api/v4/extract/task"));
+    assert_eq!(mineru.auth_header, Some("Authorization"));
+    assert_eq!(mineru.body["url"], "https://example.test/paper.pdf");
+    assert_eq!(mineru.body["model_version"], "vlm");
+    assert_eq!(mineru.body["data_id"], "ATTACHKEY");
+    assert!(mineru.body.get("item_key").is_none());
+    assert!(mineru.command.is_empty());
+
+    let mineru_cli =
+        build_ocr_provider_request("mineru-cli", &input).expect("mineru cli request builds");
+    assert_eq!(mineru_cli.provider, "mineru-cli");
+    assert_eq!(mineru_cli.style, "mineru-cli");
+    assert_eq!(mineru_cli.method, None);
+    assert_eq!(mineru_cli.auth_header, None);
     assert_eq!(
-        mineru.command,
+        mineru_cli.command,
         vec!["mineru", "-p", "/tmp/paper.pdf", "-o", "/tmp/mineru-out"]
     );
-    assert!(mineru.body.is_null());
+    assert!(mineru_cli.body.is_null());
 }
 
 #[test]

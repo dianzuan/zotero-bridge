@@ -135,3 +135,87 @@ fn machine_artifact_store_root_follows_windows_roaming_appdata_convention() {
         "C:/Users/Alice/AppData/Roaming/Zotron/artifacts"
     );
 }
+
+#[test]
+fn provider_raw_markdown_and_image_assets_persist_as_machine_artifacts() {
+    use serde_json::json;
+    use zotron_types::{
+        provider_native_image_assets, provider_native_markdown, read_machine_artifact,
+        write_ocr_provider_artifacts,
+    };
+
+    let store = std::env::temp_dir().join(format!(
+        "zotron-provider-native-artifacts-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&store);
+    let payload = json!({
+        "errorCode": 0,
+        "result": {
+            "layoutParsingResults": [{
+                "markdown": {
+                    "text": "# 标题\n\n正文",
+                    "images": {"figure_1.png": "data:image/png;base64,AAAA"}
+                },
+                "outputImages": ["https://example.test/layout.png"]
+            }]
+        }
+    });
+
+    assert_eq!(
+        provider_native_markdown(&payload).as_deref(),
+        Some("# 标题\n\n正文")
+    );
+    assert!(provider_native_image_assets(&payload)
+        .expect("image assets")
+        .to_string()
+        .contains("figure_1.png"));
+
+    let records =
+        write_ocr_provider_artifacts(&store, "ITEMKEY", "ATTACHKEY", "paddleocr-vl", &payload)
+            .expect("provider artifacts write");
+
+    assert_eq!(records.len(), 3);
+    assert!(records.iter().any(|record| {
+        record
+            .relative_path
+            .to_string_lossy()
+            .ends_with("zotron-ocr.raw.zip")
+    }));
+    assert_eq!(
+        String::from_utf8(
+            read_machine_artifact(
+                &store,
+                "ITEMKEY",
+                "ATTACHKEY",
+                MachineArtifactKind::OcrNativeMarkdown,
+            )
+            .expect("native markdown artifact")
+        )
+        .expect("markdown utf8"),
+        "# 标题\n\n正文"
+    );
+    let assets = String::from_utf8(
+        read_machine_artifact(
+            &store,
+            "ITEMKEY",
+            "ATTACHKEY",
+            MachineArtifactKind::OcrNativeAssets,
+        )
+        .expect("native assets artifact"),
+    )
+    .expect("assets utf8");
+    assert!(assets.contains("paddleocr-vl"));
+    assert!(assets.contains("figure_1.png"));
+    assert!(assets.contains("layout.png"));
+
+    let _ = std::fs::remove_dir_all(&store);
+}
+
+#[test]
+fn evidence_artifact_filter_covers_native_provider_sidecars() {
+    use zotron_types::is_zotron_evidence_artifact;
+
+    assert!(is_zotron_evidence_artifact("ITEM.zotron-ocr.native.md"));
+    assert!(is_zotron_evidence_artifact("ITEM.zotron-ocr.assets.json"));
+}

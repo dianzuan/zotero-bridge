@@ -352,8 +352,12 @@ fn ocr_provider_contracts_are_key_first_for_glm_paddle_and_mineru() {
     assert_eq!(paddle.auth_header, "Authorization");
 
     let mineru = zotron_cli::ocr_provider_spec("mineru").expect("mineru spec");
-    assert_eq!(mineru.request_style, "mineru-cli");
-    assert_eq!(mineru.auth, "none");
+    assert_eq!(mineru.request_style, "mineru-cloud-precise");
+    assert_eq!(mineru.auth, "bearer");
+
+    let mineru_cli = zotron_cli::ocr_provider_spec("mineru-cli").expect("mineru cli spec");
+    assert_eq!(mineru_cli.request_style, "mineru-cli");
+    assert_eq!(mineru_cli.auth, "none");
 
     let serialized = serde_json::to_value(glm).expect("spec serializes");
     assert!(
@@ -570,16 +574,17 @@ fn chunks_from_blocks_preserve_structure_and_do_not_cross_sections() {
     ];
 
     let chunks = zotron_cli::chunks_from_blocks(&blocks, 1000).expect("chunk blocks");
-    assert_eq!(chunks.len(), 2);
+    assert_eq!(chunks.len(), 3);
     assert_eq!(chunks[0]["chunk_key"], "ATT1:c0");
     assert_eq!(chunks[0]["item_key"], "ITEM1");
     assert_eq!(chunks[0]["attachment_key"], "ATT1");
-    assert_eq!(chunks[0]["block_keys"], json!(["ATT1:p1:b1", "ATT1:p1:b2"]));
+    assert_eq!(chunks[0]["block_keys"], json!(["ATT1:p1:b1"]));
     assert_eq!(chunks[0]["section_path"], json!(["引言"]));
     assert_eq!(chunks[0]["page_start"], 1);
     assert_eq!(chunks[0]["page_end"], 1);
-    assert_eq!(chunks[0]["evidence_refs"][1]["bbox"], json!([1, 2, 3, 4]));
-    assert_eq!(chunks[1]["section_path"], json!(["方法"]));
+    assert_eq!(chunks[1]["block_keys"], json!(["ATT1:p1:b2"]));
+    assert_eq!(chunks[1]["evidence_refs"][0]["bbox"], json!([1, 2, 3, 4]));
+    assert_eq!(chunks[2]["section_path"], json!(["方法"]));
 
     let serialized = serde_json::to_string(&chunks).expect("chunks serialize");
     assert!(!serialized.contains("block_id"));

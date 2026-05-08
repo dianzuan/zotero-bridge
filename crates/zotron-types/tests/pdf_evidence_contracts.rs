@@ -27,8 +27,8 @@ fn ocr_provider_contracts_are_key_first_for_target_providers() {
         .iter()
         .find(|spec| spec.provider_key == "mineru")
         .unwrap();
-    assert_eq!(mineru.request_style, OcrRequestStyle::MineruCli);
-    assert!(!mineru.requires_api_key);
+    assert_eq!(mineru.request_style, OcrRequestStyle::MineruCloudPrecise);
+    assert!(mineru.requires_api_key);
 }
 
 #[test]

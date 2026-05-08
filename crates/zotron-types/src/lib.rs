@@ -82,6 +82,7 @@ pub struct AcademicZhHit {
 pub enum OcrRequestStyle {
     GlmLayoutParsing,
     PaddleocrVl,
+    MineruCloudPrecise,
     MineruCli,
 }
 
@@ -96,6 +97,7 @@ impl OcrRequestStyle {
         match self {
             Self::GlmLayoutParsing => "glm-layout-parsing",
             Self::PaddleocrVl => "paddleocr-vl",
+            Self::MineruCloudPrecise => "mineru-cloud-precise",
             Self::MineruCli => "mineru-cli",
         }
     }
@@ -126,6 +128,8 @@ pub struct OcrRequestInput {
     pub file_name: String,
     pub mime_type: String,
     pub content_base64: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -355,6 +359,16 @@ pub fn builtin_ocr_provider_specs() -> Vec<OcrProviderSpec> {
         OcrProviderSpec {
             id: "mineru",
             provider_key: "mineru",
+            request_style: OcrRequestStyle::MineruCloudPrecise,
+            auth: "bearer",
+            auth_header: "Authorization",
+            supports_pdf_direct: true,
+            requires_api_key: true,
+            key_field: "attachment_key",
+        },
+        OcrProviderSpec {
+            id: "mineru-cli",
+            provider_key: "mineru-cli",
             request_style: OcrRequestStyle::MineruCli,
             auth: "none",
             auth_header: "",
@@ -415,6 +429,40 @@ pub fn build_ocr_provider_request(
             }),
             command: Vec::new(),
         }),
+        OcrRequestStyle::MineruCloudPrecise => {
+            let source_url = input
+                .source_url
+                .as_deref()
+                .filter(|value| is_http_url(value))
+                .or_else(|| input.content_base64.trim().strip_prefix("url:"))
+                .or_else(|| {
+                    is_http_url(input.content_base64.trim()).then(|| input.content_base64.trim())
+                })
+                .ok_or_else(|| {
+                    "MinerU Cloud precise OCR request requires source_url or URL content_base64"
+                        .to_string()
+                })?;
+
+            Ok(OcrProviderRequest {
+                provider: spec.provider_key,
+                style: spec.request_style.as_str(),
+                key_field: spec.key_field,
+                method: Some("POST"),
+                url: Some("https://mineru.net/api/v4/extract/task"),
+                auth_header: Some(spec.auth_header),
+                body: json!({
+                    "url": source_url,
+                    "model_version": "vlm",
+                    "is_ocr": false,
+                    "enable_formula": true,
+                    "enable_table": true,
+                    "language": "ch",
+                    "data_id": input.attachment_key,
+                    "page_ranges": "1-200",
+                }),
+                command: Vec::new(),
+            })
+        }
         OcrRequestStyle::MineruCli => {
             let local_path = input
                 .local_path
@@ -705,11 +753,13 @@ pub fn execute_embedding_provider_request(
 }
 
 pub fn is_zotron_evidence_artifact(title: &str) -> bool {
-    const SUFFIXES: [&str; 4] = [
+    const SUFFIXES: [&str; 6] = [
         ".zotron-ocr.raw.zip",
         ".zotron-blocks.jsonl",
         ".zotron-chunks.jsonl",
         ".zotron-embed.npz",
+        ".zotron-ocr.native.md",
+        ".zotron-ocr.assets.json",
     ];
     SUFFIXES.iter().any(|suffix| title.ends_with(suffix))
 }
@@ -725,6 +775,8 @@ pub enum MachineArtifactKind {
     Blocks,
     Chunks,
     EmbeddingVectors,
+    OcrNativeMarkdown,
+    OcrNativeAssets,
 }
 
 impl MachineArtifactKind {
@@ -734,6 +786,8 @@ impl MachineArtifactKind {
             Self::Blocks => "zotron-blocks.jsonl",
             Self::Chunks => "zotron-chunks.jsonl",
             Self::EmbeddingVectors => "zotron-embed.npz",
+            Self::OcrNativeMarkdown => "zotron-ocr.native.md",
+            Self::OcrNativeAssets => "zotron-ocr.assets.json",
         }
     }
 }
@@ -905,6 +959,150 @@ pub fn machine_artifact_store_root() -> PathBuf {
         userprofile.as_deref(),
         home.as_deref(),
     )
+}
+
+/// Extract provider-native Markdown from known OCR response shapes.
+///
+/// Markdown is persisted as an audit/convenience artifact only; normalized
+/// blocks remain the retrieval source of truth when structured payloads exist.
+pub fn provider_native_markdown(payload: &Value) -> Option<String> {
+    if let Some(markdown) = payload.get("md_results").and_then(Value::as_str) {
+        return non_empty_string(markdown);
+    }
+    if let Some(markdown) = payload.get("markdown").and_then(Value::as_str) {
+        return non_empty_string(markdown);
+    }
+    if let Some(markdown) = payload.pointer("/markdown/text").and_then(Value::as_str) {
+        return non_empty_string(markdown);
+    }
+    if let Some(results) = payload
+        .pointer("/result/layoutParsingResults")
+        .and_then(Value::as_array)
+    {
+        let parts = results
+            .iter()
+            .filter_map(|result| result.pointer("/markdown/text").and_then(Value::as_str))
+            .filter(|text| !text.trim().is_empty())
+            .collect::<Vec<_>>();
+        if !parts.is_empty() {
+            return Some(parts.join("\n\n"));
+        }
+    }
+    if let Some(result) = payload.get("result").and_then(Value::as_str) {
+        return non_empty_string(result);
+    }
+    None
+}
+
+/// Extract provider-native image/layout asset references from known OCR shapes.
+///
+/// Values are preserved without interpretation so downstream tooling can fetch
+/// or decode provider-specific URLs/base64 payloads without re-running OCR.
+pub fn provider_native_image_assets(payload: &Value) -> Option<Value> {
+    let mut assets = serde_json::Map::new();
+    if let Some(images) = payload.get("layout_visualization") {
+        assets.insert("layout_visualization".to_string(), images.clone());
+    }
+    if let Some(images) = payload.get("outputImages") {
+        assets.insert("outputImages".to_string(), images.clone());
+    }
+    if let Some(images) = payload.pointer("/markdown/images") {
+        assets.insert("markdown_images".to_string(), images.clone());
+    }
+    if let Some(results) = payload
+        .pointer("/result/layoutParsingResults")
+        .and_then(Value::as_array)
+    {
+        let page_assets = results
+            .iter()
+            .enumerate()
+            .filter_map(|(index, result)| {
+                let mut page = serde_json::Map::new();
+                if let Some(images) = result.pointer("/markdown/images") {
+                    page.insert("markdown_images".to_string(), images.clone());
+                }
+                if let Some(images) = result.get("outputImages") {
+                    page.insert("outputImages".to_string(), images.clone());
+                }
+                (!page.is_empty()).then(|| {
+                    json!({
+                        "page": index as u64 + 1,
+                        "assets": Value::Object(page),
+                    })
+                })
+            })
+            .collect::<Vec<_>>();
+        if !page_assets.is_empty() {
+            assets.insert(
+                "layout_parsing_results".to_string(),
+                Value::Array(page_assets),
+            );
+        }
+    }
+
+    (!assets.is_empty()).then(|| Value::Object(assets))
+}
+
+/// Persist raw OCR provider JSON plus native Markdown/image asset sidecars.
+///
+/// The raw payload is always written as `zotron-ocr.raw.zip` for compatibility
+/// with the existing artifact vocabulary, while extracted native Markdown and
+/// image references are written only when the provider returned them.
+pub fn write_ocr_provider_artifacts(
+    store_root: impl AsRef<Path>,
+    item_key: &str,
+    attachment_key: &str,
+    provider: &str,
+    payload: &Value,
+) -> io::Result<Vec<MachineArtifactRecord>> {
+    let raw_bundle = json!({
+        "provider": provider,
+        "payload": payload,
+    });
+    let raw_bytes = serde_json::to_vec_pretty(&raw_bundle).map_err(json_to_io_error)?;
+    let mut records = vec![write_machine_artifact(
+        store_root.as_ref(),
+        item_key,
+        attachment_key,
+        MachineArtifactKind::OcrRaw,
+        &raw_bytes,
+    )?];
+
+    if let Some(markdown) = provider_native_markdown(payload) {
+        records.push(write_machine_artifact(
+            store_root.as_ref(),
+            item_key,
+            attachment_key,
+            MachineArtifactKind::OcrNativeMarkdown,
+            markdown.as_bytes(),
+        )?);
+    }
+
+    if let Some(assets) = provider_native_image_assets(payload) {
+        let bytes = serde_json::to_vec_pretty(&json!({
+            "provider": provider,
+            "assets": assets,
+        }))
+        .map_err(json_to_io_error)?;
+        records.push(write_machine_artifact(
+            store_root.as_ref(),
+            item_key,
+            attachment_key,
+            MachineArtifactKind::OcrNativeAssets,
+            &bytes,
+        )?);
+    }
+
+    Ok(records)
+}
+
+fn non_empty_string(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
+fn json_to_io_error(err: serde_json::Error) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, err)
 }
 
 pub fn machine_artifact_absolute_path(
@@ -1081,6 +1279,16 @@ fn normalize_ocr_payload(payload: &Value) -> Value {
         return json!({ "blocks": content_list });
     }
 
+    if let Some(content_list) = payload.get("content_list_v2").and_then(Value::as_array) {
+        return normalize_mineru_content_list_v2(content_list);
+    }
+
+    if let Some(data) = payload.get("data") {
+        if data.is_object() {
+            return normalize_ocr_payload(data);
+        }
+    }
+
     if let Some(layout_details) = payload.get("layout_details").and_then(Value::as_array) {
         let pages = layout_details
             .iter()
@@ -1147,6 +1355,34 @@ fn normalize_ocr_payload(payload: &Value) -> Value {
     payload.clone()
 }
 
+fn normalize_mineru_content_list_v2(content_list: &[Value]) -> Value {
+    let pages = content_list
+        .iter()
+        .enumerate()
+        .filter_map(|(index, page)| {
+            let page_idx = page
+                .get("page_idx")
+                .or_else(|| page.get("page"))
+                .and_then(Value::as_u64)
+                .unwrap_or(index as u64 + 1);
+            let blocks = page
+                .get("blocks")
+                .or_else(|| page.get("items"))
+                .or_else(|| page.get("content"))
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            (!blocks.is_empty()).then(|| {
+                json!({
+                    "page": page_idx,
+                    "blocks": blocks,
+                })
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({ "pages": pages })
+}
+
 fn blocks_from_markdown_text(markdown: &str) -> Vec<Value> {
     markdown
         .lines()
@@ -1170,6 +1406,10 @@ fn blocks_from_markdown_text(markdown: &str) -> Vec<Value> {
             }))
         })
         .collect()
+}
+
+fn is_http_url(value: &str) -> bool {
+    value.starts_with("http://") || value.starts_with("https://")
 }
 
 fn data_url_file_payload(input: &OcrRequestInput) -> String {
@@ -1200,12 +1440,8 @@ pub fn chunks_from_blocks(blocks: &[PdfEvidenceBlock], max_chars: usize) -> Vec<
 
     for block in blocks {
         if is_heading_type(&block.block_type) {
-            if !current.is_empty() {
-                let chunk_key = format!("{attachment_key}:c{}", chunks.len());
-                chunks.push(StructureChunk::from_blocks(chunk_key, &current));
-                current.clear();
-                current_chars = 0;
-            }
+            flush_chunk(&mut chunks, &mut current, &attachment_key);
+            current_chars = 0;
             current_section = vec![block.text.clone()];
             continue;
         }
@@ -1217,33 +1453,50 @@ pub fn chunks_from_blocks(blocks: &[PdfEvidenceBlock], max_chars: usize) -> Vec<
         };
 
         if !current.is_empty() && !same_section(&current[0].section_path, &block_section) {
-            let chunk_key = format!("{attachment_key}:c{}", chunks.len());
-            chunks.push(StructureChunk::from_blocks(chunk_key, &current));
-            current.clear();
-            current_chars = 0;
-        }
-
-        let block_chars = block.text.chars().count();
-        let joined_chars = current_chars + if current.is_empty() { 0 } else { 2 } + block_chars;
-        if max_chars > 0 && !current.is_empty() && joined_chars > max_chars {
-            let chunk_key = format!("{attachment_key}:c{}", chunks.len());
-            chunks.push(StructureChunk::from_blocks(chunk_key, &current));
-            current.clear();
+            flush_chunk(&mut chunks, &mut current, &attachment_key);
             current_chars = 0;
         }
 
         let mut block = block.clone();
         block.section_path = block_section;
+
+        if is_table_type(&block.block_type) {
+            flush_chunk(&mut chunks, &mut current, &attachment_key);
+            current_chars = 0;
+            chunks.push(StructureChunk::from_blocks(
+                format!("{attachment_key}:c{}", chunks.len()),
+                std::slice::from_ref(&block),
+            ));
+            continue;
+        }
+
+        let block_chars = block.text.chars().count();
+        let joined_chars = current_chars + if current.is_empty() { 0 } else { 2 } + block_chars;
+        if max_chars > 0 && !current.is_empty() && joined_chars > max_chars {
+            flush_chunk(&mut chunks, &mut current, &attachment_key);
+            current_chars = 0;
+        }
+
         current_chars += if current.is_empty() { 0 } else { 2 } + block_chars;
         current.push(block);
     }
 
-    if !current.is_empty() {
-        let chunk_key = format!("{attachment_key}:c{}", chunks.len());
-        chunks.push(StructureChunk::from_blocks(chunk_key, &current));
-    }
+    flush_chunk(&mut chunks, &mut current, &attachment_key);
 
     chunks
+}
+
+fn flush_chunk(
+    chunks: &mut Vec<StructureChunk>,
+    current: &mut Vec<PdfEvidenceBlock>,
+    attachment_key: &str,
+) {
+    if current.is_empty() {
+        return;
+    }
+    let chunk_key = format!("{attachment_key}:c{}", chunks.len());
+    chunks.push(StructureChunk::from_blocks(chunk_key, current));
+    current.clear();
 }
 
 fn push_blocks(
@@ -1268,14 +1521,18 @@ fn push_blocks(
             .and_then(Value::as_str)
             .unwrap_or("unknown")
             .to_string();
-        let text = raw
-            .get("text")
-            .or_else(|| raw.get("block_content"))
-            .or_else(|| raw.get("content"))
-            .or_else(|| raw.get("caption"))
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_string();
+        let normalized_type = normalize_block_type(&block_type);
+        let text = if is_table_type(normalized_type) {
+            table_text_from_raw(raw)
+        } else {
+            raw.get("text")
+                .or_else(|| raw.get("block_content"))
+                .or_else(|| raw.get("content"))
+                .or_else(|| raw.get("caption"))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string()
+        };
         if is_heading_type(&block_type) {
             *section_path = vec![text.clone()];
         }
@@ -1290,12 +1547,51 @@ fn push_blocks(
             item_key: item_key.to_string(),
             attachment_key: attachment_key.to_string(),
             page_idx,
-            block_type: normalize_block_type(&block_type).to_string(),
+            block_type: normalized_type.to_string(),
             bbox,
             section_path: section_path.clone(),
             text,
         });
     }
+}
+
+fn table_text_from_raw(raw: &Value) -> String {
+    let mut parts = Vec::<String>::new();
+    for key in [
+        "title",
+        "caption",
+        "headers",
+        "columns",
+        "row_headers",
+        "row_labels",
+        "units",
+        "text",
+        "block_content",
+        "content",
+        "markdown",
+        "html",
+        "rows",
+        "cells",
+        "table",
+    ] {
+        if let Some(text) = evidence_text_part(raw.get(key)) {
+            if !parts.iter().any(|part| part == &text) {
+                parts.push(text);
+            }
+        }
+    }
+    parts.join("\n\n")
+}
+
+fn evidence_text_part(value: Option<&Value>) -> Option<String> {
+    let value = value?;
+    let text = match value {
+        Value::String(text) => text.trim().to_string(),
+        Value::Array(_) | Value::Object(_) => serde_json::to_string(value).ok()?,
+        Value::Null => return None,
+        other => other.to_string(),
+    };
+    (!text.is_empty()).then_some(text)
 }
 
 fn bbox4(value: &Value) -> Option<[f64; 4]> {
@@ -1322,8 +1618,13 @@ fn normalize_block_type(block_type: &str) -> &str {
     match block_type {
         "title" | "doc_title" | "paragraph_title" | "heading" | "section" => "heading",
         "text" => "paragraph",
+        "table" | "table_body" | "table_caption" | "table_footnote" => "table",
         other => other,
     }
+}
+
+fn is_table_type(block_type: &str) -> bool {
+    normalize_block_type(block_type) == "table"
 }
 
 fn same_section(a: &[String], b: &[String]) -> bool {

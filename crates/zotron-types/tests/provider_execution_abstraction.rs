@@ -80,6 +80,7 @@ fn ocr_input() -> OcrRequestInput {
         file_name: "paper.pdf".to_string(),
         mime_type: "application/pdf".to_string(),
         content_base64: "JVBERi0x".to_string(),
+        source_url: Some("https://example.test/paper.pdf".to_string()),
         local_path: Some("/tmp/paper.pdf".to_string()),
         output_dir: Some("/tmp/mineru-out".to_string()),
     }
@@ -222,39 +223,44 @@ fn ocr_executor_outputs_key_first_blocks_without_zotero_write_surfaces() {
 }
 
 #[test]
-fn ocr_executor_routes_mineru_through_mock_cli_runner() {
-    let mut http = MockHttpTransport::default();
-    let mut cli = MockCommandRunner {
-        replies: vec![json!({"content_list":[
+fn ocr_executor_routes_mineru_cloud_precise_through_mock_http() {
+    let mut http = MockHttpTransport {
+        replies: vec![json!({"data":{"state":"done","content_list":[
             {"page_idx":4,"type":"title","text":"二、模型"},
             {"page_idx":4,"type":"text","text":"MinerU 正文"}
-        ]})],
+        ]}})],
         ..Default::default()
     };
+    let mut cli = MockCommandRunner::default();
 
     let blocks = execute_ocr_provider_request("mineru", &ocr_input(), &mut http, &mut cli)
-        .expect("mineru executes through injected command runner");
+        .expect("mineru cloud executes through injected HTTP transport");
 
     assert!(
-        http.seen.is_empty(),
-        "CLI providers must not invoke HTTP transport"
+        cli.seen.is_empty(),
+        "MinerU Cloud precise must not invoke CLI runner"
+    );
+    assert_eq!(http.seen.len(), 1);
+    assert_eq!(http.seen[0].provider, "mineru");
+    assert_eq!(http.seen[0].style, "mineru-cloud-precise");
+    assert_eq!(
+        http.seen[0].url.as_deref(),
+        Some("https://mineru.net/api/v4/extract/task")
     );
     assert_eq!(
-        cli.seen,
-        vec![vec![
-            "mineru",
-            "-p",
-            "/tmp/paper.pdf",
-            "-o",
-            "/tmp/mineru-out"
-        ]]
+        http.seen[0].auth_header_name.as_deref(),
+        Some("Authorization")
     );
+    assert!(http.seen[0].auth_header_value.is_none());
+    assert_eq!(http.seen[0].body["url"], "https://example.test/paper.pdf");
+    assert_eq!(http.seen[0].body["data_id"], "ATTACHKEY");
+    assert!(http.seen[0].body.get("item_key").is_none());
     assert_eq!(blocks[1].block_key, "ATTACHKEY:p4:b1");
     assert_eq!(blocks[1].section_path, vec!["二、模型"]);
 }
 
 #[test]
-fn mineru_executor_uses_local_provider_cli_without_zotero_rpc_or_storage_paths() {
+fn mineru_cli_executor_uses_local_provider_cli_without_zotero_rpc_or_storage_paths() {
     let mut http = MockHttpTransport::default();
     let mut cli = MockCommandRunner {
         replies: vec![json!({"content_list":[
@@ -263,8 +269,8 @@ fn mineru_executor_uses_local_provider_cli_without_zotero_rpc_or_storage_paths()
         ..Default::default()
     };
 
-    let blocks = execute_ocr_provider_request("mineru", &ocr_input(), &mut http, &mut cli)
-        .expect("MinerU executor emits normalized blocks");
+    let blocks = execute_ocr_provider_request("mineru-cli", &ocr_input(), &mut http, &mut cli)
+        .expect("MinerU CLI executor emits normalized blocks");
     let value = serde_json::to_value(&blocks).expect("blocks serialize");
 
     assert_no_legacy_id_fields(&value);
