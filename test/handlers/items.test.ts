@@ -641,5 +641,28 @@ describe("items handler", () => {
       // The citation key should include something derived from the item — be lenient on exact format
       expect(result.citationKey.length).to.be.greaterThan(0);
     });
+
+    it("combines Chinese lastName and firstName before year fallback", async () => {
+      const item: any = {
+        id: 6, key: "K6",
+        getField: (n: string) => {
+          if (n === "date") return "2026";
+          if (n === "extra") return "";
+          return "";
+        },
+        getCreators: () => [{ lastName: "董", firstName: "敏凯", creatorTypeID: 1 }],
+        isNote: () => false, isAttachment: () => false,
+      };
+      installZotero({
+        Items: { getAsync: sinon.stub().withArgs(6).resolves(item) },
+        Date: { strToDate: sinon.stub().returns({ year: 2026 }) },
+        CreatorTypes: { getName: () => "author" },
+      });
+
+      const { itemsHandlers } = await import("../../src/handlers/items");
+      const result = await itemsHandlers.citationKey({ key: 6 });
+
+      expect(result.citationKey).to.equal("董敏凯2026");
+    });
   });
 });

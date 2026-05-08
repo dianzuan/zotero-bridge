@@ -16,3 +16,13 @@ export function extractYear(item: { getField: (name: string) => string }): numbe
   const parsed = Zotero.Date.strToDate(dateStr);
   return typeof parsed?.year === "number" ? parsed.year : "";
 }
+
+export function creatorKeyName(creator: { firstName?: string; lastName?: string; name?: string } | undefined): string {
+  if (!creator) return "Unknown";
+  if (creator.name) return creator.name.replace(/\s+/g, "");
+  const firstName = creator.firstName || "";
+  const lastName = creator.lastName || "";
+  const combined = `${lastName}${firstName}`;
+  if (/[\u3400-\u9fff]/.test(combined)) return combined || "Unknown";
+  return [lastName, firstName].filter(Boolean).join("").replace(/\s+/g, "") || "Unknown";
+}

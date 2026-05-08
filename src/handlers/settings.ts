@@ -22,9 +22,19 @@ const SETTINGS_KEYS = [
 // ReadonlySet derived from SETTINGS_KEYS — shared by set (includes-check) and
 // setAll (findUnknownKey). Extend here when new settings are introduced.
 const KNOWN_KEYS: ReadonlySet<string> = new Set(SETTINGS_KEYS);
+const SECRET_KEYS: ReadonlySet<string> = new Set([
+  "ocr.apiKey",
+  "embedding.apiKey",
+]);
 
 function getSetting(key: string): any {
   return getPref(key);
+}
+
+function redactSetting(key: string, value: any): any {
+  if (!SECRET_KEYS.has(key)) return value;
+  if (value === undefined || value === null || value === "") return "";
+  return "REDACTED";
 }
 
 export const settingsHandlers = {
@@ -33,7 +43,7 @@ export const settingsHandlers = {
     if (!KNOWN_KEYS.has(params.key)) {
       throw { code: -32602, message: `Unknown setting key: ${params.key}` };
     }
-    return { [params.key]: getSetting(params.key) };
+    return { [params.key]: redactSetting(params.key, getSetting(params.key)) };
   },
 
   async set(params: { key: string; value: any }) {
@@ -42,13 +52,13 @@ export const settingsHandlers = {
       throw { code: -32602, message: `Unknown setting: ${params.key}. Valid: ${SETTINGS_KEYS.join(", ")}` };
     }
     setPref(params.key, params.value);
-    return { key: params.key, value: params.value };
+    return { key: params.key, value: redactSetting(params.key, params.value) };
   },
 
   async getAll() {
     const result: Record<string, any> = {};
     for (const key of SETTINGS_KEYS) {
-      result[key] = getSetting(key);
+      result[key] = redactSetting(key, getSetting(key));
     }
     return result;
   },
@@ -61,7 +71,7 @@ export const settingsHandlers = {
     const updated: Record<string, any> = {};
     for (const [key, value] of Object.entries(updates)) {
       setPref(key, value);
-      updated[key] = value;
+      updated[key] = redactSetting(key, value);
     }
     return { updated };
   },

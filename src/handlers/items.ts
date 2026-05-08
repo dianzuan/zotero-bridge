@@ -4,7 +4,7 @@
 import { registerHandlers } from "../server";
 import { splitChineseName, CJK_REGEX } from "../utils/chinese-name";
 import { serializeItem } from "../utils/serialize";
-import { extractYear } from "../utils/citation-key";
+import { creatorKeyName, extractYear } from "../utils/citation-key";
 import { requireItem, requireCollection, resolveItems } from "../utils/guards";
 import { sanitizePath } from "../utils/safe-path";
 
@@ -434,7 +434,7 @@ export const itemsHandlers = {
     // Try Better BibTeX citation key if available
     const extra = item.getField("extra") as string;
     const match = extra?.match(/Citation Key:\s*(\S+)/i);
-    const key = match ? match[1] : `${item.getCreators()[0]?.lastName || "Unknown"}${extractYear(item)}`;
+    const key = match ? match[1] : `${creatorKeyName(item.getCreators()[0])}${extractYear(item)}`;
     return { key: item.key, citationKey: key };
   },
 

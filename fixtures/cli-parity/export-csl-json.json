@@ -21,6 +21,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "[{'id': 'ITEM1', 'title': '乡村振兴与数字经济', 'type': 'article-journal'}]\n"
+    "stdout": "[\n  {\n    \"id\": \"ITEM1\",\n    \"title\": \"乡村振兴与数字经济\",\n    \"type\": \"article-journal\"\n  }\n]\n"
   }
 }

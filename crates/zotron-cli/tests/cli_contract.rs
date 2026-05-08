@@ -501,6 +501,112 @@ fn zotron_ocr_provider_json_executes_local_http_with_endpoint_and_env_credential
 }
 
 #[test]
+fn zotron_ocr_provider_json_can_build_input_from_local_file_without_shell_base64() {
+    let _guard = ENV_LOCK.lock().expect("env lock");
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider server");
+    let url = format!("http://{}", listener.local_addr().expect("local addr"));
+    let (tx, rx) = mpsc::channel();
+    let handle = thread::spawn(move || {
+        let (stream, _) = listener.accept().expect("accept OCR provider request");
+        let mut reader = BufReader::new(stream);
+        let (_headers, body) = read_http_request(&mut reader);
+        tx.send(body).expect("send captured OCR request");
+
+        let response = r#"{"choices":[{"message":{"content":"{\"pages\":[{\"page\":1,\"blocks\":[{\"type\":\"text\",\"text\":\"file mode\"}]}]}"}}]}"#
+            .as_bytes();
+        let mut stream = reader.into_inner();
+        write_json_response(&mut stream, response);
+    });
+
+    let pdf_path = std::env::temp_dir().join(format!("zotron-ocr-file-{}.pdf", std::process::id()));
+    fs::write(&pdf_path, b"%PDF-1").expect("write temp pdf");
+    std::env::set_var("ZOTRON_TEST_OCR_FILE_KEY", "ocr-env-key");
+
+    let out = zotron_cli::run([
+        "zotron",
+        "ocr",
+        "provider-json",
+        "--provider",
+        "glm",
+        "--file",
+        pdf_path.to_str().expect("temp pdf path is utf8"),
+        "--item-key",
+        "ITEMKEY",
+        "--attachment-key",
+        "ATTACHKEY",
+        "--endpoint",
+        &url,
+        "--api-key-env",
+        "ZOTRON_TEST_OCR_FILE_KEY",
+    ])
+    .expect("OCR provider-json file mode succeeds");
+
+    let payload: Value = serde_json::from_str(&out).expect("OCR provider output is JSON");
+    assert_eq!(payload["blocks"][0]["text"], "file mode");
+    let request_body: Value =
+        serde_json::from_str(&rx.recv().expect("captured body")).expect("request body JSON");
+    assert_eq!(request_body["file"], "data:application/pdf;base64,JVBERi0x");
+
+    std::env::remove_var("ZOTRON_TEST_OCR_FILE_KEY");
+    let _ = fs::remove_file(pdf_path);
+    handle.join().expect("server thread joins");
+}
+
+#[test]
+fn zotron_ocr_provider_json_returns_async_task_for_mineru_precise_submit() {
+    let _guard = ENV_LOCK.lock().expect("env lock");
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider server");
+    let url = format!("http://{}", listener.local_addr().expect("local addr"));
+    let handle = thread::spawn(move || {
+        let (stream, _) = listener.accept().expect("accept OCR provider request");
+        let mut reader = BufReader::new(stream);
+        let (_headers, _body) = read_http_request(&mut reader);
+
+        let response = r#"{"code":0,"data":{"task_id":"mineru-task-1"},"msg":"ok"}"#.as_bytes();
+        let mut stream = reader.into_inner();
+        write_json_response(&mut stream, response);
+    });
+
+    let input_path = temp_json_file(
+        "zotron-mineru-provider-json",
+        &json!({
+            "item_key": "ITEMKEY",
+            "attachment_key": "ATTACHKEY",
+            "file_name": "paper.pdf",
+            "mime_type": "application/pdf",
+            "content_base64": "url:https://cdn-mineru.openxlab.org.cn/demo/example.pdf",
+            "source_url": "https://cdn-mineru.openxlab.org.cn/demo/example.pdf"
+        }),
+    );
+    std::env::set_var("ZOTRON_TEST_MINERU_KEY", "mineru-env-key");
+
+    let out = zotron_cli::run([
+        "zotron",
+        "ocr",
+        "provider-json",
+        "--provider",
+        "mineru",
+        "--input",
+        input_path.to_str().expect("temp input path is utf8"),
+        "--endpoint",
+        &url,
+        "--api-key-env",
+        "ZOTRON_TEST_MINERU_KEY",
+    ])
+    .expect("MinerU provider-json returns submitted task");
+
+    let payload: Value = serde_json::from_str(&out).expect("OCR provider output is JSON");
+    assert_eq!(payload["provider"], "mineru");
+    assert_eq!(payload["status"], "submitted");
+    assert_eq!(payload["task_id"], "mineru-task-1");
+    assert!(payload.get("blocks").is_none());
+
+    std::env::remove_var("ZOTRON_TEST_MINERU_KEY");
+    let _ = fs::remove_file(input_path);
+    handle.join().expect("server thread joins");
+}
+
+#[test]
 fn zotron_rag_subcommand_embedding_json_executes_custom_provider_against_local_http() {
     let _guard = ENV_LOCK.lock().expect("env lock");
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind local embedding server");
@@ -656,6 +762,48 @@ fn search_quick_collection_filters_collection_items_locally() {
                 "collections.getItems".to_string(),
                 Some(json!({"key": "COL1"})),
             ),
+        ]
+    );
+}
+
+#[test]
+fn search_fulltext_forwards_collection_filter_to_rpc() {
+    let mut client = FakeClient::with_responses(vec![
+        json!([{"key": "COL1", "name": "test", "parentKey": null}]),
+        json!({
+            "items": [{"key": "ITEM1", "title": "Paper"}],
+            "total": 1,
+            "limit": 5
+        }),
+    ]);
+
+    run_with_client(
+        [
+            "zotron",
+            "search",
+            "fulltext",
+            "数字经济 体育产业",
+            "--collection",
+            "test",
+            "--limit",
+            "5",
+        ],
+        &mut client,
+    )
+    .expect("fulltext search should accept collection");
+
+    assert_eq!(
+        client.calls,
+        vec![
+            ("collections.list".to_string(), None,),
+            (
+                "search.fulltext".to_string(),
+                Some(json!({
+                    "query": "数字经济 体育产业",
+                    "limit": 5,
+                    "collection": "COL1",
+                })),
+            )
         ]
     );
 }
@@ -961,6 +1109,191 @@ fn rag_status_prefers_xdg_data_home_over_home_default_path() {
 }
 
 #[test]
+fn rag_status_resolves_collection_key_to_existing_named_store() {
+    let _guard = ENV_LOCK.lock().expect("env lock");
+    let original_home = std::env::var_os("HOME");
+    let original_xdg = std::env::var_os("XDG_DATA_HOME");
+    let test_home =
+        std::env::temp_dir().join(format!("zotron-rag-key-store-home-{}", std::process::id()));
+    let test_xdg =
+        std::env::temp_dir().join(format!("zotron-rag-key-store-xdg-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&test_home);
+    let _ = fs::remove_dir_all(&test_xdg);
+    fs::create_dir_all(test_xdg.join("zotron").join("rag")).expect("create xdg rag dir");
+    std::env::set_var("HOME", &test_home);
+    std::env::set_var("XDG_DATA_HOME", &test_xdg);
+
+    let store_path = test_xdg.join("zotron").join("rag").join("Research.json");
+    fs::write(
+        &store_path,
+        serde_json::to_vec(&json!({
+            "collection": "Research",
+            "collection_key": "COL1",
+            "model": "embed-v1",
+            "chunks": [{"item_key": "ITEM1"}]
+        }))
+        .expect("serialize rag store"),
+    )
+    .expect("write rag store");
+
+    let mut client = FakeClient::with_response(json!([
+        {"key": "COL1", "name": "Research", "children": []}
+    ]));
+    let out = run_with_client(
+        ["zotron", "rag", "status", "--collection", "COL1"],
+        &mut client,
+    )
+    .expect("rag status should resolve key to named external store");
+    let payload: Value = serde_json::from_str(&out).expect("status output is JSON");
+
+    assert_eq!(payload["status"], "indexed");
+    assert_eq!(payload["collection"], "Research");
+    assert_eq!(payload["store_path"], store_path.to_string_lossy().as_ref());
+    assert_eq!(client.calls, vec![("collections.tree".to_string(), None)]);
+
+    match original_home {
+        Some(value) => std::env::set_var("HOME", value),
+        None => std::env::remove_var("HOME"),
+    }
+    match original_xdg {
+        Some(value) => std::env::set_var("XDG_DATA_HOME", value),
+        None => std::env::remove_var("XDG_DATA_HOME"),
+    }
+    let _ = fs::remove_dir_all(&test_home);
+    let _ = fs::remove_dir_all(&test_xdg);
+}
+
+#[test]
+fn rag_status_detects_hidden_attachment_sidecar_chunks() {
+    let _guard = ENV_LOCK.lock().expect("env lock");
+    let original_home = std::env::var_os("HOME");
+    let original_xdg = std::env::var_os("XDG_DATA_HOME");
+    let test_home =
+        std::env::temp_dir().join(format!("zotron-rag-sidecar-home-{}", std::process::id()));
+    let storage_dir =
+        std::env::temp_dir().join(format!("zotron-rag-sidecar-storage-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&test_home);
+    let _ = fs::remove_dir_all(&storage_dir);
+    fs::create_dir_all(&storage_dir).expect("create attachment storage dir");
+    let pdf_path = storage_dir.join("paper.pdf");
+    fs::write(&pdf_path, b"%PDF- test").expect("write pdf placeholder");
+    zotron_types::write_machine_artifact_sidecar(
+        &storage_dir,
+        "ITEM1",
+        "ATT1",
+        zotron_types::MachineArtifactKind::Chunks,
+        br#"{"chunk_key":"ATT1:c0","text":"one"}
+{"chunk_key":"ATT1:c1","text":"two"}
+"#,
+    )
+    .expect("write sidecar chunks");
+    std::env::set_var("HOME", &test_home);
+    std::env::remove_var("XDG_DATA_HOME");
+
+    let mut client = FakeClient::with_responses(vec![
+        json!([{"key": "COL1", "name": "Research", "children": []}]),
+        json!({"items": [{"key": "ITEM1", "title": "Paper"}]}),
+        json!([{"key": "ATT1", "path": pdf_path.to_string_lossy(), "contentType": "application/pdf"}]),
+    ]);
+
+    let out = run_with_client(
+        ["zotron", "rag", "status", "--collection", "Research"],
+        &mut client,
+    )
+    .expect("rag status should inspect Zotero sidecar chunks when no store file exists");
+    let payload: Value = serde_json::from_str(&out).expect("status output is JSON");
+
+    assert_eq!(payload["status"], "indexed");
+    assert_eq!(payload["collection"], "Research");
+    assert_eq!(payload["total_items"], 1);
+    assert_eq!(payload["total_chunks"], 2);
+    assert_eq!(
+        client.calls,
+        vec![
+            ("collections.tree".to_string(), None),
+            (
+                "collections.getItems".to_string(),
+                Some(json!({"key": "COL1", "limit": 500, "offset": 0}))
+            ),
+            (
+                "attachments.list".to_string(),
+                Some(json!({"parentKey": "ITEM1"}))
+            ),
+        ]
+    );
+
+    match original_home {
+        Some(value) => std::env::set_var("HOME", value),
+        None => std::env::remove_var("HOME"),
+    }
+    match original_xdg {
+        Some(value) => std::env::set_var("XDG_DATA_HOME", value),
+        None => std::env::remove_var("XDG_DATA_HOME"),
+    }
+    let _ = fs::remove_dir_all(&test_home);
+    let _ = fs::remove_dir_all(&storage_dir);
+}
+
+#[test]
+fn rag_status_sidecar_accepts_collection_key() {
+    let _guard = ENV_LOCK.lock().expect("env lock");
+    let original_home = std::env::var_os("HOME");
+    let original_xdg = std::env::var_os("XDG_DATA_HOME");
+    let test_home = std::env::temp_dir().join(format!(
+        "zotron-rag-sidecar-key-home-{}",
+        std::process::id()
+    ));
+    let storage_dir = std::env::temp_dir().join(format!(
+        "zotron-rag-sidecar-key-storage-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&test_home);
+    let _ = fs::remove_dir_all(&storage_dir);
+    fs::create_dir_all(&storage_dir).expect("create attachment storage dir");
+    let pdf_path = storage_dir.join("paper.pdf");
+    fs::write(&pdf_path, b"%PDF- test").expect("write pdf placeholder");
+    zotron_types::write_machine_artifact_sidecar(
+        &storage_dir,
+        "ITEM1",
+        "ATT1",
+        zotron_types::MachineArtifactKind::Chunks,
+        br#"{"chunk_key":"ATT1:c0","text":"one"}
+"#,
+    )
+    .expect("write sidecar chunks");
+    std::env::set_var("HOME", &test_home);
+    std::env::remove_var("XDG_DATA_HOME");
+
+    let mut client = FakeClient::with_responses(vec![
+        json!([{"key": "COL1", "name": "Research", "children": []}]),
+        json!({"items": [{"key": "ITEM1", "title": "Paper"}]}),
+        json!([{"key": "ATT1", "path": pdf_path.to_string_lossy(), "contentType": "application/pdf"}]),
+    ]);
+
+    let out = run_with_client(
+        ["zotron", "rag", "status", "--collection", "COL1"],
+        &mut client,
+    )
+    .expect("rag status should accept collection keys");
+    let payload: Value = serde_json::from_str(&out).expect("status output is JSON");
+
+    assert_eq!(payload["status"], "indexed");
+    assert_eq!(payload["collection"], "COL1");
+    assert_eq!(payload["total_chunks"], 1);
+
+    match original_home {
+        Some(value) => std::env::set_var("HOME", value),
+        None => std::env::remove_var("HOME"),
+    }
+    match original_xdg {
+        Some(value) => std::env::set_var("XDG_DATA_HOME", value),
+        None => std::env::remove_var("XDG_DATA_HOME"),
+    }
+    let _ = fs::remove_dir_all(&test_home);
+    let _ = fs::remove_dir_all(&storage_dir);
+}
+
+#[test]
 fn rag_hits_missing_collection_returns_coded_error_instead_of_raw_json() {
     let mut client = FakeClient::default();
     let err = run_with_client(["zotron", "rag", "hits", "query", "--zotero"], &mut client)
@@ -968,11 +1301,84 @@ fn rag_hits_missing_collection_returns_coded_error_instead_of_raw_json() {
 
     assert_eq!(
         err,
-        "INVALID_ARGS: --collection is required when --zotero is used"
+        "INVALID_ARGS: --collection or --key is required when --zotero is used"
     );
     assert!(
         !err.trim_start().starts_with('{'),
         "error should remain a plain coded message so binaries can format it exactly once"
+    );
+}
+
+#[test]
+fn rag_hits_accepts_item_key_filter_without_collection() {
+    let mut client = FakeClient::with_response(json!({
+        "hits": [
+            {"item_key": "ITEM1", "title": "Paper", "text": "数字经济 evidence"}
+        ]
+    }));
+
+    let out = run_with_client(
+        [
+            "zotron",
+            "rag",
+            "hits",
+            "数字经济",
+            "--zotero",
+            "--key",
+            "ITEM1",
+            "--limit",
+            "3",
+        ],
+        &mut client,
+    )
+    .expect("rag hits should allow key-scoped lookup");
+    let payload: Value = serde_json::from_str(&out).expect("rag hits output is JSON");
+
+    assert_eq!(payload["total"], 1);
+    assert_eq!(
+        client.calls,
+        vec![(
+            "rag.searchHits".to_string(),
+            Some(json!({
+                "query": "数字经济",
+                "keys": ["ITEM1"],
+                "limit": 3,
+                "top_spans_per_item": 3,
+                "include_fulltext_spans": false,
+            })),
+        )]
+    );
+}
+
+#[test]
+fn settings_help_shows_get_all_alias() {
+    let mut client = FakeClient::default();
+    let out = run_with_client(["zotron", "settings", "--help"], &mut client)
+        .expect("settings help should render");
+
+    assert!(out.contains("get-all"), "{out}");
+    assert!(client.calls.is_empty());
+}
+
+#[test]
+fn export_csl_json_prints_valid_json_content() {
+    let mut client = FakeClient::with_response(json!({
+        "format": "csl-json",
+        "content": [{"id": "ITEM1", "title": "Paper"}],
+        "count": 1
+    }));
+
+    let out = run_with_client(["zotron", "export", "csl-json", "ITEM1"], &mut client)
+        .expect("csl-json export should succeed");
+    let payload: Value = serde_json::from_str(&out).expect("stdout must be valid JSON");
+
+    assert_eq!(payload, json!([{"id": "ITEM1", "title": "Paper"}]));
+    assert_eq!(
+        client.calls,
+        vec![(
+            "export.cslJson".to_string(),
+            Some(json!({"keys": ["ITEM1"]}))
+        )]
     );
 }
 

@@ -25,7 +25,7 @@ function buildTree(collections: Zotero.Collection[]): any[] {
 export const collectionsHandlers = {
   async list() {
     const libraryID = Zotero.Libraries.userLibraryID;
-    const cols = Zotero.Collections.getByLibrary(libraryID, false);
+    const cols = Zotero.Collections.getByLibrary(libraryID, true);
     return cols.map(serializeCollection);
   },
 
@@ -123,11 +123,19 @@ export const collectionsHandlers = {
     const col = await requireCollection(params.key);
     const items = col.getChildItems(false);
     const subcols = col.getChildCollections(false);
+    let childAttachmentCount = 0;
+    for (const item of items) {
+      if (item.isNote() || item.isAttachment()) continue;
+      for (const attachmentID of item.getAttachments?.() || []) {
+        const attachment = await Zotero.Items.getAsync(attachmentID);
+        if (attachment?.isAttachment?.()) childAttachmentCount += 1;
+      }
+    }
     return {
       key: col.key,
       name: col.name,
       items: items.filter((i: any) => !i.isNote() && !i.isAttachment()).length,
-      attachments: items.filter((i: any) => i.isAttachment()).length,
+      attachments: items.filter((i: any) => i.isAttachment()).length + childAttachmentCount,
       notes: items.filter((i: any) => i.isNote()).length,
       subcollections: subcols.length,
     };

@@ -83,7 +83,7 @@ describe("settings handler", () => {
 
 
   describe("API key propagation", () => {
-    it("round-trips configured OCR and embedding API keys without Zotero logging", async () => {
+    it("redacts configured OCR and embedding API keys on read without Zotero logging", async () => {
       const store = new Map<string, any>();
       const zoteroLog = sinon.stub();
       installZotero({
@@ -101,15 +101,30 @@ describe("settings handler", () => {
         "embedding.apiKey": "test-embedding-secret",
       });
 
-      expect(await settingsHandlers.get({ key: "ocr.apiKey" })).to.deep.equal({ "ocr.apiKey": "test-ocr-secret" });
+      expect(await settingsHandlers.get({ key: "ocr.apiKey" })).to.deep.equal({ "ocr.apiKey": "REDACTED" });
       expect(await settingsHandlers.get({ key: "embedding.apiKey" })).to.deep.equal({
-        "embedding.apiKey": "test-embedding-secret",
+        "embedding.apiKey": "REDACTED",
       });
 
       const all = await settingsHandlers.getAll();
-      expect(all["ocr.apiKey"]).to.equal("test-ocr-secret");
-      expect(all["embedding.apiKey"]).to.equal("test-embedding-secret");
+      expect(all["ocr.apiKey"]).to.equal("REDACTED");
+      expect(all["embedding.apiKey"]).to.equal("REDACTED");
       expect(zoteroLog.called).to.equal(false);
+    });
+
+    it("redacts secret values in write echoes", async () => {
+      const set = sinon.stub();
+      installZotero({
+        Prefs: { set },
+      });
+      delete require.cache[require.resolve("../../src/handlers/settings")];
+      const { settingsHandlers } = await import("../../src/handlers/settings");
+
+      expect(await settingsHandlers.set({ key: "ocr.apiKey", value: "test-ocr-secret" })).to.deep.equal({
+        key: "ocr.apiKey",
+        value: "REDACTED",
+      });
+      expect(set.firstCall.args).to.deep.equal(["zotron.ocr.apiKey", "test-ocr-secret"]);
     });
   });
 

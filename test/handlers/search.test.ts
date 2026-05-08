@@ -90,6 +90,166 @@ describe("search handler", () => {
       expect(result).to.not.have.property("query");
       expect(result.items).to.have.lengthOf(1);
     });
+
+    it("splits whitespace terms into separate fulltext conditions", async () => {
+      const addCondition = sinon.stub();
+      class FakeSearch {
+        libraryID: number = 1;
+        addCondition = addCondition;
+        search = sinon.stub().resolves([]);
+      }
+      installZotero({
+        Libraries: { userLibraryID: 1 },
+        Search: FakeSearch,
+        Items: { getAsync: sinon.stub().resolves([]) },
+        ItemFields: { getItemTypeFields: () => [], getName: () => "" },
+        CreatorTypes: { getName: () => "author" },
+      });
+      const { searchHandlers } = await import("../../src/handlers/search");
+      await searchHandlers.fulltext({ query: "数字经济 体育产业" });
+
+      expect(addCondition.calledWith("fulltextContent", "contains", "数字经济")).to.equal(true);
+      expect(addCondition.calledWith("fulltextContent", "contains", "体育产业")).to.equal(true);
+      expect(addCondition.calledWith("fulltextContent", "contains", "数字经济 体育产业")).to.equal(false);
+    });
+
+    it("can limit fulltext results to a collection key", async () => {
+      class FakeSearch {
+        libraryID: number = 1;
+        addCondition = sinon.stub();
+        search = sinon.stub().resolves([5, 6]);
+      }
+      const collection = {
+        id: 2,
+        key: "COLLKEY1",
+        getChildItems: () => [{ id: 6 }],
+      };
+      installZotero({
+        Libraries: { userLibraryID: 1 },
+        Search: FakeSearch,
+        Collections: {
+          getByLibraryAndKeyAsync: sinon.stub().withArgs(1, "COLLKEY1").resolves(collection),
+        },
+        Items: { getAsync: sinon.stub().callsFake((ids: number[]) => Promise.resolve(ids.map(id => ({
+          id, key: `K${id}`, itemType: "journalArticle", itemTypeID: 1, dateAdded: "", dateModified: "", deleted: false,
+          getField: () => "", isNote: () => false, isAttachment: () => false,
+          getCreators: () => [], getTags: () => [], getCollections: () => [], getRelations: () => ({}),
+        })))) },
+        ItemFields: { getItemTypeFields: () => [], getName: () => "" },
+        CreatorTypes: { getName: () => "author" },
+      });
+      const { searchHandlers } = await import("../../src/handlers/search");
+      const result = await searchHandlers.fulltext({ query: "数字经济", collection: "COLLKEY1" } as any);
+
+      expect(result.total).to.equal(1);
+      expect(result.items.map((item: any) => item.key)).to.deep.equal(["K6"]);
+    });
+
+    it("falls back to attachment cache text for collection fulltext misses", async () => {
+      class FakeSearch {
+        libraryID: number = 1;
+        addCondition = sinon.stub();
+        search = sinon.stub().resolves([]);
+      }
+      const article: any = {
+        id: 6, key: "K6", itemType: "journalArticle", itemTypeID: 1, dateAdded: "", dateModified: "", deleted: false,
+        getField: () => "数字经济赋能体育产业",
+        isNote: () => false, isAttachment: () => false,
+        getCreators: () => [], getTags: () => [], getCollections: () => [], getRelations: () => ({}),
+        getAttachments: () => [60],
+      };
+      const attachment: any = {
+        id: 60,
+        isAttachment: () => true,
+        attachmentContentType: "application/pdf",
+      };
+      const collection = {
+        id: 2,
+        key: "COLLKEY1",
+        getChildItems: () => [article],
+      };
+      installZotero({
+        Libraries: { userLibraryID: 1 },
+        Search: FakeSearch,
+        Collections: {
+          getByLibraryAndKeyAsync: sinon.stub().withArgs(1, "COLLKEY1").resolves(collection),
+        },
+        Items: {
+          getAsync: sinon.stub().callsFake((ids: number[] | number) => {
+            if (ids === 60) return Promise.resolve(attachment);
+            if (Array.isArray(ids)) return Promise.resolve(ids.map(id => article));
+            return Promise.resolve(article);
+          }),
+        },
+        Fulltext: { getItemCacheFile: sinon.stub().returns({ path: "/tmp/cache.txt" }) },
+        File: { getContentsAsync: sinon.stub().withArgs("/tmp/cache.txt").resolves("数字经济和体育产业都在正文里") },
+        DB: { queryAsync: sinon.stub().resolves([{ indexedChars: 10, totalChars: 10 }]) },
+        ItemFields: { getItemTypeFields: () => [], getName: () => "" },
+        CreatorTypes: { getName: () => "author" },
+      });
+      const { searchHandlers } = await import("../../src/handlers/search");
+      const result = await searchHandlers.fulltext({ query: "数字经济 体育产业", collection: "COLLKEY1" } as any);
+
+      expect(result.total).to.equal(1);
+      expect(result.items[0].key).to.equal("K6");
+    });
+
+    it("continues through empty PDF cache text when falling back", async () => {
+      class FakeSearch {
+        libraryID: number = 1;
+        addCondition = sinon.stub();
+        search = sinon.stub().resolves([]);
+      }
+      const article: any = {
+        id: 6, key: "K6", itemType: "journalArticle", itemTypeID: 1, dateAdded: "", dateModified: "", deleted: false,
+        getField: () => "数字经济赋能体育产业",
+        isNote: () => false, isAttachment: () => false,
+        getCreators: () => [], getTags: () => [], getCollections: () => [], getRelations: () => ({}),
+        getAttachments: () => [60, 61],
+      };
+      const attachment = (id: number, path: string) => ({
+        id,
+        isAttachment: () => true,
+        attachmentContentType: "application/pdf",
+        path,
+      });
+      const collection = {
+        id: 2,
+        key: "COLLKEY1",
+        getChildItems: () => [article],
+      };
+      installZotero({
+        Libraries: { userLibraryID: 1 },
+        Search: FakeSearch,
+        Collections: {
+          getByLibraryAndKeyAsync: sinon.stub().withArgs(1, "COLLKEY1").resolves(collection),
+        },
+        Items: {
+          getAsync: sinon.stub().callsFake((ids: number[] | number) => {
+            if (ids === 60) return Promise.resolve(attachment(60, "/tmp/empty-cache.txt"));
+            if (ids === 61) return Promise.resolve(attachment(61, "/tmp/match-cache.txt"));
+            if (Array.isArray(ids)) return Promise.resolve(ids.map(id => article));
+            return Promise.resolve(article);
+          }),
+        },
+        Fulltext: { getItemCacheFile: sinon.stub().callsFake((att: any) => ({ path: att.path })) },
+        File: {
+          getContentsAsync: sinon.stub().callsFake((path: string) => {
+            if (path === "/tmp/empty-cache.txt") return Promise.resolve("");
+            if (path === "/tmp/match-cache.txt") return Promise.resolve("数字经济和体育产业都在第二个 PDF 正文里");
+            return Promise.resolve("");
+          }),
+        },
+        DB: { queryAsync: sinon.stub().resolves([{ indexedChars: 10, totalChars: 10 }]) },
+        ItemFields: { getItemTypeFields: () => [], getName: () => "" },
+        CreatorTypes: { getName: () => "author" },
+      });
+      const { searchHandlers } = await import("../../src/handlers/search");
+      const result = await searchHandlers.fulltext({ query: "数字经济 体育产业", collection: "COLLKEY1" } as any);
+
+      expect(result.total).to.equal(1);
+      expect(result.items[0].key).to.equal("K6");
+    });
   });
 
   describe("byTag drops tag echo (fix #34)", () => {

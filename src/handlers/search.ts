@@ -3,6 +3,7 @@
 // zotron/src/handlers/search.ts
 import { registerHandlers } from "../server";
 import { serializeItem } from "../utils/serialize";
+import { requireCollection } from "../utils/guards";
 
 /**
  * Build a `Zotero.Search` scoped to the user library. Buries the single
@@ -24,6 +25,14 @@ type SearchCondition = {
 
 function conditionOperator(cond: SearchCondition): string {
   return cond.op ?? cond.operator ?? "";
+}
+
+function searchTerms(query: string): string[] {
+  const terms = query
+    .split(/[\s,;，；、]+/)
+    .map((term) => term.trim())
+    .filter(Boolean);
+  return terms.length ? Array.from(new Set(terms)) : [query];
 }
 
 export const searchHandlers = {
@@ -53,12 +62,25 @@ export const searchHandlers = {
     return result;
   },
 
-  async fulltext(params: { query: string; limit?: number }) {
+  async fulltext(params: { query: string; limit?: number; collection?: string | number; collectionKey?: string | number }) {
     const limit = params.limit ?? 25;
     const s = makeScopedSearch();
-    s.addCondition("fulltextContent", "contains", params.query);
+    for (const term of searchTerms(params.query)) {
+      s.addCondition("fulltextContent", "contains", term);
+    }
     s.addCondition("noChildren", "true");
-    const ids = await s.search();
+    let ids = await s.search();
+    const collectionRef = params.collectionKey ?? params.collection;
+    let collectionItems: any[] | null = null;
+    if (collectionRef !== undefined && collectionRef !== null && collectionRef !== "") {
+      const collection = await requireCollection(collectionRef);
+      collectionItems = collection.getChildItems(false) || [];
+      const allowed = new Set(collectionItems.map((item: any) => item.id));
+      ids = ids.filter((id: number) => allowed.has(id));
+      if (ids.length === 0) {
+        ids = await fallbackFulltextIdsFromCollectionItems(collectionItems, searchTerms(params.query));
+      }
+    }
     const items = await Zotero.Items.getAsync(ids.slice(0, limit));
     const result: Record<string, any> = { items: items.map(serializeItem), total: ids.length };
     if (params.limit !== undefined) result.limit = params.limit;
@@ -122,5 +144,35 @@ export const searchHandlers = {
     return { ok: true, key };
   },
 };
+
+async function fallbackFulltextIdsFromCollectionItems(items: any[], terms: string[]): Promise<number[]> {
+  const matches: number[] = [];
+  for (const item of items) {
+    if (item.isNote?.() || item.isAttachment?.()) continue;
+    const content = await firstPdfAttachmentText(item);
+    const haystack = content.toLowerCase();
+    if (terms.every((term) => haystack.includes(term.toLowerCase()))) {
+      matches.push(item.id);
+    }
+  }
+  return matches;
+}
+
+async function firstPdfAttachmentText(item: any): Promise<string> {
+  const chunks: string[] = [];
+  for (const attID of item.getAttachments?.() || []) {
+    const att = await Zotero.Items.getAsync(attID);
+    if (!att?.isAttachment?.()) continue;
+    if (String(att.attachmentContentType || "").toLowerCase() !== "application/pdf") continue;
+    try {
+      const cacheFile = Zotero.Fulltext.getItemCacheFile(att);
+      const content = (await Zotero.File.getContentsAsync(cacheFile.path) as string) ?? "";
+      if (content.trim()) chunks.push(content);
+    } catch {
+      continue;
+    }
+  }
+  return chunks.join("\n");
+}
 
 registerHandlers("search", searchHandlers);

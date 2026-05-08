@@ -229,8 +229,6 @@ npm run build && \
     -d '{"jsonrpc":"2.0","method":"system.reload","id":1}'
 ```
 
-`system.reload` intentionally returns immediately while the add-on reload runs asynchronously. After bootstrap-path changes, verify reload with a follow-up `system.ping`; see [`docs/2026-05-08-bootstrap-lifecycle-review.md`](docs/2026-05-08-bootstrap-lifecycle-review.md) for lifecycle invariants and the full smoke checklist.
-
 ## Roadmap
 
 Preference keys reserved in `SETTINGS_KEYS` (callable via `settings.set`); consumer methods not yet implemented:

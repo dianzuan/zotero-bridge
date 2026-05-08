@@ -85,4 +85,32 @@ describe("export handler", () => {
       expect(result.count).to.equal(1);
     });
   });
+
+  describe("cslJson", () => {
+    it("parses translator JSON into a JSON value instead of returning repr text", async () => {
+      const handlers: Record<string, Function> = {};
+      const FakeExport = function (this: any) {
+        this.string = "";
+      };
+      FakeExport.prototype.setItems = sinon.stub();
+      FakeExport.prototype.setTranslator = sinon.stub();
+      FakeExport.prototype.setHandler = function (event: string, cb: Function) {
+        handlers[event] = cb;
+      };
+      FakeExport.prototype.translate = function (this: any) {
+        this.string = JSON.stringify([{ id: "ITEM1", title: "Paper" }]);
+        handlers["done"]?.(null, true);
+      };
+
+      installZotero({
+        Items: { getAsync: sinon.stub().resolves([{ id: 1 }]) },
+        Translate: { Export: FakeExport },
+      });
+
+      const { exportHandlers } = await import("../../src/handlers/export");
+      const result = await exportHandlers.cslJson({ keys: [1] });
+
+      expect(result.content).to.deep.equal([{ id: "ITEM1", title: "Paper" }]);
+    });
+  });
 });

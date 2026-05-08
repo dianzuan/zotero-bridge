@@ -14,9 +14,10 @@ use zotron_types::{
     build_ocr_provider_request, builtin_ocr_provider_specs, execute_embedding_provider_request,
     is_zotron_evidence_artifact, machine_artifact_exists_for_item,
     machine_artifact_exists_in_sidecar, machine_artifact_store_root,
-    ocr_provider_spec as raw_ocr_provider_spec, parse_ocr_provider_response, ArtifactStorePlatform,
-    EmbeddingRequestInput, MachineArtifactKind, OcrRequestInput, ProviderCommandRunner,
-    ProviderHttpInvocation, ProviderHttpTransport, DEFAULT_RPC_URL,
+    ocr_provider_spec as raw_ocr_provider_spec, parse_ocr_provider_response,
+    read_machine_artifact_sidecar, ArtifactStorePlatform, EmbeddingRequestInput,
+    MachineArtifactKind, OcrRequestInput, ProviderCommandRunner, ProviderHttpInvocation,
+    ProviderHttpTransport, DEFAULT_RPC_URL,
 };
 
 pub trait RpcCaller {
@@ -226,7 +227,19 @@ enum OcrCommand {
         provider: String,
         /// Path to an OcrRequestInput JSON file, or "-" to read stdin.
         #[arg(long)]
-        input: String,
+        input: Option<String>,
+        /// Local PDF/image file to encode into an OcrRequestInput.
+        #[arg(long)]
+        file: Option<String>,
+        /// Zotero item key used when --file builds the OCR request.
+        #[arg(long = "item-key")]
+        item_key: Option<String>,
+        /// Zotero attachment key used when --file builds the OCR request.
+        #[arg(long = "attachment-key")]
+        attachment_key: Option<String>,
+        /// MIME type used when --file builds the OCR request.
+        #[arg(long = "mime-type")]
+        mime_type: Option<String>,
         /// Override the provider endpoint, required for service-hosted PaddleOCR-VL.
         #[arg(long)]
         endpoint: Option<String>,
@@ -356,6 +369,7 @@ enum Command {
 struct RagHitsOptions {
     query: String,
     collection: Option<String>,
+    keys: Vec<String>,
     zotero: bool,
     top_spans_per_item: u64,
     include_fulltext_spans: bool,
@@ -393,12 +407,17 @@ enum RagCommand {
     Status {
         #[arg(long)]
         collection: String,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
     },
     /// Emit academic-zh retrieval hits with item_key/title/text provenance.
     Hits {
         query: String,
         #[arg(long)]
         collection: Option<String>,
+        /// Limit retrieval to one or more Zotero item keys.
+        #[arg(long = "key", alias = "keys")]
+        keys: Vec<String>,
         #[arg(long)]
         zotero: bool,
         #[arg(long = "top-spans-per-item", default_value_t = 3)]
@@ -494,6 +513,9 @@ enum SearchCommand {
         query: String,
         #[arg(long, default_value_t = 50)]
         limit: u64,
+        /// Limit full-text search to a collection name or key.
+        #[arg(long)]
+        collection: Option<String>,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
@@ -768,7 +790,7 @@ enum SettingsCommand {
         url: String,
     },
     /// List all Zotero preferences as a key->value dict.
-    #[command(alias = "get-all")]
+    #[command(visible_alias = "get-all")]
     List {
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
@@ -1232,7 +1254,7 @@ fn rag_command_url(command: &RagCommand) -> String {
     match command {
         RagCommand::EmbeddingProviders => DEFAULT_RPC_URL.to_string(),
         RagCommand::EmbeddingJson { .. } => DEFAULT_RPC_URL.to_string(),
-        RagCommand::Status { .. } => DEFAULT_RPC_URL.to_string(),
+        RagCommand::Status { url, .. } => url.clone(),
         RagCommand::Hits { url, .. } => url.clone(),
     }
 }
@@ -1359,9 +1381,22 @@ fn run_ocr_command(command: OcrCommand, client: &mut impl RpcCaller) -> Result<S
         OcrCommand::ProviderJson {
             provider,
             input,
+            file,
+            item_key,
+            attachment_key,
+            mime_type,
             endpoint,
             api_key_env,
-        } => run_ocr_provider_json_command(provider, input, endpoint, api_key_env)?,
+        } => run_ocr_provider_json_command(
+            provider,
+            input,
+            file,
+            item_key,
+            attachment_key,
+            mime_type,
+            endpoint,
+            api_key_env,
+        )?,
         OcrCommand::Status { collection, .. } => run_ocr_status_command(client, collection)?,
     };
     format_json(&value, JsonStyle::PythonCompact)
@@ -1369,11 +1404,22 @@ fn run_ocr_command(command: OcrCommand, client: &mut impl RpcCaller) -> Result<S
 
 fn run_ocr_provider_json_command(
     provider: String,
-    input: String,
+    input: Option<String>,
+    file: Option<String>,
+    item_key: Option<String>,
+    attachment_key: Option<String>,
+    mime_type: Option<String>,
     endpoint: Option<String>,
     api_key_env: Option<String>,
 ) -> Result<Value, String> {
-    let input: OcrRequestInput = read_json_input(&input)?;
+    let input: OcrRequestInput = match (input, file) {
+        (Some(input), None) => read_json_input(&input)?,
+        (None, Some(file)) => ocr_input_from_file(file, item_key, attachment_key, mime_type)?,
+        (Some(_), Some(_)) => {
+            return Err("INVALID_ARGS: use either --input or --file, not both".to_string())
+        }
+        (None, None) => return Err("INVALID_ARGS: provide --input JSON or --file".to_string()),
+    };
     let request = build_ocr_provider_request(&provider, &input)?;
     let payload = if request.command.is_empty() {
         let method = request
@@ -1394,12 +1440,20 @@ fn run_ocr_provider_json_command(
         let mut command_runner = StdProviderCommandRunner;
         command_runner.run_json(&request.command)?
     };
-    let blocks = parse_ocr_provider_response(
+    let blocks = match parse_ocr_provider_response(
         request.provider,
         &payload,
         &input.item_key,
         &input.attachment_key,
-    )?;
+    ) {
+        Ok(blocks) => blocks,
+        Err(err) => {
+            if let Some(task) = ocr_async_task_result(request.provider, &payload) {
+                return Ok(task);
+            }
+            return Err(err);
+        }
+    };
 
     Ok(serde_json::json!({
         "provider": request.provider,
@@ -1407,11 +1461,94 @@ fn run_ocr_provider_json_command(
     }))
 }
 
+fn ocr_async_task_result(provider: &str, payload: &Value) -> Option<Value> {
+    let data = payload.get("data")?;
+    let task_id = data.get("task_id").and_then(Value::as_str)?;
+    Some(serde_json::json!({
+        "provider": provider,
+        "status": "submitted",
+        "task_id": task_id,
+        "state": data.get("state").and_then(Value::as_str).unwrap_or("submitted"),
+        "result_url": data.get("full_zip_url").or_else(|| data.get("markdown_url")).cloned(),
+        "raw": payload,
+    }))
+}
+
+fn ocr_input_from_file(
+    file: String,
+    item_key: Option<String>,
+    attachment_key: Option<String>,
+    mime_type: Option<String>,
+) -> Result<OcrRequestInput, String> {
+    let item_key = item_key
+        .ok_or_else(|| "INVALID_ARGS: --item-key is required when using --file".to_string())?;
+    let attachment_key = attachment_key.ok_or_else(|| {
+        "INVALID_ARGS: --attachment-key is required when using --file".to_string()
+    })?;
+    let path = PathBuf::from(&file);
+    let bytes = fs::read(&path).map_err(|err| format!("read {file}: {err}"))?;
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("document.pdf")
+        .to_string();
+    let mime_type = mime_type.unwrap_or_else(|| guess_mime_type(&path).to_string());
+    Ok(OcrRequestInput {
+        item_key,
+        attachment_key,
+        file_name,
+        mime_type,
+        content_base64: base64_encode(&bytes),
+        source_url: None,
+        local_path: Some(file),
+        output_dir: None,
+    })
+}
+
+fn guess_mime_type(path: &Path) -> &'static str {
+    match path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        _ => "application/pdf",
+    }
+}
+
+fn base64_encode(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = *chunk.get(1).unwrap_or(&0);
+        let b2 = *chunk.get(2).unwrap_or(&0);
+        out.push(TABLE[(b0 >> 2) as usize] as char);
+        out.push(TABLE[(((b0 & 0b0000_0011) << 4) | (b1 >> 4)) as usize] as char);
+        if chunk.len() > 1 {
+            out.push(TABLE[(((b1 & 0b0000_1111) << 2) | (b2 >> 6)) as usize] as char);
+        } else {
+            out.push('=');
+        }
+        if chunk.len() > 2 {
+            out.push(TABLE[(b2 & 0b0011_1111) as usize] as char);
+        } else {
+            out.push('=');
+        }
+    }
+    out
+}
+
 fn run_ocr_status_command(
     client: &mut impl RpcCaller,
     collection: String,
 ) -> Result<Value, String> {
     let collection_key = find_collection_in_tree(client, &collection)?
+        .and_then(|node| node.get("key").cloned())
         .ok_or_else(|| format!("COLLECTION_NOT_FOUND: Collection not found: {collection:?}"))?;
     let raw = paginate_rpc(
         client,
@@ -1530,13 +1667,15 @@ fn find_collection_in_tree(
     let nodes = tree
         .as_array()
         .ok_or_else(|| "collections.tree returned non-array result".to_string())?;
-    Ok(search_collection_tree(nodes, collection))
+    Ok(search_collection_tree(nodes, collection).map(Clone::clone))
 }
 
-fn search_collection_tree(nodes: &[Value], collection: &str) -> Option<Value> {
+fn search_collection_tree<'a>(nodes: &'a [Value], collection: &str) -> Option<&'a Value> {
     for node in nodes {
-        if node.get("name").and_then(Value::as_str) == Some(collection) {
-            return node.get("key").cloned();
+        if node.get("key").and_then(Value::as_str) == Some(collection)
+            || node.get("name").and_then(Value::as_str) == Some(collection)
+        {
+            return Some(node);
         }
         if let Some(children) = node.get("children").and_then(Value::as_array) {
             if let Some(found) = search_collection_tree(children, collection) {
@@ -1640,13 +1779,14 @@ fn run_rag_command(command: RagCommand, client: &mut impl RpcCaller) -> Result<S
             )?;
             format_json(&value, JsonStyle::PythonCompact)
         }
-        RagCommand::Status { collection } => {
-            let value = rag_status_value(&collection)?;
+        RagCommand::Status { collection, .. } => {
+            let value = rag_status_value(client, &collection)?;
             format_json(&value, JsonStyle::PythonCompact)
         }
         RagCommand::Hits {
             query,
             collection,
+            keys,
             zotero,
             top_spans_per_item,
             include_fulltext_spans,
@@ -1658,6 +1798,7 @@ fn run_rag_command(command: RagCommand, client: &mut impl RpcCaller) -> Result<S
             RagHitsOptions {
                 query,
                 collection,
+                keys,
                 zotero,
                 top_spans_per_item,
                 include_fulltext_spans,
@@ -1752,19 +1893,29 @@ fn run_rag_hits_command(
                 .to_string(),
         );
     }
-    let collection = options.collection.ok_or_else(|| {
-        "INVALID_ARGS: --collection is required when --zotero is used".to_string()
-    })?;
-    let payload = client.call(
-        "rag.searchHits",
-        Some(serde_json::json!({
-            "query": options.query,
-            "collection": collection,
-            "limit": options.top_k,
-            "top_spans_per_item": options.top_spans_per_item,
-            "include_fulltext_spans": options.include_fulltext_spans,
-        })),
-    )?;
+    if options.collection.is_none() && options.keys.is_empty() {
+        return Err(
+            "INVALID_ARGS: --collection or --key is required when --zotero is used".to_string(),
+        );
+    }
+    let mut params = serde_json::json!({
+        "query": options.query,
+        "limit": options.top_k,
+        "top_spans_per_item": options.top_spans_per_item,
+        "include_fulltext_spans": options.include_fulltext_spans,
+    });
+    if let Some(map) = params.as_object_mut() {
+        if let Some(collection) = options.collection {
+            map.insert("collection".to_string(), Value::String(collection));
+        }
+        if !options.keys.is_empty() {
+            map.insert(
+                "keys".to_string(),
+                Value::Array(options.keys.into_iter().map(Value::String).collect()),
+            );
+        }
+    }
+    let payload = client.call("rag.searchHits", Some(params))?;
     let hits = payload
         .get("hits")
         .and_then(Value::as_array)
@@ -1789,15 +1940,42 @@ fn run_rag_hits_command(
     }
 }
 
-fn rag_status_value(collection: &str) -> Result<Value, String> {
-    let store_path = rag_store_path(collection);
-    if !store_path.exists() {
-        return Ok(serde_json::json!({
-            "status": "not indexed",
-            "collection": collection,
-        }));
+fn rag_status_value(client: &mut impl RpcCaller, collection: &str) -> Result<Value, String> {
+    let raw_store_path = rag_store_path(collection);
+    if raw_store_path.exists() {
+        return rag_status_from_store(collection, &raw_store_path);
     }
 
+    let mut store_candidates = Vec::new();
+    let collection_match = find_collection_in_tree(client, collection)?;
+    if let Some(collection_node) = collection_match.as_ref() {
+        if let Some(name) = collection_node.get("name").and_then(Value::as_str) {
+            store_candidates.push(rag_store_path(name));
+        }
+        if let Some(key) = collection_node.get("key").and_then(Value::as_str) {
+            store_candidates.push(rag_store_path(key));
+        }
+    }
+    for store_path in unique_paths(store_candidates) {
+        if store_path.exists() {
+            return rag_status_from_store(collection, &store_path);
+        }
+    }
+
+    rag_status_from_zotero_sidecars(client, collection, collection_match)
+}
+
+fn unique_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut unique = Vec::new();
+    for path in paths {
+        if !unique.iter().any(|seen| seen == &path) {
+            unique.push(path);
+        }
+    }
+    unique
+}
+
+fn rag_status_from_store(collection: &str, store_path: &Path) -> Result<Value, String> {
     let raw = fs::read_to_string(&store_path)
         .map_err(|err| format!("read RAG store {}: {err}", store_path.display()))?;
     let store: Value = serde_json::from_str(&raw)
@@ -1825,6 +2003,88 @@ fn rag_status_value(collection: &str) -> Result<Value, String> {
         "total_items": item_keys.len(),
         "store_path": store_path.to_string_lossy(),
     }))
+}
+
+fn rag_status_from_zotero_sidecars(
+    client: &mut impl RpcCaller,
+    collection: &str,
+    collection_match: Option<Value>,
+) -> Result<Value, String> {
+    let collection_key = collection_match
+        .as_ref()
+        .and_then(|node| node.get("key").cloned())
+        .ok_or_else(|| format!("COLLECTION_NOT_FOUND: Collection not found: {collection:?}"))?;
+    let raw = paginate_rpc(
+        client,
+        "collections.getItems",
+        serde_json::json!({"key": collection_key}),
+        500,
+    )?;
+    let items = raw
+        .get("items")
+        .and_then(Value::as_array)
+        .or_else(|| raw.as_array())
+        .ok_or_else(|| "collections.getItems returned non-array/non-items result".to_string())?
+        .clone();
+
+    let mut indexed_items = 0usize;
+    let mut total_chunks = 0usize;
+    for item in &items {
+        let item_key = item.get("key").cloned().unwrap_or(Value::Null);
+        let chunk_count = sidecar_chunk_count_for_item(client, &item_key)?;
+        if chunk_count > 0 {
+            indexed_items += 1;
+            total_chunks += chunk_count;
+        }
+    }
+
+    if indexed_items == 0 {
+        return Ok(serde_json::json!({
+            "status": "not indexed",
+            "collection": collection,
+            "total_items": items.len(),
+            "indexed_items": 0,
+        }));
+    }
+
+    Ok(serde_json::json!({
+        "status": "indexed",
+        "collection": collection,
+        "total_chunks": total_chunks,
+        "total_items": indexed_items,
+        "collection_items": items.len(),
+        "source": "zotero-sidecar",
+    }))
+}
+
+fn sidecar_chunk_count_for_item(
+    client: &mut impl RpcCaller,
+    item_key: &Value,
+) -> Result<usize, String> {
+    let attachments = client.call(
+        "attachments.list",
+        Some(serde_json::json!({"parentKey": item_key.clone()})),
+    )?;
+    let Some(attachments) = attachments.as_array() else {
+        return Ok(0);
+    };
+
+    let mut count = 0usize;
+    for attachment in attachments {
+        let Some(path) = attachment.get("path").and_then(Value::as_str) else {
+            continue;
+        };
+        let local = local_path_from_zotero_path(path);
+        let Some(dir) = Path::new(&local).parent() else {
+            continue;
+        };
+        let Ok(bytes) = read_machine_artifact_sidecar(dir, MachineArtifactKind::Chunks) else {
+            continue;
+        };
+        let text = String::from_utf8_lossy(&bytes);
+        count += text.lines().filter(|line| !line.trim().is_empty()).count();
+    }
+    Ok(count)
 }
 
 fn rag_store_path(collection: &str) -> PathBuf {
@@ -2300,13 +2560,24 @@ fn run_search_command(
             };
             Ok((value, JsonStyle::Pretty))
         }
-        SearchCommand::Fulltext { query, limit, .. } => Ok((
-            client.call(
-                "search.fulltext",
-                Some(serde_json::json!({"query": query, "limit": limit})),
-            )?,
-            JsonStyle::Pretty,
-        )),
+        SearchCommand::Fulltext {
+            query,
+            limit,
+            collection,
+            ..
+        } => {
+            let mut params = serde_json::json!({"query": query, "limit": limit});
+            if let (Some(collection), Some(map)) = (collection, params.as_object_mut()) {
+                map.insert(
+                    "collection".to_string(),
+                    resolve_collection(client, &collection)?,
+                );
+            }
+            Ok((
+                client.call("search.fulltext", Some(params))?,
+                JsonStyle::Pretty,
+            ))
+        }
         SearchCommand::ByIdentifier {
             doi, isbn, issn, ..
         } => {
@@ -3592,7 +3863,13 @@ fn run_export_command(
         }
         ExportCommand::Ris { keys, .. } => run_export_content_command(client, "export.ris", keys),
         ExportCommand::CslJson { keys, .. } => {
-            run_export_content_command(client, "export.cslJson", keys)
+            let response =
+                client.call("export.cslJson", Some(serde_json::json!({"keys": keys})))?;
+            if let Some(content) = response.get("content") {
+                format_json(content, JsonStyle::Pretty)
+            } else {
+                format_json(&response, JsonStyle::PythonCompact)
+            }
         }
         ExportCommand::Bibliography {
             keys, style, html, ..
