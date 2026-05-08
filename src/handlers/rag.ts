@@ -53,8 +53,8 @@ type RetrievalHit = {
   doi?: string;
   zotero_uri: string;
   section_heading?: string;
-  chunk_id: string;
-  block_ids?: string[];
+  chunk_key: string;
+  block_keys?: string[];
   query: string;
   score: number;
   retrieval_mode?: RetrievalMode;
@@ -202,7 +202,7 @@ function hitFromChunk(
 ): RetrievalHit {
   const itemKey = String(chunk.item_key || item.key || item.id);
   const title = String(chunk.title || item.getField?.("title") || "");
-  const chunkId = String(chunk.chunk_id || `${itemKey}:c${chunk.chunk_index ?? 0}`);
+  const chunkKey = String(chunk.chunk_key || chunk.chunk_id || `${itemKey}:c${chunk.chunk_index ?? 0}`);
   const hit: RetrievalHit = {
     item_key: itemKey,
     title,
@@ -210,7 +210,7 @@ function hitFromChunk(
     authors: Array.isArray(chunk.authors) ? chunk.authors : itemAuthors(item),
     zotero_uri: String(chunk.zotero_uri || `zotero://select/library/items/${itemKey}`),
     section_heading: String(chunk.section_heading || chunk.section || ""),
-    chunk_id: chunkId,
+    chunk_key: chunkKey,
     query,
     score,
     retrieval_mode: embeddingArtifact ? "lexical_fallback" : "lexical",
@@ -221,7 +221,11 @@ function hitFromChunk(
   if (venue) hit.venue = venue;
   const doi = String(chunk.doi || item.getField?.("DOI") || "");
   if (doi) hit.doi = doi;
-  if (Array.isArray(chunk.block_ids)) hit.block_ids = chunk.block_ids;
+  if (Array.isArray(chunk.block_keys)) {
+    hit.block_keys = chunk.block_keys;
+  } else if (Array.isArray(chunk.block_ids)) {
+    hit.block_keys = chunk.block_ids;
+  }
   if (embeddingArtifact) {
     hit.embedding_artifact_title = embeddingArtifact.title;
     if (embeddingArtifact.path) hit.embedding_artifact_path = embeddingArtifact.path;
@@ -252,7 +256,7 @@ async function searchChunkArtifacts(params: SearchHitsParams): Promise<SearchHit
     }
   }
 
-  scored.sort((a, b) => b.score - a.score || a.chunk_id.localeCompare(b.chunk_id));
+  scored.sort((a, b) => b.score - a.score || a.chunk_key.localeCompare(b.chunk_key));
   const perItem = new Map<string, number>();
   const hits: RetrievalHit[] = [];
   for (const hit of scored) {

@@ -452,3 +452,31 @@ fn embedding_response_parsers_preserve_chunk_keys_for_openai_and_dashscope_shape
         .expect_err("empty embeddings are explicit");
     assert!(err.contains("did not contain parseable embeddings"));
 }
+
+#[test]
+fn academic_zh_hits_accept_legacy_id_fields_but_serialize_key_first() {
+    use zotron_types::AcademicZhHit;
+
+    let hit: AcademicZhHit = serde_json::from_value(json!({
+        "item_key": "ITEMKEY",
+        "title": "Title",
+        "text": "Text",
+        "authors": ["Author"],
+        "zotero_uri": "zotero://select/library/items/ITEMKEY",
+        "section_heading": "Section",
+        "chunk_id": "ATT:c0",
+        "query": "query",
+        "score": 1.0,
+        "block_ids": ["ATT:p1:b1"]
+    }))
+    .expect("legacy id fields deserialize through aliases");
+
+    assert_eq!(hit.chunk_key, "ATT:c0");
+    assert_eq!(hit.block_keys, vec!["ATT:p1:b1"]);
+
+    let serialized = serde_json::to_value(&hit).expect("hit serializes");
+    assert_eq!(serialized["chunk_key"], "ATT:c0");
+    assert_eq!(serialized["block_keys"], json!(["ATT:p1:b1"]));
+    assert!(serialized.get("chunk_id").is_none());
+    assert!(serialized.get("block_ids").is_none());
+}

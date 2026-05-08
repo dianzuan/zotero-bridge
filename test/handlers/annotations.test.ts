@@ -144,6 +144,92 @@ describe("annotations handler", () => {
         expect(e.message).to.match(/Invalid annotation type/);
       }
     });
+
+    it("rejects missing annotation position with -32602", async () => {
+      const parent: any = { id: 5, libraryID: 1 };
+      installZotero({
+        Items: { getAsync: sinon.stub().withArgs(5).resolves(parent) },
+      });
+
+      const { annotationsHandlers } = await import("../../src/handlers/annotations");
+      try {
+        await annotationsHandlers.create({
+          parentKey: 5,
+          type: "highlight",
+          text: "selected text",
+          position: undefined as any,
+        });
+        expect.fail("should have thrown");
+      } catch (e: any) {
+        expect(e.code).to.equal(-32602);
+        expect(e.message).to.match(/position/i);
+      }
+    });
+
+    it("rejects malformed annotation position with -32602", async () => {
+      const parent: any = { id: 5, libraryID: 1 };
+      installZotero({
+        Items: { getAsync: sinon.stub().withArgs(5).resolves(parent) },
+      });
+
+      const { annotationsHandlers } = await import("../../src/handlers/annotations");
+      try {
+        await annotationsHandlers.create({
+          parentKey: 5,
+          type: "highlight",
+          text: "selected text",
+          position: { foo: 1 },
+        });
+        expect.fail("should have thrown");
+      } catch (e: any) {
+        expect(e.code).to.equal(-32602);
+        expect(e.message).to.match(/pageIndex|rects|position/i);
+      }
+    });
+
+    it("rejects invalid sortIndex with -32602", async () => {
+      const parent: any = { id: 5, libraryID: 1 };
+      installZotero({
+        Items: { getAsync: sinon.stub().withArgs(5).resolves(parent) },
+      });
+
+      const { annotationsHandlers } = await import("../../src/handlers/annotations");
+      try {
+        await annotationsHandlers.create({
+          parentKey: 5,
+          type: "highlight",
+          text: "selected text",
+          position: { pageIndex: 1, rects: [[10, 20, 30, 40]] },
+          sortIndex: "bad",
+        });
+        expect.fail("should have thrown");
+      } catch (e: any) {
+        expect(e.code).to.equal(-32602);
+        expect(e.message).to.match(/sortIndex/i);
+      }
+    });
+
+    it("rejects boolean sortIndex with -32602", async () => {
+      const parent: any = { id: 5, libraryID: 1 };
+      installZotero({
+        Items: { getAsync: sinon.stub().withArgs(5).resolves(parent) },
+      });
+
+      const { annotationsHandlers } = await import("../../src/handlers/annotations");
+      try {
+        await annotationsHandlers.create({
+          parentKey: 5,
+          type: "highlight",
+          text: "selected text",
+          position: { pageIndex: 1, rects: [[10, 20, 30, 40]] },
+          sortIndex: true,
+        });
+        expect.fail("should have thrown");
+      } catch (e: any) {
+        expect(e.code).to.equal(-32602);
+        expect(e.message).to.match(/sortIndex/i);
+      }
+    });
   });
 
   describe("delete", () => {

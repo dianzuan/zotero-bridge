@@ -13,7 +13,7 @@
       },
       {
         "method": "collections.getItems",
-        "params": {"key": "COL3", "limit": 500},
+        "params": {"key": "COL3", "limit": 500, "offset": 0},
         "result": {"items": [{"key": "ITEM10"}, {"key": "ITEM11"}]}
       },
       {

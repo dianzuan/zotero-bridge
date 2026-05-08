@@ -62,7 +62,8 @@ pub struct AcademicZhHit {
     pub authors: Vec<String>,
     pub zotero_uri: String,
     pub section_heading: String,
-    pub chunk_id: String,
+    #[serde(alias = "chunk_id")]
+    pub chunk_key: String,
     pub query: String,
     pub score: f64,
     #[serde(default)]
@@ -71,8 +72,8 @@ pub struct AcademicZhHit {
     pub venue: Option<String>,
     #[serde(default)]
     pub doi: Option<String>,
-    #[serde(default)]
-    pub block_ids: Vec<String>,
+    #[serde(default, alias = "block_ids")]
+    pub block_keys: Vec<String>,
 }
 
 /// OCR provider request families supported by the Rust evidence contract.
@@ -600,11 +601,21 @@ pub fn parse_embedding_provider_response(
     item_key: &str,
     chunks: &[EmbeddingChunkInput],
 ) -> Result<Vec<EmbeddingVector>, String> {
+    fn parse_required_index(item: &Value, field: &str, context: &str) -> Result<usize, String> {
+        let raw = item
+            .get(field)
+            .ok_or_else(|| format!("{context} missing {field}"))?;
+        let index = raw
+            .as_u64()
+            .ok_or_else(|| format!("{context} field {field} must be a non-negative integer"))?;
+        Ok(index as usize)
+    }
+
     let spec = embedding_provider_spec(provider)?;
     let embeddings = if let Some(data) = payload.get("data").and_then(Value::as_array) {
         data.iter()
             .map(|item| {
-                let index = item.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
+                let index = parse_required_index(item, "index", "embedding response item")?;
                 let vector = item
                     .get("embedding")
                     .and_then(Value::as_array)
@@ -619,7 +630,7 @@ pub fn parse_embedding_provider_response(
         items
             .iter()
             .map(|item| {
-                let index = item.get("text_index").and_then(Value::as_u64).unwrap_or(0) as usize;
+                let index = parse_required_index(item, "text_index", "dashscope embedding item")?;
                 let vector = item
                     .get("embedding")
                     .and_then(Value::as_array)

@@ -63,15 +63,15 @@ describe("rag handler", () => {
         title: "产业贸易中心性、贸易外向度与金融风险",
         text: "本文利用世界投入产出表和金融风险指标构造识别策略。",
         section_heading: "三、研究设计",
-        chunk_id: "ATT42:c000001",
-        block_ids: ["ATT42:p12:b08"],
+        chunk_key: "ATT42:c000001",
+        block_keys: ["ATT42:p12:b08"],
       },
       {
         item_key: "ITEM42",
         title: "产业贸易中心性、贸易外向度与金融风险",
         text: "附录说明数据清洗过程。",
         section_heading: "附录",
-        chunk_id: "ATT42:c000002",
+        chunk_key: "ATT42:c000002",
       },
     ];
     installZotero({
@@ -104,14 +104,14 @@ describe("rag handler", () => {
       text: "本文利用世界投入产出表和金融风险指标构造识别策略。",
       zotero_uri: "zotero://select/library/items/ITEM42",
       section_heading: "三、研究设计",
-      chunk_id: "ATT42:c000001",
+      chunk_key: "ATT42:c000001",
       query: "贸易中心性 金融风险 识别策略",
     });
     expect(result.hits[0].authors).to.deep.equal(["王姝黛", "杨子荣"]);
     expect(result.hits[0].year).to.equal(2022);
     expect(result.hits[0].venue).to.equal("中国工业经济");
     expect(result.hits[0].doi).to.equal("10.test/example");
-    expect(result.hits[0].block_ids).to.deep.equal(["ATT42:p12:b08"]);
+    expect(result.hits[0].block_keys).to.deep.equal(["ATT42:p12:b08"]);
     expect(result.hits[0].score).to.be.greaterThan(0);
   });
 
@@ -133,7 +133,7 @@ describe("rag handler", () => {
           item_key: "ITEM42",
           title: "Title",
           text: "体育产业数字化机制检验",
-          chunk_id: "ITEM42:c1",
+          chunk_key: "ITEM42:c1",
         })),
       },
     });
@@ -157,6 +157,41 @@ describe("rag handler", () => {
       retrieval_mode: "lexical_fallback",
       embedding_artifact_title: "ITEM42.zotron-embed.npz",
     });
+  });
+
+  it("searchHits accepts legacy chunk_id and block_ids but emits key-first fields", async () => {
+    const item = makeItem();
+    const attachment = makeChunkAttachment();
+    installZotero({
+      Items: {
+        getAsync: sinon.stub().callsFake(async (id: number | number[]) => {
+          if (Array.isArray(id)) return [item];
+          return id === 42 ? item : attachment;
+        }),
+      },
+      File: {
+        getContentsAsync: sinon.stub().resolves(JSON.stringify({
+          item_key: "ITEM42",
+          title: "Title",
+          text: "宏观因子风险配置",
+          chunk_id: "ITEM42:c7",
+          block_ids: ["ITEM42:p1:b1"],
+        })),
+      },
+    });
+
+    delete require.cache[require.resolve("../../src/handlers/rag")];
+    const { ragHandlers } = await import("../../src/handlers/rag");
+    const result = await ragHandlers.searchHits({
+      query: "宏观因子",
+      keys: [42],
+    });
+
+    expect(result.total).to.equal(1);
+    expect(result.hits[0].chunk_key).to.equal("ITEM42:c7");
+    expect(result.hits[0].block_keys).to.deep.equal(["ITEM42:p1:b1"]);
+    expect(result.hits[0]).not.to.have.property("chunk_id");
+    expect(result.hits[0]).not.to.have.property("block_ids");
   });
 
 });

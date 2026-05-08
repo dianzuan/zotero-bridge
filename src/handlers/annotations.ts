@@ -30,7 +30,7 @@ export const annotationsHandlers = {
     comment?: string;
     color?: string;
     position: any;
-    sortIndex?: number | string;
+    sortIndex?: unknown;
   }) {
     const parent = await requireItem(params.parentKey);
     const validation = validateAnnotationParams({
@@ -39,6 +39,7 @@ export const annotationsHandlers = {
       color: params.color,
       comment: params.comment,
       position: params.position,
+      sortIndex: params.sortIndex,
     });
     if (!validation.ok) throw { code: -32602, message: validation.message };
 
@@ -49,8 +50,12 @@ export const annotationsHandlers = {
     if (params.text) (ann as any).annotationText = params.text;
     if (params.comment) (ann as any).annotationComment = params.comment;
     if (params.color) (ann as any).annotationColor = params.color;
-    if (params.position) (ann as any).annotationPosition = JSON.stringify(params.position);
-    (ann as any).annotationSortIndex = params.sortIndex ?? 0;
+    (ann as any).annotationPosition = JSON.stringify(params.position);
+    (ann as any).annotationSortIndex = params.sortIndex === undefined
+      ? 0
+      : typeof params.sortIndex === "number"
+        ? params.sortIndex
+        : Number(String(params.sortIndex).trim());
     await ann.saveTx();
     return { ok: true, key: ann.key };
   },

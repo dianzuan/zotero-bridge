@@ -136,3 +136,36 @@ fn embedding_response_parser_accepts_openai_and_dashscope_shapes() {
     assert_eq!(parsed[1].chunk_key, "ATT:c1");
     assert_eq!(parsed[1].vector, vec![4.0, 5.0, 6.0]);
 }
+
+#[test]
+fn embedding_response_parser_rejects_missing_provider_indexes() {
+    let openai_missing_index = json!({
+        "data": [
+            {"embedding": [0.1, 0.2]}
+        ]
+    });
+    let err = parse_embedding_provider_response(
+        "volcengine",
+        &openai_missing_index,
+        "ITEMKEY",
+        &chunks(),
+    )
+    .expect_err("openai-compatible payload must include index");
+    assert!(err.contains("missing index"));
+
+    let dashscope_missing_text_index = json!({
+        "output": {
+            "embeddings": [
+                {"embedding": [1.0, 2.0]}
+            ]
+        }
+    });
+    let err = parse_embedding_provider_response(
+        "alibaba",
+        &dashscope_missing_text_index,
+        "ITEMKEY",
+        &chunks(),
+    )
+    .expect_err("dashscope payload must include text_index");
+    assert!(err.contains("missing text_index"));
+}

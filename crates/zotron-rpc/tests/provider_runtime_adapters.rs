@@ -19,30 +19,8 @@ fn provider_http_transport_posts_json_with_injected_api_key() {
     let handle = thread::spawn(move || {
         let (stream, _) = listener.accept().expect("accept provider request");
         let mut reader = BufReader::new(stream);
-        let mut headers = Vec::new();
-        loop {
-            let mut line = String::new();
-            reader.read_line(&mut line).expect("read header line");
-            let trimmed = line.trim_end().to_string();
-            if trimmed.is_empty() {
-                break;
-            }
-            headers.push(trimmed);
-        }
-
-        let content_length = headers
-            .iter()
-            .find_map(|header| {
-                let (name, value) = header.split_once(':')?;
-                name.eq_ignore_ascii_case("content-length")
-                    .then(|| value.trim().parse::<usize>().ok())
-                    .flatten()
-            })
-            .expect("content-length header");
-        let mut body = vec![0; content_length];
-        reader.read_exact(&mut body).expect("read request body");
-        tx.send((headers, String::from_utf8(body).expect("utf8 request body")))
-            .expect("send captured request");
+        let (headers, body) = read_http_request(&mut reader);
+        tx.send((headers, body)).expect("send captured request");
 
         let response = br#"{"data":[{"index":0,"embedding":[1.0,2.0]}]}"#;
         let mut stream = reader.into_inner();
@@ -87,13 +65,7 @@ fn embedding_executor_can_use_live_http_adapter_against_local_endpoint() {
     let handle = thread::spawn(move || {
         let (stream, _) = listener.accept().expect("accept provider request");
         let mut reader = BufReader::new(stream);
-        loop {
-            let mut line = String::new();
-            reader.read_line(&mut line).expect("read header line");
-            if line.trim_end().is_empty() {
-                break;
-            }
-        }
+        let (_headers, _body) = read_http_request(&mut reader);
 
         let response = br#"{"model":"local-bge","data":[{"index":0,"embedding":[0.25,0.75]}]}"#;
         let mut stream = reader.into_inner();
@@ -175,4 +147,29 @@ fn std_provider_command_runner_reports_nonzero_stderr() {
         .expect_err("nonzero commands fail");
 
     assert!(err.contains("failure"));
+}
+
+fn read_http_request(reader: &mut BufReader<std::net::TcpStream>) -> (Vec<String>, String) {
+    let mut headers = Vec::new();
+    loop {
+        let mut line = String::new();
+        reader.read_line(&mut line).expect("read header line");
+        let trimmed = line.trim_end().to_string();
+        if trimmed.is_empty() {
+            break;
+        }
+        headers.push(trimmed);
+    }
+    let content_length = headers
+        .iter()
+        .find_map(|header| {
+            let (name, value) = header.split_once(':')?;
+            name.eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse::<usize>().ok())
+                .flatten()
+        })
+        .expect("content-length header");
+    let mut body = vec![0; content_length];
+    reader.read_exact(&mut body).expect("read request body");
+    (headers, String::from_utf8(body).expect("utf8 request body"))
 }

@@ -282,6 +282,58 @@ fn fixture_covered_commands_match_python_cli_parity_contracts() {
 }
 
 #[test]
+fn annotations_create_rejects_invalid_position_shape_without_rpc() {
+    let mut client = FakeClient::default();
+    let err = run_with_client(
+        [
+            "zotron",
+            "annotations",
+            "create",
+            "--parent",
+            "ATTACH1",
+            "--type",
+            "highlight",
+            "--position",
+            "{\"foo\":1}",
+            "--dry-run",
+        ],
+        &mut client,
+    )
+    .expect_err("invalid position is rejected");
+
+    assert!(err.contains("INVALID_ARGS"), "{err}");
+    assert!(err.contains("pageIndex") || err.contains("rects"), "{err}");
+    assert!(client.calls.is_empty(), "validation should fail before RPC");
+}
+
+#[test]
+fn annotations_create_rejects_json_boolean_sort_index_without_rpc() {
+    let mut client = FakeClient::default();
+    let err = run_with_client(
+        [
+            "zotron",
+            "annotations",
+            "create",
+            "--parent",
+            "ATTACH1",
+            "--type",
+            "highlight",
+            "--position",
+            "{\"pageIndex\":0,\"rects\":[[1,2,3,4]]}",
+            "--sort-index",
+            "true",
+            "--dry-run",
+        ],
+        &mut client,
+    )
+    .expect_err("boolean sort index is rejected");
+
+    assert!(err.contains("INVALID_ARGS"), "{err}");
+    assert!(err.contains("sort-index"), "{err}");
+    assert!(client.calls.is_empty(), "validation should fail before RPC");
+}
+
+#[test]
 fn ocr_provider_contracts_are_key_first_for_glm_paddle_and_mineru() {
     let specs = zotron_cli::ocr_provider_specs();
     let ids: Vec<_> = specs.iter().map(|spec| spec.id).collect();
@@ -680,7 +732,7 @@ fn ocr_status_prefers_external_artifact_store_without_attachment_rpc() {
             ("collections.tree".to_string(), None),
             (
                 "collections.getItems".to_string(),
-                Some(json!({"key": "COL1", "limit": 500}))
+                Some(json!({"key": "COL1", "limit": 500, "offset": 0}))
             ),
         ],
         "external artifacts should not require attachments.list, notes.get, or attachments.add"
@@ -691,6 +743,167 @@ fn ocr_status_prefers_external_artifact_store_without_attachment_rpc() {
         None => std::env::remove_var("ZOTRON_ARTIFACT_STORE"),
     }
     let _ = fs::remove_dir_all(&store);
+}
+
+#[test]
+fn ocr_status_missing_collection_returns_coded_error() {
+    let mut client = FakeClient::with_response(json!([
+        {"key": "OTHER", "name": "Other", "children": []}
+    ]));
+
+    let err = run_ocr_with_client(
+        ["zotron-ocr", "status", "--collection", "Missing"],
+        &mut client,
+    )
+    .expect_err("missing collection should fail");
+
+    assert!(err.contains("COLLECTION_NOT_FOUND"), "{err}");
+    assert!(err.contains("Missing"), "{err}");
+    assert_eq!(client.calls, vec![("collections.tree".to_string(), None)]);
+}
+
+#[test]
+fn ocr_status_paginates_collection_items_before_counting_ocr() {
+    let _guard = ENV_LOCK.lock().expect("env lock");
+    let original_store = std::env::var_os("ZOTRON_ARTIFACT_STORE");
+    let store = std::env::temp_dir().join(format!(
+        "zotron-cli-ocr-status-paginate-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&store);
+    std::env::set_var("ZOTRON_ARTIFACT_STORE", &store);
+
+    let first_page = (0..500)
+        .map(|idx| {
+            let item_key = format!("ITEM{idx:03}");
+            zotron_types::write_machine_artifact(
+                &store,
+                &item_key,
+                &format!("ATT{idx:03}"),
+                zotron_types::MachineArtifactKind::Chunks,
+                br#"{"chunk_key":"c0","text":"evidence"}\n"#,
+            )
+            .unwrap_or_else(|err| panic!("write artifact for {item_key}: {err}"));
+            json!({"key": item_key, "title": format!("Paper {idx}")})
+        })
+        .collect::<Vec<_>>();
+    zotron_types::write_machine_artifact(
+        &store,
+        "ITEM500",
+        "ATT500",
+        zotron_types::MachineArtifactKind::Chunks,
+        br#"{"chunk_key":"c0","text":"evidence"}\n"#,
+    )
+    .expect("write last page artifact");
+
+    let mut client = FakeClient::with_responses(vec![
+        json!([{"key": "COL1", "name": "Research", "children": []}]),
+        json!({"items": first_page}),
+        json!({"items": [{"key": "ITEM500", "title": "Paper 500"}]}),
+    ]);
+
+    let out = run_ocr_with_client(
+        ["zotron-ocr", "status", "--collection", "Research"],
+        &mut client,
+    )
+    .expect("ocr status succeeds with pagination");
+    let payload: Value = serde_json::from_str(&out).expect("status output is JSON");
+
+    assert_eq!(payload["total"], 501);
+    assert_eq!(payload["has_ocr"], 501);
+    assert_eq!(payload["missing_ocr"], 0);
+    assert_eq!(
+        client.calls,
+        vec![
+            ("collections.tree".to_string(), None),
+            (
+                "collections.getItems".to_string(),
+                Some(json!({"key": "COL1", "limit": 500, "offset": 0}))
+            ),
+            (
+                "collections.getItems".to_string(),
+                Some(json!({"key": "COL1", "limit": 500, "offset": 500}))
+            ),
+        ]
+    );
+
+    match original_store {
+        Some(value) => std::env::set_var("ZOTRON_ARTIFACT_STORE", value),
+        None => std::env::remove_var("ZOTRON_ARTIFACT_STORE"),
+    }
+    let _ = fs::remove_dir_all(&store);
+}
+
+#[test]
+fn rag_status_prefers_xdg_data_home_over_home_default_path() {
+    let _guard = ENV_LOCK.lock().expect("env lock");
+    let original_home = std::env::var_os("HOME");
+    let original_xdg = std::env::var_os("XDG_DATA_HOME");
+    let test_home = std::env::temp_dir().join(format!("zotron-rag-home-{}", std::process::id()));
+    let test_xdg = std::env::temp_dir().join(format!("zotron-rag-xdg-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&test_home);
+    let _ = fs::remove_dir_all(&test_xdg);
+    fs::create_dir_all(test_xdg.join("zotron").join("rag")).expect("create xdg rag dir");
+    std::env::set_var("HOME", &test_home);
+    std::env::set_var("XDG_DATA_HOME", &test_xdg);
+
+    let store_path = test_xdg.join("zotron").join("rag").join("Research.json");
+    fs::write(
+        &store_path,
+        serde_json::to_vec(&json!({
+            "collection": "Research",
+            "collection_key": "COL1",
+            "model": "embed-v1",
+            "chunks": [
+                {"item_key": "ITEM1"},
+                {"item_key": "ITEM1"},
+                {"item_key": "ITEM2"}
+            ]
+        }))
+        .expect("serialize rag store"),
+    )
+    .expect("write rag store");
+
+    let mut client = FakeClient::default();
+    let out = run_rag_with_client(
+        ["zotron-rag", "status", "--collection", "Research"],
+        &mut client,
+    )
+    .expect("rag status succeeds from xdg path");
+    let payload: Value = serde_json::from_str(&out).expect("status output is JSON");
+
+    assert_eq!(payload["status"], "indexed");
+    assert_eq!(payload["total_chunks"], 3);
+    assert_eq!(payload["total_items"], 2);
+    assert_eq!(payload["store_path"], store_path.to_string_lossy().as_ref());
+    assert!(client.calls.is_empty(), "rag status should not call RPC");
+
+    match original_home {
+        Some(value) => std::env::set_var("HOME", value),
+        None => std::env::remove_var("HOME"),
+    }
+    match original_xdg {
+        Some(value) => std::env::set_var("XDG_DATA_HOME", value),
+        None => std::env::remove_var("XDG_DATA_HOME"),
+    }
+    let _ = fs::remove_dir_all(&test_home);
+    let _ = fs::remove_dir_all(&test_xdg);
+}
+
+#[test]
+fn rag_hits_missing_collection_returns_coded_error_instead_of_raw_json() {
+    let mut client = FakeClient::default();
+    let err = run_rag_with_client(["zotron-rag", "hits", "query", "--zotero"], &mut client)
+        .expect_err("missing collection should fail");
+
+    assert_eq!(
+        err,
+        "INVALID_ARGS: --collection is required when --zotero is used"
+    );
+    assert!(
+        !err.trim_start().starts_with('{'),
+        "error should remain a plain coded message so binaries can format it exactly once"
+    );
 }
 
 #[test]

@@ -13,8 +13,9 @@ use zotron_rpc::{StdProviderCommandRunner, UreqProviderHttpTransport, ZoteroRpc}
 use zotron_types::{
     build_ocr_provider_request, builtin_ocr_provider_specs, execute_embedding_provider_request,
     is_zotron_evidence_artifact, machine_artifact_exists_for_item, machine_artifact_store_root,
-    parse_ocr_provider_response, EmbeddingRequestInput, MachineArtifactKind, OcrRequestInput,
-    ProviderCommandRunner, ProviderHttpInvocation, ProviderHttpTransport, DEFAULT_RPC_URL,
+    parse_ocr_provider_response, ArtifactStorePlatform, EmbeddingRequestInput, MachineArtifactKind,
+    OcrRequestInput, ProviderCommandRunner, ProviderHttpInvocation, ProviderHttpTransport,
+    DEFAULT_RPC_URL,
 };
 
 pub trait RpcCaller {
@@ -561,10 +562,10 @@ enum SearchCommand {
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
-    /// Delete a saved search by ID.
+    /// Delete a saved search by key.
     #[command(name = "delete-saved")]
     DeleteSaved {
-        search_id: String,
+        search_key: String,
         #[arg(long)]
         dry_run: bool,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
@@ -916,6 +917,12 @@ enum AnnotationsCommand {
         parent: String,
         #[arg(long = "type")]
         annotation_type: String,
+        /// JSON annotation position, for example '{"pageIndex":0,"rects":[[10,20,30,40]]}'.
+        #[arg(long)]
+        position: Option<String>,
+        /// Zotero annotation sort index.
+        #[arg(long = "sort-index")]
+        sort_index: Option<String>,
         #[arg(long)]
         text: Option<String>,
         #[arg(long)]
@@ -927,9 +934,9 @@ enum AnnotationsCommand {
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
-    /// Delete an annotation by ID.
+    /// Delete an annotation by key.
     Delete {
-        annotation_id: String,
+        annotation_key: String,
         #[arg(long)]
         dry_run: bool,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
@@ -950,21 +957,21 @@ enum AttachmentsCommand {
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
-    /// Get a single attachment by ID.
+    /// Get a single attachment by key.
     Get {
-        id: String,
+        key: String,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
     /// Get full-text content of an attachment.
     Fulltext {
-        id: String,
+        key: String,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
     /// Get the local filesystem path of an attachment.
     Path {
-        id: String,
+        key: String,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
@@ -997,7 +1004,7 @@ enum AttachmentsCommand {
     },
     /// Delete an attachment.
     Delete {
-        id: String,
+        key: String,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
         #[arg(long)]
@@ -1026,9 +1033,9 @@ enum NotesCommand {
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
-    /// Get a single note by ID.
+    /// Get a single note by key.
     Get {
-        note_id: String,
+        note_key: String,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
@@ -1047,7 +1054,7 @@ enum NotesCommand {
     },
     /// Update the content of an existing note.
     Update {
-        note_id: String,
+        note_key: String,
         #[arg(long)]
         content: String,
         #[arg(long)]
@@ -1055,9 +1062,9 @@ enum NotesCommand {
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
-    /// Delete a note by ID.
+    /// Delete a note by key.
     Delete {
-        note_id: String,
+        note_key: String,
         #[arg(long)]
         dry_run: bool,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
@@ -1458,15 +1465,13 @@ fn run_ocr_status_command(
     client: &mut impl RpcCaller,
     collection: String,
 ) -> Result<Value, String> {
-    let collection_key = find_collection_in_tree(client, &collection)?.ok_or_else(|| {
-        format!(
-            "{{\"error\": \"Collection not found: '{}'\"}}",
-            collection.replace('\'', "\\'")
-        )
-    })?;
-    let raw = client.call(
+    let collection_key = find_collection_in_tree(client, &collection)?
+        .ok_or_else(|| format!("COLLECTION_NOT_FOUND: Collection not found: {collection:?}"))?;
+    let raw = paginate_rpc(
+        client,
         "collections.getItems",
-        Some(serde_json::json!({"key": collection_key, "limit": 500})),
+        serde_json::json!({"key": collection_key}),
+        500,
     )?;
     let items = raw
         .get("items")
@@ -1738,7 +1743,7 @@ fn run_rag_hits_command(
         );
     }
     let collection = options.collection.ok_or_else(|| {
-        "{\"error\": \"--collection is required when --zotero is used\"}".to_string()
+        "INVALID_ARGS: --collection is required when --zotero is used".to_string()
     })?;
     let payload = client.call(
         "rag.searchHits",
@@ -1813,14 +1818,80 @@ fn rag_status_value(collection: &str) -> Result<Value, String> {
 }
 
 fn rag_store_path(collection: &str) -> PathBuf {
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("~"));
-    home.join(".local")
-        .join("share")
-        .join("zotron")
-        .join("rag")
-        .join(format!("{collection}.json"))
+    rag_store_root().join(format!("{collection}.json"))
+}
+
+fn rag_store_root() -> PathBuf {
+    let xdg_data_home = env::var_os("XDG_DATA_HOME")
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from);
+    let appdata = env::var_os("APPDATA")
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from);
+    let userprofile = env::var_os("USERPROFILE")
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from);
+    let home = env::var_os("HOME")
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from);
+
+    rag_store_root_for_platform(
+        ArtifactStorePlatform::current(),
+        xdg_data_home.as_deref(),
+        appdata.as_deref(),
+        userprofile.as_deref(),
+        home.as_deref(),
+    )
+}
+
+fn rag_store_root_for_platform(
+    platform: ArtifactStorePlatform,
+    xdg_data_home: Option<&Path>,
+    appdata: Option<&Path>,
+    userprofile: Option<&Path>,
+    home: Option<&Path>,
+) -> PathBuf {
+    match platform {
+        ArtifactStorePlatform::Windows => {
+            if let Some(path) = appdata {
+                return path.join("Zotron").join("rag");
+            }
+            if let Some(path) = userprofile {
+                return path
+                    .join("AppData")
+                    .join("Roaming")
+                    .join("Zotron")
+                    .join("rag");
+            }
+            if let Some(path) = home {
+                return path
+                    .join("AppData")
+                    .join("Roaming")
+                    .join("Zotron")
+                    .join("rag");
+            }
+            PathBuf::from(".zotron").join("rag")
+        }
+        ArtifactStorePlatform::Macos => {
+            if let Some(path) = home {
+                return path
+                    .join("Library")
+                    .join("Application Support")
+                    .join("Zotron")
+                    .join("rag");
+            }
+            if let Some(path) = xdg_data_home {
+                return path.join("zotron").join("rag");
+            }
+            PathBuf::from(".zotron").join("rag")
+        }
+        ArtifactStorePlatform::Linux | ArtifactStorePlatform::Other => xdg_data_home
+            .map(|path| path.join("zotron").join("rag"))
+            .or_else(|| {
+                home.map(|path| path.join(".local").join("share").join("zotron").join("rag"))
+            })
+            .unwrap_or_else(|| PathBuf::from(".zotron").join("rag")),
+    }
 }
 
 fn run_push_command(
@@ -2313,9 +2384,11 @@ fn run_search_command(
             }
         }
         SearchCommand::DeleteSaved {
-            search_id, dry_run, ..
+            search_key,
+            dry_run,
+            ..
         } => {
-            let params = serde_json::json!({"key": search_id});
+            let params = serde_json::json!({"key": search_key});
             if dry_run {
                 Ok((
                     dry_run_value("search.deleteSavedSearch", params),
@@ -3055,21 +3128,40 @@ fn run_annotations_command(
         AnnotationsCommand::Create {
             parent,
             annotation_type,
+            position,
+            sort_index,
             text,
             comment,
             color,
             dry_run,
             ..
         } => {
-            if !matches!(annotation_type.as_str(), "highlight" | "note" | "underline") {
+            if !matches!(
+                annotation_type.as_str(),
+                "highlight" | "note" | "underline" | "image" | "ink"
+            ) {
                 return Err(format!(
-                    "INVALID_ARGS: --type must be highlight|note|underline, got {annotation_type:?}"
+                    "INVALID_ARGS: --type must be highlight|note|underline|image|ink, got {annotation_type:?}"
                 ));
             }
+            let position = position
+                .ok_or_else(|| "INVALID_ARGS: --position JSON is required".to_string())
+                .and_then(|raw| {
+                    serde_json::from_str::<Value>(&raw)
+                        .map_err(|err| format!("INVALID_JSON: Could not parse --position: {err}"))
+                })?;
+            validate_annotation_position(annotation_type.as_str(), &position)?;
             let mut params = serde_json::Map::new();
             params.insert("parentKey".to_string(), Value::String(parent));
             params.insert("type".to_string(), Value::String(annotation_type));
             params.insert("color".to_string(), Value::String(color));
+            params.insert("position".to_string(), position);
+            if let Some(sort_index) = sort_index {
+                params.insert(
+                    "sortIndex".to_string(),
+                    parse_annotation_sort_index(sort_index)?,
+                );
+            }
             if let Some(text) = text {
                 params.insert("text".to_string(), Value::String(text));
             }
@@ -3079,17 +3171,76 @@ fn run_annotations_command(
             run_mutating_command(client, "annotations.create", Value::Object(params), dry_run)?
         }
         AnnotationsCommand::Delete {
-            annotation_id,
+            annotation_key,
             dry_run,
             ..
         } => run_mutating_command(
             client,
             "annotations.delete",
-            serde_json::json!({"key": annotation_id}),
+            serde_json::json!({"key": annotation_key}),
             dry_run,
         )?,
     };
     Ok((value, style))
+}
+
+fn validate_annotation_position(annotation_type: &str, position: &Value) -> Result<(), String> {
+    position
+        .get("pageIndex")
+        .and_then(Value::as_i64)
+        .filter(|value| *value >= 0)
+        .ok_or_else(|| {
+            "INVALID_ARGS: --position must include a non-negative integer pageIndex".to_string()
+        })?;
+
+    if annotation_type == "ink" {
+        let has_paths = position
+            .get("paths")
+            .and_then(Value::as_array)
+            .is_some_and(|paths| !paths.is_empty());
+        if !has_paths {
+            return Err("INVALID_ARGS: ink --position must include non-empty paths".to_string());
+        }
+        return Ok(());
+    }
+
+    let valid_rects = position
+        .get("rects")
+        .and_then(Value::as_array)
+        .is_some_and(|rects| !rects.is_empty() && rects.iter().all(is_annotation_rect));
+    if !valid_rects {
+        return Err(
+            "INVALID_ARGS: --position must include non-empty rects of [x1, y1, x2, y2]".to_string(),
+        );
+    }
+    Ok(())
+}
+
+fn is_annotation_rect(value: &Value) -> bool {
+    value.as_array().is_some_and(|coords| {
+        coords.len() == 4
+            && coords
+                .iter()
+                .all(|coord| coord.as_f64().is_some_and(f64::is_finite))
+    })
+}
+
+fn parse_annotation_sort_index(raw: String) -> Result<Value, String> {
+    let parsed = serde_json::from_str::<Value>(&raw).unwrap_or_else(|_| Value::String(raw));
+    let valid = match &parsed {
+        Value::Number(number) => number.as_f64().is_some_and(f64::is_finite),
+        Value::String(value) => {
+            !value.trim().is_empty() && value.trim().parse::<f64>().is_ok_and(f64::is_finite)
+        }
+        _ => false,
+    };
+    if valid {
+        Ok(parsed)
+    } else {
+        Err(format!(
+            "INVALID_ARGS: --sort-index must be a finite number or numeric string, got {parsed}"
+        ))
+    }
 }
 
 fn run_attachments_command(
@@ -3106,15 +3257,15 @@ fn run_attachments_command(
             "attachments.list",
             Some(serde_json::json!({"parentKey": parent, "limit": limit, "offset": offset})),
         )?,
-        AttachmentsCommand::Get { id, .. } => {
-            client.call("attachments.get", Some(serde_json::json!({"key": id})))?
+        AttachmentsCommand::Get { key, .. } => {
+            client.call("attachments.get", Some(serde_json::json!({"key": key})))?
         }
-        AttachmentsCommand::Fulltext { id, .. } => client.call(
+        AttachmentsCommand::Fulltext { key, .. } => client.call(
             "attachments.getFulltext",
-            Some(serde_json::json!({"key": id})),
+            Some(serde_json::json!({"key": key})),
         )?,
-        AttachmentsCommand::Path { id, .. } => {
-            client.call("attachments.getPath", Some(serde_json::json!({"key": id})))?
+        AttachmentsCommand::Path { key, .. } => {
+            client.call("attachments.getPath", Some(serde_json::json!({"key": key})))?
         }
         AttachmentsCommand::Add {
             parent,
@@ -3156,8 +3307,8 @@ fn run_attachments_command(
                 JsonStyle::PythonCompact,
             ));
         }
-        AttachmentsCommand::Delete { id, dry_run, .. } => {
-            let params = serde_json::json!({"key": id});
+        AttachmentsCommand::Delete { key, dry_run, .. } => {
+            let params = serde_json::json!({"key": key});
             if dry_run {
                 return Ok((
                     dry_run_value("attachments.delete", params),
@@ -3193,8 +3344,8 @@ fn run_notes_command(
                 Some(serde_json::json!({"parentKey": parent, "limit": limit, "offset": offset})),
             )
             .map(|value| (value, JsonStyle::Pretty))?,
-        NotesCommand::Get { note_id, .. } => {
-            let value = client.call("notes.get", Some(serde_json::json!({"key": note_id})))?;
+        NotesCommand::Get { note_key, .. } => {
+            let value = client.call("notes.get", Some(serde_json::json!({"key": note_key})))?;
             (value, JsonStyle::Pretty)
         }
         NotesCommand::Create {
@@ -3216,24 +3367,24 @@ fn run_notes_command(
             run_mutating_command(client, "notes.create", Value::Object(params), dry_run)?
         }
         NotesCommand::Update {
-            note_id,
+            note_key,
             content,
             dry_run,
             ..
         } => run_mutating_command(
             client,
             "notes.update",
-            serde_json::json!({"key": note_id, "content": content}),
+            serde_json::json!({"key": note_key, "content": content}),
             dry_run,
         )?,
         NotesCommand::Delete {
-            note_id, dry_run, ..
+            note_key, dry_run, ..
         } => {
             // Python CLI intentionally routes note deletion through items.delete.
             run_mutating_command(
                 client,
                 "items.delete",
-                serde_json::json!({"key": note_id}),
+                serde_json::json!({"key": note_key}),
                 dry_run,
             )?
         }

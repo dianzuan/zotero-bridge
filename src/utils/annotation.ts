@@ -16,6 +16,7 @@ export interface AnnotationParams {
   color?: string;
   comment?: string;
   position: any;
+  sortIndex?: unknown;
 }
 
 export type ValidationResult =
@@ -50,5 +51,77 @@ export function validateAnnotationParams(p: AnnotationParams): ValidationResult 
       message: `Invalid annotation color: ${p.color} (expected #RRGGBB 6-char hex)`,
     };
   }
+  if (
+    p.position === undefined
+    || p.position === null
+    || Array.isArray(p.position)
+    || typeof p.position !== "object"
+    || Object.keys(p.position).length === 0
+  ) {
+    return {
+      ok: false,
+      message: "annotation position must be a non-empty object",
+    };
+  }
+  const positionResult = validateAnnotationPosition(p.type, p.position);
+  if (!positionResult.ok) {
+    return positionResult;
+  }
+  try {
+    JSON.stringify(p.position);
+  } catch (err: any) {
+    return {
+      ok: false,
+      message: `annotation position must be JSON-serializable: ${err.message}`,
+    };
+  }
+  if (p.sortIndex !== undefined) {
+    if (typeof p.sortIndex !== "number" && typeof p.sortIndex !== "string") {
+      return {
+        ok: false,
+        message: `annotation sortIndex must be numeric (got ${String(p.sortIndex)})`,
+      };
+    }
+    const sortIndex = typeof p.sortIndex === "number" ? p.sortIndex : Number(p.sortIndex.trim());
+    if (!Number.isFinite(sortIndex)) {
+      return {
+        ok: false,
+        message: `annotation sortIndex must be numeric (got ${p.sortIndex})`,
+      };
+    }
+  }
   return { ok: true };
+}
+
+function validateAnnotationPosition(type: AnnotationType, position: any): ValidationResult {
+  if (!Number.isInteger(position.pageIndex) || position.pageIndex < 0) {
+    return {
+      ok: false,
+      message: "annotation position must include a non-negative integer pageIndex",
+    };
+  }
+
+  if (type === "ink") {
+    if (!Array.isArray(position.paths) || position.paths.length === 0) {
+      return {
+        ok: false,
+        message: "ink annotation position must include non-empty paths",
+      };
+    }
+    return { ok: true };
+  }
+
+  if (!Array.isArray(position.rects) || position.rects.length === 0 || !position.rects.every(isRect)) {
+    return {
+      ok: false,
+      message: "annotation position must include non-empty rects of [x1, y1, x2, y2]",
+    };
+  }
+  return { ok: true };
+}
+
+function isRect(value: any): boolean {
+  return Array.isArray(value)
+    && value.length === 4
+    && value.every((coord) => typeof coord === "number" && Number.isFinite(coord));
 }

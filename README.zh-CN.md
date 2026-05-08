@@ -186,7 +186,7 @@ zotron-rag cite "数字经济对就业的影响" --collection 数字经济 --out
 - 统一后的 OCR/parser blocks 存在 `<item-key>.zotron-blocks.jsonl`；
 - retrieval chunks 存在 `<item-key>.zotron-chunks.jsonl`；
 - vectors 和索引元数据存在 `<item-key>.zotron-embed.npz`；
-- retrieval hits 一行一个 JSON 对象，必须包含 `item_key`、`title`、`text`，并建议带上 `zotero_uri`、`chunk_id`、`block_ids`、`section_heading`、`query`、`score` 等 provenance 字段。XPI 已暴露 `rag.searchHits` / `rag.searchCards` 做 Zotero-native chunk artifact 检索；`zotron-rag hits --zotero` 会调用这个 JSON-RPC backend。
+- retrieval hits 一行一个 JSON 对象，必须包含 `item_key`、`title`、`text`，并建议带上 `zotero_uri`、`chunk_key`、`block_keys`、`section_heading`、`query`、`score` 等 provenance 字段。XPI 已暴露 `rag.searchHits` / `rag.searchCards` 做 Zotero-native chunk artifact 检索；`zotron-rag hits --zotero` 会调用这个 JSON-RPC backend。
 
 Markdown 可以作为派生的便利输出，但不能作为 OCR/RAG 的唯一 truth，因为它会丢 page、bbox、table、figure、provider 和 reading-order provenance。
 
