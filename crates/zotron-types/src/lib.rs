@@ -346,10 +346,10 @@ pub fn builtin_ocr_provider_specs() -> Vec<OcrProviderSpec> {
             id: "paddle",
             provider_key: "paddleocr-vl",
             request_style: OcrRequestStyle::PaddleocrVl,
-            auth: "bearer",
+            auth: "token",
             auth_header: "Authorization",
             supports_pdf_direct: true,
-            requires_api_key: false,
+            requires_api_key: true,
             key_field: "attachment_key",
         },
         OcrProviderSpec {
@@ -389,22 +389,13 @@ pub fn build_ocr_provider_request(
             style: spec.request_style.as_str(),
             key_field: spec.key_field,
             method: Some("POST"),
-            url: Some("https://open.bigmodel.cn/api/paas/v4/chat/completions"),
+            url: Some("https://open.bigmodel.cn/api/paas/v4/layout_parsing"),
             auth_header: Some(spec.auth_header),
             body: json!({
-                "item_key": input.item_key,
-                "attachment_key": input.attachment_key,
-                "model": "glm-4.5v",
-                "response_format": {"type": "json_object"},
-                "file": {
-                    "name": input.file_name,
-                    "mime_type": input.mime_type,
-                    "content_base64": input.content_base64,
-                },
-                "messages": [{
-                    "role": "user",
-                    "content": "Parse this PDF into ordered JSON pages and layout blocks for Zotron evidence."
-                }],
+                "model": "glm-ocr",
+                "file": data_url_file_payload(input),
+                "return_crop_images": false,
+                "need_layout_visualization": false,
             }),
             command: Vec::new(),
         }),
@@ -413,27 +404,14 @@ pub fn build_ocr_provider_request(
             style: spec.request_style.as_str(),
             key_field: spec.key_field,
             method: Some("POST"),
-            url: None,
+            url: Some("<your-aistudio-layout-parsing-endpoint>"),
             auth_header: Some(spec.auth_header),
             body: json!({
-                "item_key": input.item_key,
-                "attachment_key": input.attachment_key,
-                "model": "PaddleOCR-VL",
-                "response_format": {"type": "json_object"},
-                "messages": [{
-                    "role": "user",
-                    "content": [{
-                        "type": "input_file",
-                        "file": {
-                            "name": input.file_name,
-                            "mime_type": input.mime_type,
-                            "data": input.content_base64,
-                        }
-                    }, {
-                        "type": "text",
-                        "text": "Return ordered document layout blocks as JSON."
-                    }]
-                }],
+                "file": input.content_base64,
+                "fileType": if input.mime_type == "application/pdf" { 0 } else { 1 },
+                "useDocOrientationClassify": false,
+                "useDocUnwarping": false,
+                "useChartRecognition": false,
             }),
             command: Vec::new(),
         }),
@@ -1103,6 +1081,51 @@ fn normalize_ocr_payload(payload: &Value) -> Value {
         return json!({ "blocks": content_list });
     }
 
+    if let Some(layout_details) = payload.get("layout_details").and_then(Value::as_array) {
+        let pages = layout_details
+            .iter()
+            .enumerate()
+            .filter_map(|(index, page)| {
+                let blocks = page.as_array()?.clone();
+                Some(json!({
+                    "page": index as u64 + 1,
+                    "blocks": blocks,
+                }))
+            })
+            .collect::<Vec<_>>();
+        return json!({ "pages": pages });
+    }
+
+    if let Some(results) = payload
+        .pointer("/result/layoutParsingResults")
+        .and_then(Value::as_array)
+    {
+        let pages = results
+            .iter()
+            .enumerate()
+            .filter_map(|(index, result)| {
+                let mut blocks = result
+                    .pointer("/prunedResult/parsing_res_list")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                if blocks.is_empty() {
+                    if let Some(markdown) = result.pointer("/markdown/text").and_then(Value::as_str)
+                    {
+                        blocks = blocks_from_markdown_text(markdown);
+                    }
+                }
+                (!blocks.is_empty()).then(|| {
+                    json!({
+                        "page": index as u64 + 1,
+                        "blocks": blocks,
+                    })
+                })
+            })
+            .collect::<Vec<_>>();
+        return json!({ "pages": pages });
+    }
+
     for candidate in [
         payload.pointer("/choices/0/message/content"),
         payload.pointer("/choices/0/delta/content"),
@@ -1122,6 +1145,42 @@ fn normalize_ocr_payload(payload: &Value) -> Value {
     }
 
     payload.clone()
+}
+
+fn blocks_from_markdown_text(markdown: &str) -> Vec<Value> {
+    markdown
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            let heading = trimmed.starts_with('#');
+            let text = if heading {
+                trimmed.trim_start_matches('#').trim()
+            } else {
+                trimmed
+            };
+            if text.is_empty() {
+                return None;
+            }
+            Some(json!({
+                "type": if heading { "heading" } else { "text" },
+                "text": text,
+            }))
+        })
+        .collect()
+}
+
+fn data_url_file_payload(input: &OcrRequestInput) -> String {
+    let content = input.content_base64.trim();
+    if content.starts_with("data:")
+        || content.starts_with("http://")
+        || content.starts_with("https://")
+    {
+        return content.to_string();
+    }
+    format!("data:{};base64,{content}", input.mime_type)
 }
 
 fn parse_json_string(value: &Value) -> Option<Value> {

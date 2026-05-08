@@ -118,7 +118,81 @@ fn ocr_executor_routes_glm_and_paddle_through_mock_http_without_credentials() {
     );
     assert!(http.seen[0].auth_header_value.is_none());
     assert_eq!(http.seen[1].provider, "paddleocr-vl");
-    assert_eq!(http.seen[1].body["attachment_key"], "ATTACHKEY");
+    assert_eq!(http.seen[1].body["file"], "JVBERi0x");
+    assert!(http.seen[1].body.get("attachment_key").is_none());
+}
+
+#[test]
+fn ocr_executor_uses_live_glm_layout_parsing_contract() {
+    let mut http = MockHttpTransport {
+        replies: vec![json!({
+            "model": "GLM-OCR",
+            "layout_details": [[{
+                "label": "text",
+                "content": "GLM layout 正文",
+                "bbox_2d": [0.1, 0.2, 0.3, 0.4],
+                "height": 800,
+                "width": 600
+            }]]
+        })],
+        ..Default::default()
+    };
+    let mut cli = MockCommandRunner::default();
+
+    let blocks = execute_ocr_provider_request("glm", &ocr_input(), &mut http, &mut cli)
+        .expect("glm layout parsing response normalizes");
+
+    assert_eq!(
+        http.seen[0].url.as_deref(),
+        Some("https://open.bigmodel.cn/api/paas/v4/layout_parsing")
+    );
+    assert_eq!(http.seen[0].body["model"], "glm-ocr");
+    assert_eq!(
+        http.seen[0].body["file"],
+        "data:application/pdf;base64,JVBERi0x"
+    );
+    assert!(http.seen[0].body.get("messages").is_none());
+    assert_eq!(blocks[0].block_key, "ATTACHKEY:p1:b0");
+    assert_eq!(blocks[0].text, "GLM layout 正文");
+    assert_eq!(blocks[0].bbox, Some([0.1, 0.2, 0.3, 0.4]));
+}
+
+#[test]
+fn ocr_executor_uses_live_paddle_sync_contract() {
+    let mut http = MockHttpTransport {
+        replies: vec![json!({
+            "errorCode": 0,
+            "errorMsg": "Success",
+            "result": {
+                "layoutParsingResults": [{
+                    "markdown": {
+                        "text": "# 标题\n\nPaddle 正文段落",
+                        "images": {}
+                    },
+                    "prunedResult": {
+                        "parsing_res_list": []
+                    }
+                }]
+            }
+        })],
+        ..Default::default()
+    };
+    let mut cli = MockCommandRunner::default();
+
+    let blocks = execute_ocr_provider_request("paddleocr-vl", &ocr_input(), &mut http, &mut cli)
+        .expect("paddle sync response normalizes");
+
+    assert_eq!(http.seen[0].provider, "paddleocr-vl");
+    assert_eq!(http.seen[0].body["file"], "JVBERi0x");
+    assert_eq!(http.seen[0].body["fileType"], 0);
+    assert_eq!(http.seen[0].body["useDocOrientationClassify"], false);
+    assert_eq!(http.seen[0].body["useDocUnwarping"], false);
+    assert_eq!(http.seen[0].body["useChartRecognition"], false);
+    assert!(http.seen[0].body.get("messages").is_none());
+    assert_eq!(blocks[0].block_type, "heading");
+    assert_eq!(blocks[0].text, "标题");
+    assert_eq!(blocks[1].block_type, "paragraph");
+    assert_eq!(blocks[1].section_path, vec!["标题"]);
 }
 
 #[test]

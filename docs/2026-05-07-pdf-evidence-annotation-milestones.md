@@ -14,6 +14,14 @@ then apply Zotero-native annotations.
 - New RAG/OCR/PDF evidence outputs must not introduce public `*_id`,
   `collectionId`, `attachmentId`, or `itemId` fields.
 - MinerU-style structured JSON is the primary path for layout-aware parsing.
+- MinerU integration targets the Cloud precise parsing API. The lightweight
+  Agent API returns only Markdown and is not sufficient as the default evidence
+  pipeline.
+- Human review remains PDF-first. Provider Markdown is a preview/debug artifact,
+  not a replacement reading surface.
+- Tables are structured textual evidence and should be embedded as independent
+  table chunks. Figures/charts/images are asset-backed evidence references; the
+  pixel content is read by a VLM only on demand.
 - OCR, block, chunk, and embedding outputs are machine artifacts. They must not
   be Zotero notes or ordinary child attachments by default, so Zotero's library
   UI/search continues to show real literature.
@@ -65,6 +73,8 @@ Deliverables:
 
 - CLI/RPC contract for parsing a Zotero attachment by `attachment_key`.
 - MinerU adapter path that imports structured JSON/Markdown output.
+- MinerU Cloud precise parsing adapter:
+  submit task or signed upload, poll task status, download `full_zip_url`.
 - Normalized block JSONL artifact:
   `storage/<attachment-key>/.zotron/zotron-blocks.jsonl`.
 - Provider raw artifact:
@@ -90,6 +100,8 @@ Acceptance:
 - One sample PDF produces blocks with stable `block_key`, `page_idx`, text, and
   bbox when the parser provides bbox.
 - Raw parser output is preserved for audit/re-normalization.
+- Provider-native Markdown and extracted assets are preserved when available,
+  but PDF remains the human reading surface.
 - Markdown is generated only as a convenience artifact, not source of truth.
 - Zotero UI still shows only the original PDF attachment, not a new Zotron
   artifact child item.
@@ -101,6 +113,9 @@ Goal: index structured blocks without losing provenance.
 Deliverables:
 
 - Structure-first chunk builder from blocks.
+- Table-aware chunk builder: table blocks do not merge into surrounding
+  paragraphs; embedding text includes table title/caption, headers, row labels,
+  units, and cell values.
 - Optional embedding generation over chunks/blocks.
 - Chunk artifact:
   `storage/<attachment-key>/.zotron/zotron-chunks.jsonl`.
@@ -111,6 +126,10 @@ Deliverables:
 Acceptance:
 
 - Chunks do not cross section boundaries unless explicitly marked.
+- Table chunks preserve table provenance and stay independently retrievable.
+- Figure/chart/image blocks without caption or parser text do not enter text
+  embedding; they remain retrievable by metadata and available for on-demand
+  visual inspection.
 - Every chunk preserves `item_key`, `attachment_key`, `block_keys`,
   page range, section path, and text.
 - Retrieval can run with lexical search only; embeddings are not mandatory.

@@ -79,6 +79,43 @@ Zotero Data Directory/
 - 禁止用 ordinary Zotero note/child attachment 存机器 artifact，除非用户显式
   请求导出或调试。
 
+### 0.3 2026-05-08 修订：PDF 是人类阅读真源，OCR 是机器证据层
+
+人类阅读和复核的主界面必须是 PDF 本身。PDF 是人工编辑排版后的正式刊物，
+比任何 OCR Markdown 更适合阅读、核对图表、检查脚注和判断上下文。Zotron
+不追求把 PDF 转成一个“更适合人读的 Markdown 替代品”。
+
+OCR / parser 输出的职责是机器层：
+
+- 建立 page / bbox / block / chunk provenance。
+- 帮 agent 少量读取和定位证据，节省上下文 token。
+- 支撑 PDF 跳转、高亮、标注和人工复核。
+- 保留 provider 原始产物，便于重新 normalize 和审计。
+
+因此数据职责分层为：
+
+```text
+PDF                         # 人类阅读真源
+raw provider artifact        # 审计和重跑来源
+provider native markdown     # 快速预览，不是 truth
+zotron-blocks.jsonl          # 结构化定位层
+zotron-chunks.jsonl          # 检索层
+embedding cache              # 可重建机器缓存
+image/table assets           # 按需复核和视觉读取
+```
+
+表格和图片不能混为一类：
+
+- 表格是结构化文本证据。只要 provider 能返回 faithful Markdown、HTML table
+  或 table JSON，就应该进入 blocks/chunks/embedding，但必须独立切 chunk，
+  保留 table title、caption、列名、行名、单位、页码、bbox 和 raw_ref。
+- 公式可以进入检索层，短公式应和公式说明一起 chunk，长公式保留 raw_ref。
+- Figure/chart/image 的像素内容默认不进入 text embedding。默认只把 caption、
+  title、page、bbox、asset_ref、provider metadata 写入 block；当用户问题命中
+  图表、caption 不足以回答、或需要视觉复核时，再裁剪图片交给 VLM。
+- 没有 caption / 文本 / parser 内容的纯图片不进入 embedding，只保留定位和
+  asset 引用。
+
 ## 1. 非目标
 
 - 不把 OCR 结果设计成人类阅读界面。人类阅读源是 PDF。
@@ -290,7 +327,7 @@ Provider 分三类，不要混成一种。
 | 层级 | Provider | 状态 |
 |---|---|---|
 | 默认 live | GLM-OCR | 默认 OCR provider；走智谱 layout parsing endpoint |
-| parser scaffold | MinerU | 已有 raw parser scaffold；待接本地 CLI transport |
+| target parser | MinerU Cloud 精准解析 API | 待接云 API；主路径不再依赖本地 CLI |
 | parser scaffold | Mistral OCR | 已有 raw parser scaffold；待接 `/v1/ocr` transport |
 | parser scaffold | PaddleOCR-VL | 已有 raw parser scaffold；待接本地/服务端 transport |
 | spec only | Mathpix | 公式/表格/STEM 专项候选 |
@@ -310,6 +347,11 @@ Provider 分三类，不要混成一种。
 调研补充：
 
 - MinerU 官方输出不止 markdown，还包括 `content_list.json`、`content_list_v2.json`、`middle.json`、layout/span debug PDFs 和图片等辅助文件；`content_list_v2.json` 按 page 分组，block 有 `type/content/bbox/anchor` 等字段，最适合直接 normalize 成 zotron blocks。
+- MinerU 云 API 分精准解析和 Agent 轻量解析。Zotron 应接精准解析 API：
+  `POST /api/v4/extract/task` 或本地文件签名上传批量接口，轮询
+  `/api/v4/extract/task/{task_id}`，完成后下载 `full_zip_url`。Agent 轻量
+  API 只返回 Markdown CDN 链接，适合临时 agent 工作流，不适合作为 Zotron
+  证据库主路径。
 - Mistral OCR 官方 `mistral-ocr-latest` / `/v1/ocr` 返回 markdown、图片 bbox 和文档结构 metadata；新版还支持 table_format、header/footer、confidence scores 等参数，适合云端结构化 OCR。
 - PaddleOCR/PaddleOCR-VL 是本地/服务化优先的开源路线；PaddleOCR-VL 1.5 面向 document parsing，适合做自托管 provider。
 
@@ -322,9 +364,14 @@ Zotron 不把图像内容改写成合成文本作为检索证据。图像、插�
 MVP 策略：
 
 - 表格正常进入主线：如果 provider 返回结构化 table 或 faithful Markdown table，
-  就 normalize 成 table block/chunk，并保留原始 provider 字段。
+  就 normalize 成 table block/chunk，并保留原始 provider 字段。Table chunk
+  不和普通 paragraph 混切；embedding 文本应由 table title、caption、列名、
+  行名、单位和单元格内容显式构造。
 - Figure/image block 不默认进入全文语义检索文本；除非有 caption 或文档 parser
   明确给出可引用文本。
+- Figure/chart 的图片资源要保存到 raw artifact / assets 中，因为它们是后续
+  人工复核、PDF 对照、按需 VLM 读图的入口；但图片像素不是默认 embedding
+  输入。
 - 不引入 Qwen/Doubao/OpenAI-compatible vision 这类 prompt-only OCR fallback。
 
 ### 4.3 公式/表格专项

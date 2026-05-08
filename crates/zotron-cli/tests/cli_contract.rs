@@ -347,7 +347,8 @@ fn ocr_provider_contracts_are_key_first_for_glm_paddle_and_mineru() {
     assert!(glm.supports_pdf_direct);
 
     let paddle = zotron_cli::ocr_provider_spec("paddleocr-vl").expect("paddle spec");
-    assert_eq!(paddle.request_style, "openai-vision");
+    assert_eq!(paddle.request_style, "paddleocr-vl");
+    assert_eq!(paddle.auth, "token");
     assert_eq!(paddle.auth_header, "Authorization");
 
     let mineru = zotron_cli::ocr_provider_spec("mineru").expect("mineru spec");
@@ -478,8 +479,16 @@ fn zotron_ocr_provider_json_executes_local_http_with_endpoint_and_env_credential
         .iter()
         .any(|header| header.eq_ignore_ascii_case("Authorization: Bearer ocr-env-key")));
     let request_body: Value = serde_json::from_str(&body).expect("request body is JSON");
-    assert_eq!(request_body["item_key"], "ITEMKEY");
-    assert_eq!(request_body["attachment_key"], "ATTACHKEY");
+    assert_eq!(request_body["model"], "glm-ocr");
+    assert_eq!(request_body["file"], "data:application/pdf;base64,JVBERi0x");
+    assert!(
+        request_body.get("item_key").is_none(),
+        "provider body should not leak local item key"
+    );
+    assert!(
+        request_body.get("attachment_key").is_none(),
+        "provider body should not leak local attachment key"
+    );
 
     std::env::remove_var("ZOTRON_TEST_OCR_KEY");
     let _ = fs::remove_file(input_path);

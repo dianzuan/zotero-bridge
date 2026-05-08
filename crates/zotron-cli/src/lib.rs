@@ -13,9 +13,9 @@ use zotron_rpc::{StdProviderCommandRunner, UreqProviderHttpTransport, ZoteroRpc}
 use zotron_types::{
     build_ocr_provider_request, builtin_ocr_provider_specs, execute_embedding_provider_request,
     is_zotron_evidence_artifact, machine_artifact_exists_for_item, machine_artifact_store_root,
-    parse_ocr_provider_response, ArtifactStorePlatform, EmbeddingRequestInput, MachineArtifactKind,
-    OcrRequestInput, ProviderCommandRunner, ProviderHttpInvocation, ProviderHttpTransport,
-    DEFAULT_RPC_URL,
+    ocr_provider_spec as raw_ocr_provider_spec, parse_ocr_provider_response, ArtifactStorePlatform,
+    EmbeddingRequestInput, MachineArtifactKind, OcrRequestInput, ProviderCommandRunner,
+    ProviderHttpInvocation, ProviderHttpTransport, DEFAULT_RPC_URL,
 };
 
 pub trait RpcCaller {
@@ -88,10 +88,7 @@ fn cli_ocr_provider_spec(spec: zotron_types::OcrProviderSpec) -> CliOcrProviderS
     CliOcrProviderSpec {
         id: spec.provider_key,
         provider: spec.provider_key,
-        request_style: match spec.request_style {
-            zotron_types::OcrRequestStyle::PaddleocrVl => "openai-vision",
-            other => other.as_str(),
-        },
+        request_style: spec.request_style.as_str(),
         auth: spec.auth,
         auth_header: spec.auth_header,
         supports_pdf_direct: spec.supports_pdf_direct,
@@ -1434,7 +1431,8 @@ fn run_ocr_provider_json_command(
         let method = request
             .method
             .ok_or_else(|| format!("OCR provider {} missing HTTP method", request.provider))?;
-        let mut transport = provider_http_transport(api_key_env.as_deref())?;
+        let auth_scheme = raw_ocr_provider_spec(&provider)?.auth;
+        let mut transport = provider_http_transport_with_auth(api_key_env.as_deref(), auth_scheme)?;
         transport.post_json(&ProviderHttpInvocation {
             provider: request.provider.to_string(),
             style: request.style.to_string(),
@@ -1703,6 +1701,13 @@ fn run_embedding_provider_json_command(
 }
 
 fn provider_http_transport(api_key_env: Option<&str>) -> Result<UreqProviderHttpTransport, String> {
+    provider_http_transport_with_auth(api_key_env, "bearer")
+}
+
+fn provider_http_transport_with_auth(
+    api_key_env: Option<&str>,
+    auth_scheme: &str,
+) -> Result<UreqProviderHttpTransport, String> {
     let Some(env_name) = api_key_env else {
         return Ok(UreqProviderHttpTransport::new());
     };
@@ -1711,10 +1716,20 @@ fn provider_http_transport(api_key_env: Option<&str>) -> Result<UreqProviderHttp
     if token.trim().is_empty() {
         return Err(format!("provider credential env var {env_name} is empty"));
     }
-    if token.trim_start().starts_with("Bearer ") {
-        Ok(UreqProviderHttpTransport::with_api_key(token))
-    } else {
-        Ok(UreqProviderHttpTransport::with_bearer_token(token))
+    let token = token.trim();
+    match auth_scheme {
+        "token" if token.starts_with("token ") => {
+            Ok(UreqProviderHttpTransport::with_api_key(token.to_string()))
+        }
+        "token" => Ok(UreqProviderHttpTransport::with_api_key(format!(
+            "token {token}"
+        ))),
+        "bearer" if token.starts_with("Bearer ") => {
+            Ok(UreqProviderHttpTransport::with_api_key(token.to_string()))
+        }
+        "bearer" => Ok(UreqProviderHttpTransport::with_bearer_token(token)),
+        "none" => Ok(UreqProviderHttpTransport::new()),
+        other => Err(format!("unsupported provider auth scheme {other}")),
     }
 }
 

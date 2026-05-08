@@ -274,22 +274,18 @@ fn ocr_request_builders_emit_provider_specific_transport_contracts() {
     assert_eq!(glm.method, Some("POST"));
     assert_eq!(glm.auth_header, Some("Authorization"));
     assert_eq!(glm.key_field, "attachment_key");
-    assert_eq!(glm.body["attachment_key"], "ATTACHKEY");
-    assert_eq!(glm.body["file"]["mime_type"], "application/pdf");
-    assert_eq!(glm.body["file"]["content_base64"], "JVBERi0x");
+    assert_eq!(glm.body["model"], "glm-ocr");
+    assert_eq!(glm.body["file"], "data:application/pdf;base64,JVBERi0x");
+    assert!(glm.body.get("attachment_key").is_none());
 
     let paddle = build_ocr_provider_request("paddleocr-vl", &input).expect("paddle request builds");
     assert_eq!(paddle.provider, "paddleocr-vl");
     assert_eq!(paddle.style, "paddleocr-vl");
     assert_eq!(paddle.method, Some("POST"));
-    assert_eq!(
-        paddle.body["messages"][0]["content"][0]["type"],
-        "input_file"
-    );
-    assert_eq!(
-        paddle.body["messages"][0]["content"][0]["file"]["data"],
-        "JVBERi0x"
-    );
+    assert_eq!(paddle.body["file"], "JVBERi0x");
+    assert_eq!(paddle.body["fileType"], 0);
+    assert_eq!(paddle.body["useDocOrientationClassify"], false);
+    assert!(paddle.body.get("messages").is_none());
 
     let mineru = build_ocr_provider_request("mineru", &input).expect("mineru request builds");
     assert_eq!(mineru.provider, "mineru");

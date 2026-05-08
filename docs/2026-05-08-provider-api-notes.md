@@ -25,6 +25,13 @@ Tables are in scope when a document parser returns structured table content or
 faithful Markdown. Provider raw output remains the audit source, and Markdown is
 only a convenience projection.
 
+Tables should be normalized into table blocks and table chunks for retrieval.
+The embedding text for a table should be built from title/caption, headers,
+row labels, units, and cell content, while preserving the raw table HTML/JSON or
+Markdown as the audit source. Figures and charts keep captions, bbox, page, and
+asset references by default; pixels are read by a VLM only when a query requires
+visual interpretation.
+
 ## GLM-OCR
 
 Source: https://docs.bigmodel.cn/api-reference/%E6%A8%A1%E5%9E%8B-api/%E6%96%87%E6%A1%A3%E8%A7%A3%E6%9E%90
@@ -114,9 +121,10 @@ Normalization notes:
 - `md_results` is a convenience artifact and must not replace structured
   blocks.
 
-The Rust scaffold currently does not match this contract. It still points GLM
-OCR at the chat-completions endpoint with model `glm-4.5v`; live GLM-OCR support
-must switch to `/layout_parsing`, `glm-ocr`, and this response shape.
+Current Rust migration note: the live adapter now uses `/layout_parsing`,
+`glm-ocr`, and data-url encoding for local PDFs. Raw provider output and
+downloaded image/layout assets still need to be persisted as first-class
+artifacts.
 
 ## PaddleOCR-VL
 
@@ -160,9 +168,9 @@ Notes:
 - Each layout parsing result can include `markdown.text`,
   `markdown.images`, and `outputImages`.
 
-The Rust scaffold currently does not match this contract. It still builds an
-chat/message-style payload for `paddleocr-vl`; it must be changed before
-live Paddle sync calls can work.
+Current Rust migration note: the sync adapter now uses this `file` / `fileType`
+contract and `Authorization: token ...`. Raw `markdown.images`, `outputImages`,
+and provider-native Markdown still need to be persisted as first-class artifacts.
 
 ### Async OCR jobs endpoint
 
@@ -255,6 +263,84 @@ available, but bbox/layout details may live in provider-specific fields inside
 the full result. The live adapter should preserve raw Paddle output first, then
 normalize conservatively rather than inventing bbox.
 
+## MinerU Cloud
+
+Source: https://mineru.net/apiManage/docs
+
+Decision: Zotron should integrate MinerU Cloud's precise parsing API, not the
+lightweight Agent API, for the main evidence pipeline.
+
+Rationale:
+
+- The precise API supports PDF/image/Office inputs up to 200 MB and 200 pages.
+- It supports `pipeline`, `vlm`, and `MinerU-HTML` model versions.
+- It returns a result zip URL containing Markdown and JSON artifacts; docs map
+  `full.md` to the Markdown result, `*_content_list.json` to content list JSON,
+  `*_model.json` to model inference output, and `layout.json` to middle JSON.
+- The Agent lightweight API is useful for temporary AI-agent workflows, but it
+  only returns a Markdown CDN URL and has tighter file/page limits; it is not
+  enough for Zotron's auditable blocks/chunks/artifact pipeline.
+
+Environment:
+
+```bash
+ZOTRON_MINERU_API_KEY=
+ZOTRON_MINERU_ENDPOINT=https://mineru.net/api/v4
+ZOTRON_MINERU_MODEL_VERSION=vlm
+```
+
+Remote file flow:
+
+```text
+POST {ZOTRON_MINERU_ENDPOINT}/extract/task
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+Request body:
+
+```json
+{
+  "url": "<public or uploaded file URL>",
+  "model_version": "vlm",
+  "is_ocr": false,
+  "enable_formula": true,
+  "enable_table": true,
+  "language": "ch",
+  "data_id": "<attachment_key>",
+  "page_ranges": "1-200"
+}
+```
+
+Polling:
+
+```text
+GET {ZOTRON_MINERU_ENDPOINT}/extract/task/{task_id}
+Authorization: Bearer <token>
+```
+
+When `data.state` is `done`, download `data.full_zip_url` and preserve the zip
+as raw artifact before normalization.
+
+Local file flow:
+
+- Use the signed upload API when parsing a local Zotero attachment that is not
+  already reachable by URL.
+- Request upload URL from `/api/v4/file-urls/batch`, PUT the PDF bytes to the
+  returned URL, then poll the generated task/batch result.
+
+Normalization target:
+
+- `full.md`: provider-native preview artifact, not truth.
+- `*_content_list.json` / `content_list_v2.json`: preferred source for Zotron
+  blocks and table chunks.
+- Images and layout/span PDFs: preserved as raw/debug assets and referenced by
+  block metadata when available.
+- Tables: normalize into independent table blocks/chunks and include them in
+  embedding.
+- Figures/charts/images: keep caption/title/page/bbox/asset_ref; run VLM only
+  on demand.
+
 ## Implementation Implications
 
 - Provider adapters need per-provider auth schemes; one generic Bearer wrapper
@@ -262,9 +348,11 @@ normalize conservatively rather than inventing bbox.
 - GLM-OCR is synchronous JSON with `Authorization: Bearer ...`, but it is not a
   chat-completions request.
 - HTTP transport must support both JSON and multipart/form-data.
-- Async providers need a job poller abstraction and result downloader.
+- Async providers need a job poller abstraction and result downloader. MinerU
+  precise parsing and Paddle async both require this path.
 - The provider response parser must understand GLM's `layout_details`,
-  Paddle's `result.layoutParsingResults`, and Paddle JSONL async result shape,
-  not just the current `{pages:[{blocks:[...]}]}` scaffold.
+  Paddle's `result.layoutParsingResults`, Paddle JSONL async result shape, and
+  MinerU content-list JSON, not just the current `{pages:[{blocks:[...]}]}`
+  scaffold.
 - Keep provider raw output as `zotron-ocr.raw.zip` or equivalent audit artifact
   before normalization.
