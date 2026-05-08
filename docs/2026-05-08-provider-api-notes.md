@@ -6,6 +6,97 @@ These notes capture provider-specific API shapes collected while preparing live
 OCR and embedding integration. They are reference material for the Rust
 migration; do not put credentials in this file.
 
+## GLM-OCR
+
+Source: https://docs.bigmodel.cn/api-reference/%E6%A8%A1%E5%9E%8B-api/%E6%96%87%E6%A1%A3%E8%A7%A3%E6%9E%90
+
+Purpose: synchronous document and image layout parsing with Markdown, layout
+details, and optional visualization output.
+
+Environment:
+
+```bash
+ZOTRON_GLM_API_KEY=
+ZOTRON_GLM_OCR_ENDPOINT=https://open.bigmodel.cn/api/paas/v4/layout_parsing
+ZOTRON_GLM_OCR_MODEL=glm-ocr
+```
+
+HTTP contract:
+
+```text
+POST {ZOTRON_GLM_OCR_ENDPOINT}
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+Request body:
+
+```json
+{
+  "model": "glm-ocr",
+  "file": "<file URL or base64 document>",
+  "return_crop_images": false,
+  "need_layout_visualization": false,
+  "start_page_id": 1,
+  "end_page_id": 1
+}
+```
+
+Required fields:
+
+- `model`: must be `glm-ocr`.
+- `file`: image or PDF document, either URL or base64.
+
+Documented limits:
+
+- Supports PDF, JPG, and PNG.
+- Single image up to 10 MB.
+- PDF up to 50 MB.
+- PDF up to 100 pages.
+
+Response shape:
+
+```json
+{
+  "id": "task_123456789",
+  "created": 1727156815,
+  "model": "GLM-OCR",
+  "md_results": "# 文档标题\n这是文档内容...",
+  "layout_details": [[
+    {
+      "index": 1,
+      "label": "text",
+      "bbox_2d": [0.1, 0.1, 0.5, 0.3],
+      "content": "这是文本内容",
+      "height": 800,
+      "width": 600
+    }
+  ]],
+  "layout_visualization": ["<url or string>"],
+  "data_info": {
+    "num_pages": 5,
+    "pages": [{"width": 600, "height": 800}]
+  },
+  "usage": {"total_tokens": 123},
+  "request_id": "req_123456789"
+}
+```
+
+Normalization notes:
+
+- `layout_details` is an array per page; each entry should become a Zotron
+  block.
+- `label` maps to block `type`.
+- `content` maps to block `text`.
+- `bbox_2d` is normalized `[x1, y1, x2, y2]`; use `width` / `height` or
+  `data_info.pages` to convert to page-space coordinates only when needed.
+- `md_results` is a convenience artifact and must not replace structured
+  blocks.
+
+The Rust scaffold currently does not match this contract. It still points GLM
+OCR at the chat-completions endpoint with model `glm-4.5v`; live GLM-OCR support
+must switch to `/layout_parsing`, `glm-ocr`, and this response shape.
+
 ## PaddleOCR-VL
 
 ### Sync layout parsing endpoint
@@ -147,10 +238,12 @@ normalize conservatively rather than inventing bbox.
 
 - Provider adapters need per-provider auth schemes; one generic Bearer wrapper
   is not enough because Paddle sync uses `Authorization: token ...`.
+- GLM-OCR is synchronous JSON with `Authorization: Bearer ...`, but it is not a
+  chat-completions request.
 - HTTP transport must support both JSON and multipart/form-data.
 - Async providers need a job poller abstraction and result downloader.
-- The provider response parser must understand Paddle's
-  `result.layoutParsingResults` and JSONL async result shape, not just the
-  current `{pages:[{blocks:[...]}]}` scaffold.
+- The provider response parser must understand GLM's `layout_details`,
+  Paddle's `result.layoutParsingResults`, and Paddle JSONL async result shape,
+  not just the current `{pages:[{blocks:[...]}]}` scaffold.
 - Keep provider raw output as `zotron-ocr.raw.zip` or equivalent audit artifact
   before normalization.
