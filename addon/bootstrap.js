@@ -2,7 +2,20 @@ var chromeHandle;
 
 function install(data, reason) {}
 
-async function startup({ id, version, resourceURI, rootURI }, reason) {
+function getRootURI({ rootURI, resourceURI }) {
+  var resolvedRootURI = rootURI || resourceURI?.spec;
+  if (!resolvedRootURI) {
+    throw new Error("Zotron startup requires rootURI or resourceURI.spec");
+  }
+  return resolvedRootURI.endsWith("/") ? resolvedRootURI : resolvedRootURI + "/";
+}
+
+async function startup(data, reason) {
+  var rootURI = getRootURI(data);
+  if (Zotero.uiReadyPromise) {
+    await Zotero.uiReadyPromise;
+  }
+
   var aomStartup = Components.classes[
     "@mozilla.org/addons/addon-manager-startup;1"
   ].getService(Components.interfaces.amIAddonManagerStartup);
@@ -16,7 +29,7 @@ async function startup({ id, version, resourceURI, rootURI }, reason) {
   ctx._globalThis = ctx;
 
   Services.scriptloader.loadSubScript(
-    `${rootURI}/content/scripts/zotron.js`,
+    rootURI + "content/scripts/zotron.js",
     ctx,
   );
   Zotero.Zotron.data.rootURI = rootURI;
@@ -31,7 +44,7 @@ async function onMainWindowUnload({ window }, reason) {
   await Zotero.Zotron?.hooks.onMainWindowUnload(window);
 }
 
-async function shutdown({ id, version, resourceURI, rootURI }, reason) {
+async function shutdown(data, reason) {
   if (reason === APP_SHUTDOWN) {
     return;
   }
