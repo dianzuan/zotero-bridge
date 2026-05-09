@@ -448,7 +448,7 @@ pub fn build_ocr_provider_request(
             style: spec.request_style.as_str(),
             key_field: spec.key_field,
             method: Some("POST"),
-            url: Some("<your-aistudio-layout-parsing-endpoint>"),
+            url: None,
             auth_header: Some(spec.auth_header),
             body: json!({
                 "file": input.content_base64,

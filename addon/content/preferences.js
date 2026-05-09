@@ -8,7 +8,7 @@ var DEFAULT_EMB_PROVIDER = "volcengine";
 
 var OCR_CONFIGS = {
   glm:    { label: "GLM-OCR",      url: "https://open.bigmodel.cn/api/paas/v4/layout_parsing", model: "glm-ocr" },
-  paddle: { label: "PaddleOCR-VL", url: "<your-aistudio-layout-parsing-endpoint>", model: "PaddleOCR-VL-1.5" },
+  paddle: { label: "PaddleOCR-VL", url: "", model: "PaddleOCR-VL-1.5" },
   mineru: { label: "MinerU",       url: "https://mineru.net/api/v4/extract/task", model: "vlm" },
   custom: { label: "Custom OCR",   url: "", model: "custom-ocr-model" },
 };
