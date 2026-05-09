@@ -30,7 +30,7 @@ zotron rag hits --zotero --collection "数字经济" --output jsonl "数字经�
 zotron rpc rag.searchHits '{"query":"关键词","keys":["YR5BUGHG","BF4I9QX4"],"top_spans_per_item":10}'
 ```
 
-Returns one JSON hit per line with score, paper title, authors, section heading, chunk id, block ids, and Zotero URI.
+Returns one JSON hit per line with score, paper title, authors, section heading, `chunk_key`, `block_keys`, page/bbox provenance, and Zotero URI.
 
 ## Retrieval hits
 
@@ -90,7 +90,7 @@ With RAG: get 10 relevant paragraphs → ~5K tokens per query
 
 ## Configuration
 
-Default provider setup is managed from Zotron settings. Current recommended defaults are GLM for OCR and Doubao for embeddings; API tokens are user-provided and should not be hardcoded in commands or skill docs.
+Default provider setup is managed from Zotron settings. Current Rust contracts expose GLM/Paddle/MinerU OCR provider helpers and Volcengine, Alibaba/DashScope, or custom OpenAI-compatible embedding helpers. API tokens are user-provided and should not be hardcoded in commands or skill docs.
 
 ```bash
 zotron ocr parse-pdf --provider mineru --parent ITEMKEY --attachment ATTACHKEY

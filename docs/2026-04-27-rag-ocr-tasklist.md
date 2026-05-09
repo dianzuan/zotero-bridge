@@ -2,120 +2,119 @@
 
 Date: 2026-04-27
 
-This tasklist turns the roadmap into executable TDD lanes. The current target is to make OCR/RAG a real artifact pipeline, not just docs or note preview.
+Updated: 2026-05-09
+
+This tasklist is now interpreted under the Rust migration branch. The current
+goal is a structure-first evidence pipeline for agents, not a Python note
+preview pipeline.
 
 ## Current Baseline
 
-- `zotron ping` works in the local environment.
-- Codex plugin packaging now lives in the same `claude-plugin/` root as Claude Code packaging.
-- `zotron-rag hits` exists, but still reads the legacy JSON vector store.
-- OCR provider classes currently return markdown/text and do not preserve raw provider results as first-class artifacts.
-- `OCRProcessor` still writes an HTML note as the main output.
-- Artifact helpers exist but are split across `zotron/artifacts.py` and `zotron/ocr/artifacts.py`.
+- Public command is `zotron`.
+- OCR commands live under `zotron ocr ...`.
+- RAG commands live under `zotron rag ...`.
+- Python-era standalone names are historical references only.
+- OCR/RAG artifacts are hidden per-PDF sidecars under the Zotero PDF attachment
+  storage directory.
+- `zotron ocr parse-pdf` has a MinerU path that writes raw provider output,
+  normalized blocks, chunks, Markdown preview, and assets.
+- `zotron rag hits --zotero` exists for XPI-backed retrieval.
 
-## TDD Lanes
+## Done
 
-### Lane 1: Artifact API Consolidation
+- Provider/provider-json scaffolding for OCR and embeddings.
+- MinerU parse-pdf pipeline from upload/source/result-dir inputs.
+- Normalized block output with key-first schema.
+- Structure-first chunk output with `chunk_key` and `block_keys`.
+- Hidden sidecar storage under `storage/<attachment-key>/.zotron/`.
+- Docs and skills updated away from `zotron-ocr` / `zotron-rag` as public
+  commands.
 
-Goal: one stable artifact API for OCR/RAG.
+## Next TDD Lanes
 
-Tests first:
+### Lane 1: Embedding Index Sidecar
 
-- Existing `test_artifacts.py`, `test_artifacts_storage.py`, and `test_storage_artifacts.py` continue to pass.
-- New tests cover one canonical API for:
-  - provider raw zip round trip;
-  - blocks JSONL round trip;
-  - chunks JSONL round trip;
-  - embedding NPZ round trip;
-  - stale metadata detection.
-
-Implementation:
-
-- Consolidate duplicate artifact helpers.
-- Keep backward-compatible aliases where existing tests or callers use them.
-- Prefer a single source of truth in `zotron/artifacts.py`; keep `zotron/ocr/artifacts.py` as a thin compatibility layer if needed.
-
-### Lane 2: OCR Result Contract and Provider Registry
-
-Goal: providers return raw evidence, not only markdown.
+Goal: turn `chunks.v1.jsonl` into a rebuildable vector sidecar.
 
 Tests first:
 
-- `create_engine("glm")`, `create_engine("qwen")`, `create_engine("custom")` still work.
-- Add mock-response tests proving each provider returns an `OCRResult` with:
-  - `provider`;
-  - `model`;
-  - `raw_payload`;
-  - `markdown` or `text`;
-  - optional `files`;
-  - provenance strength marker.
-- Unknown provider and missing credential errors remain explicit.
+- Missing `vectors.jsonl` reports not indexed.
+- Rebuilding vectors preserves chunk provenance.
+- Provider/model/dimension changes mark vectors stale.
+- Removing vectors does not remove blocks or chunks.
 
 Implementation:
 
-- Introduce `OCRResult` and provider registry/spec.
-- Convert GLM/Qwen/custom wrappers to return `OCRResult`.
-- Add scaffold adapters for roadmap providers where API details are not fully stable yet, with mockable parser functions:
-  - MinerU;
-  - PaddleOCR-VL;
-  - Mistral OCR.
+- Write `embeddings/vectors.jsonl`.
+- Store provider, model, dimension, source chunk hash, and created timestamp.
+- Keep lexical retrieval available when embeddings are missing.
 
-### Lane 3: OCR Processor Artifact Pipeline
+### Lane 2: GLM/Paddle Normalization
 
-Goal: OCR writes Zotero-native artifacts and keeps notes as preview only.
+Goal: bring GLM and Paddle parser results into the same block/chunk sidecar
+schema as MinerU.
 
 Tests first:
 
-- Mock Zotero RPC verifies processing one item writes:
-  - `<item-key>.zotron-ocr.raw.zip`;
-  - `<item-key>.zotron-blocks.jsonl`;
-  - `<item-key>.zotron-chunks.jsonl`.
-- Temporary files are cleaned or staged predictably.
-- Existing OCR note behavior remains optional/compatible.
-- `zotron-ocr run --collection`, `zotron-ocr rebuild --item`, and legacy `--collection/--item` paths are covered.
+- Mock GLM response normalizes into blocks/chunks.
+- Mock Paddle sync response normalizes into blocks/chunks.
+- Mock Paddle async JSONL result normalizes into blocks/chunks.
+- Tables become table chunks; figure/image pixel content remains asset-backed
+  metadata unless read by a VLM on demand.
 
 Implementation:
 
-- Update `OCRProcessor.process_item` pipeline:
-  - locate PDF;
-  - run provider;
-  - write raw zip;
-  - normalize blocks;
-  - build chunks;
-  - attach artifacts to Zotero;
-  - optionally write preview note.
-- Add `run` and `rebuild` subcommands while keeping old CLI flags as compatibility.
+- Add provider parsers without adding new public command names.
+- Keep raw provider JSON for re-normalization.
+- Preserve Markdown only as a preview/debug artifact.
 
-### Lane 4: Structure-First Chunk Quality
+### Lane 3: Retrieval Over Sidecars
 
-Goal: chunks are evidence spans suitable for academic retrieval.
+Goal: retrieve original evidence spans directly from sidecar chunks.
 
 Tests first:
 
-- Chunking does not cross section boundaries.
-- Heading, paragraph, table, figure, equation, caption blocks have predictable policy.
-- Every chunk has `chunk_id`, `block_ids`, `section_heading`, page range, and text.
+- Query returns chunk text with `item_key`, `attachment_key`, `chunk_key`,
+  `block_keys`, page range, section path, and score/source metadata.
+- Exact/lexical matches work without embeddings.
+- Embedding-backed ranking is optional and provider-gated.
 
 Implementation:
 
-- Strengthen `blocks_from_provider_payload` and `chunks_from_blocks`.
-- Preserve image refs/captions/bboxes without copying all images by default.
-- Keep fallback markdown chunking clearly marked as weaker provenance.
+- Read sidecar chunks across a collection.
+- Add lexical-first retrieval.
+- Use embeddings only when a valid vector sidecar exists.
 
-## Out of Scope for This Team Iteration
+### Lane 4: Locate and Annotate
 
-- Full embedding provider registry.
-- Real network integration tests against MinerU/Paddle/Mistral services.
-- `rag.searchHits` JSON-RPC method.
-- `zotron-rag migrate-to-zotero`.
+Goal: convert retrieved evidence into Zotero-native annotations.
 
-These remain roadmap items after the OCR artifact pipeline lands.
+Tests first:
+
+- Quote target can become text highlight when the PDF text layer supports it.
+- Bbox target can become area annotation for OCR/layout blocks.
+- Result schema uses `annotation_key`, not numeric IDs.
+- Color/comment/provenance are preserved.
+
+Implementation:
+
+- Add locate target helper.
+- Add batch apply helper over `annotations.create`.
+- Keep dry-run support for automated agents.
+
+## Explicit Non-Goals
+
+- Built-in `ask-pdf` or agent reasoning inside Zotron.
+- Treating provider Markdown as the source of truth.
+- Storing OCR/RAG machine artifacts as visible Zotero notes or ordinary child
+  attachments by default.
+- Exporting annotated PDFs as a core Zotron command while Zotero already
+  supports PDF export from the UI.
 
 ## Verification Contract
 
-- Python focused tests for changed OCR/RAG/artifact modules.
-- Full Python suite: `cd claude-plugin/python && uv run pytest -q`.
-- Node suite: `npm test`.
-- TypeScript: `npx tsc --noEmit`.
-- Codex plugin manifest and marketplace JSON parse.
-- No invalid SKILL frontmatter.
+- Rust format/check/test/clippy for changed crates.
+- Node/TypeScript tests for XPI changes.
+- Live Zotero smoke only in the `test` collection.
+- Record actual live commands; do not label a partial command smoke as full
+  OCR/RAG/annotation validation.

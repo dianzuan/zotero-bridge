@@ -1,5 +1,10 @@
 # Zotron XPI Phase 1 Implementation Plan
 
+> Historical implementation plan. Current `rust-migration` branch uses the
+> TypeScript XPI as the Zotero-side JSON-RPC bridge and the Rust `zotron` binary
+> as the agent-facing CLI. This document is retained for XPI design lineage; do
+> not use its Bash/Python CLI assumptions as current guidance.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a Zotero 7 XPI plugin exposing 60 JSON-RPC methods over HTTP, plus a CLI wrapper and Claude Code plugin for integration.

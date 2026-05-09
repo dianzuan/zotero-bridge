@@ -23,34 +23,28 @@ Tools -> Plugins -> Zotron -> gear icon -> Check for Updates -> restart Zotero
 
 ## Procedure
 
-1. Check `uv` is available.
+1. Check that a Rust CLI can be installed or resolved.
 
 ```bash
-command -v uv >/dev/null || echo "MISSING_UV"
+command -v cargo >/dev/null || command -v zotron >/dev/null || echo "MISSING_RUST_ZOTRON"
 ```
 
-2. Reinstall the CLI from the plugin's bundled source to ensure it matches the plugin version.
+2. Run the setup script. In a source checkout it installs the Rust CLI from
+`crates/zotron-cli`; in a packaged plugin it links the wrapper and requires an
+existing Rust binary through `ZOTRON_RUST_BIN` when OCR/RAG are needed.
 
 ```bash
 PLUGIN_ROOT="${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
-uv tool install --force --editable "$PLUGIN_ROOT/python"
-```
-
-This ensures the `zotron` binary is up to date. The plugin update only refreshes skill docs — the CLI binary must be reinstalled separately.
-
-3. Run the setup script.
-
-```bash
 bash "$PLUGIN_ROOT/scripts/setup-zotron.sh"
 ```
 
-4. If the bridge is live at the expected version, stop.
+3. If the bridge is live at the expected version, stop.
 
-5. If the bridge is live but the plugin version is older, tell the user to update inside Zotero using the update flow above.
+4. If the bridge is live but the plugin version is older, tell the user to update inside Zotero using the update flow above.
 
-6. If the bridge is down, the script downloads or stages `zotron.xpi` into the user's real Downloads folder and prints the path as Zotero will see it.
+5. If the bridge is down, the script downloads or stages `zotron.xpi` into the user's real Downloads folder and prints the path as Zotero will see it.
 
-7. Tell the user:
+6. Tell the user:
 
 ```text
 In Zotero:
@@ -60,7 +54,7 @@ In Zotero:
 4. Install, then restart Zotero
 ```
 
-8. After restart, verify:
+7. After restart, verify:
 
 ```bash
 zotron ping

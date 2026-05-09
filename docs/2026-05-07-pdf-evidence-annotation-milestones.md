@@ -2,7 +2,13 @@
 
 Date: 2026-05-07
 
-Update: 2026-05-08
+Update: 2026-05-09
+
+Current Rust status: Milestone 1 has a working `zotron ocr parse-pdf`
+MinerU path. A live Zotero test produced hidden sidecars for item `2TGDLKDZ`
+and attachment `QI2YI74W` with 187 normalized blocks and 43 chunks. Milestone 2
+is partially implemented through chunk sidecars. Milestones 3-5 remain product
+work: sidecar-backed retrieval, locate-highlight-target, and apply-annotations.
 
 This milestone plan turns the revised PDF strategy into executable delivery
 stages. Zotron is not an LLM question-answering service. It is the evidence and

@@ -80,7 +80,7 @@ Pre-Zotero-7 alternatives — vendoring a SQLite reader (fragile, write-locked, 
 
 ### Path B — OpenAI Codex CLI / code-cli
 
-Use this path when you work from Codex instead of Claude Code. The same `claude-plugin/` package also ships a native Codex plugin manifest, so Codex and Claude Code use the same bridge, Python CLI, XPI, and skills.
+Use this path when you work from Codex instead of Claude Code. The same `claude-plugin/` package also ships a native Codex plugin manifest, so Codex and Claude Code use the same bridge, Rust CLI, XPI, and skills. Python code remains in the repository as migration reference material; it is not the target product surface on the `rust-migration` branch.
 
 **Prerequisites:** OpenAI Codex CLI (`codex`; some environments label it `code-cli`), [`uv`](https://docs.astral.sh/uv/getting-started/installation/), Zotero 8 desktop.
 
@@ -112,19 +112,19 @@ zotron search quick "transformer attention" --limit 10
 
 After `zotron ping` succeeds, Codex can call `zotron` subcommands or raw HTTP directly through the installed plugin skill.
 
-### Path C — Python CLI / SDK
+### Path C — Rust CLI From Source
 
 ```bash
 # 1) Install the XPI manually from https://github.com/dianzuan/zotron/releases/latest
-# 2) Install the CLI from git (not yet on PyPI):
-uv tool install "git+https://github.com/dianzuan/zotron.git#subdirectory=claude-plugin/python"
+# 2) Install the Rust CLI from this checkout:
+cargo install --path crates/zotron-cli --root ~/.local --force
 
 zotron ping
 zotron search quick "transformer attention" --limit 10
 zotron rpc items.get '{"key":"YR5BUGHG"}'  # escape hatch — covers all 86 methods
 ```
 
-Rust `zotron` emits JSON-first output; use a shell pipeline such as `zotron items list | jq ...` for filtering. `--install-completion {bash|zsh|fish|powershell}` enables shell completion. SDK contract: [`docs/api-stability.md`](docs/api-stability.md).
+Rust `zotron` emits JSON-first output; use a shell pipeline such as `zotron items list | jq ...` for filtering. The old Python CLI/SDK is kept as reference/parity material only. Current CLI contract: [`docs/api-stability.md`](docs/api-stability.md).
 
 ### Path D — Raw HTTP
 

@@ -16,7 +16,7 @@ Read-write bridge to the user's local Zotero library via the Rust `zotron` CLI a
 | Find / read papers, browse collections, get fulltext or annotations | search | [search.md](search.md) |
 | Add by DOI/URL/ISBN/file, update metadata, manage collections & tags, dedupe | manage | [manage.md](manage.md) |
 | Generate references in GB/T 7714, BibTeX, RIS, CSL-JSON | export | [export.md](export.md) |
-| OCR scanned/Chinese PDFs into Zotero-attached raw/block/chunk artifacts | ocr | [ocr.md](ocr.md) |
+| OCR scanned/Chinese PDFs into hidden per-PDF raw/block/chunk sidecars | ocr | [ocr.md](ocr.md) |
 | RAG retrieval hits for literature review / academic-zh span provenance | rag | [rag.md](rag.md) |
 
 A typical session chains them: `search` to locate papers → `manage` to organize → `ocr` + `rag` for literature review → `export` for citations.

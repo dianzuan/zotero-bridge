@@ -44,7 +44,8 @@ LLM 问答能力；Codex / Claude Code 是推理层，Zotron 只负责把 PDF �
 - Provider 原始返回必须可审计、可重跑解析。
 - RAG 不能直接消费各家 OCR 的私有格式，必须有统一中间层。
 - academic-zh 不接收最终 paper card 作为主产物，优先接收一行一个 span 的 JSONL hit。
-- Zotron artifact store 分成两类：可同步证据 sidecar 和本机机器缓存。
+- Zotron 机器产物默认放在 PDF attachment storage 下的隐藏 sidecar；外部
+  cache 只作为大规模或本机私有部署的非默认选项。
   Zotero 库里只保留真实文献、PDF attachment、人工/AI 可见 annotation。
   OCR、blocks、chunks、embedding 这类机器派生产物不能作为普通 Zotero
   note/attachment 写入，避免污染人类搜索和文献列表。
@@ -163,7 +164,7 @@ olmOCR       -> dolma.jsonl + optional markdown
 - 重新 normalize：规则升级后不用重新 OCR。
 - 保留 provider 专有信息：bbox、layout category、table、image crop、confidence、reading order。
 
-建议 sidecar / artifact store 文件：
+建议 sidecar 文件：
 
 ```text
 storage/<attachment-key>/.zotron/ocr/latest.raw.json
@@ -217,7 +218,7 @@ Zotron blocks 是统一后的 OCR / parser block JSONL。一行一个 block。�
 heading | paragraph | table | figure | equation | caption | footnote | header | footer | reference | unknown
 ```
 
-建议 sidecar / artifact store 文件：
+建议 sidecar 文件：
 
 ```text
 storage/<attachment-key>/.zotron/ocr/latest.blocks.jsonl
@@ -428,7 +429,8 @@ Embedding provider 要抽成 registry/spec，而不是每个 provider 写一个�
 - Voyage：`input_type=query` / `document`。
 - Cohere：`input_type=search_query` / `search_document`，解析 `embeddings.float`。
 - Gemini：`taskType=RETRIEVAL_QUERY` / `RETRIEVAL_DOCUMENT`，使用 `:embedContent` endpoint。
-- Doubao：保留现有 multimodal embedding adapter 和 query/corpus instructions。
+- Volcengine/Doubao text embedding：可作为 embedding provider 之一保留；
+  不作为 OCR/VLM fallback 默认路径。
 
 关键要求：
 
@@ -503,7 +505,7 @@ note/child attachment。
 ```text
 zotron rag status --collection "中国工业经济"
 zotron rag embedding-providers
-zotron rag embedding-json --provider doubao --input /tmp/request.json --output /tmp/embedding.json
+zotron rag embedding-json --provider alibaba --input /tmp/request.json
 ```
 
 旧 `~/.local/share/zotron/rag/*.json`：
