@@ -80,7 +80,7 @@ Zotero 7 之前的几条绕路——直接读 SQLite（脆弱、跟版本走、�
 
 ### 路径 B —— OpenAI Codex CLI / code-cli
 
-如果你在 Codex 里工作而不是用 Claude Code，走这条路径。同一个 `claude-plugin/` 包现在也带原生 Codex plugin manifest，所以 Codex 和 Claude Code 复用同一套 bridge、Python CLI、XPI 和 skills。
+如果你在 Codex 里工作而不是用 Claude Code，走这条路径。同一个 `claude-plugin/` 包现在也带原生 Codex plugin manifest，所以 Codex 和 Claude Code 复用同一套 bridge、Rust CLI、XPI 和 skills。Python 代码保留在仓库里作为迁移参考，不是 `rust-migration` 分支的目标产品面。
 
 **前置：** OpenAI Codex CLI（`codex`；有些环境会称为 `code-cli`）、[`uv`](https://docs.astral.sh/uv/getting-started/installation/)、Zotero 8 桌面版。
 
@@ -112,19 +112,19 @@ zotron search quick "数字经济" --limit 10
 
 `zotron ping` 成功后，Codex 可以通过已安装的 plugin skill 直接调用 `zotron` 子命令或裸 HTTP。
 
-### 路径 C —— Python CLI / SDK
+### 路径 C —— 从源码安装 Rust CLI
 
 ```bash
 # 1) 手动装 XPI：https://github.com/dianzuan/zotron/releases/latest
-# 2) 从 git 装 CLI（暂未发布到 PyPI）：
-uv tool install "git+https://github.com/dianzuan/zotron.git#subdirectory=claude-plugin/python"
+# 2) 从当前 checkout 安装 Rust CLI：
+cargo install --path crates/zotron-cli --root ~/.local --force
 
 zotron ping
 zotron search quick "数字经济" --limit 10
 zotron rpc items.get '{"key":"YR5BUGHG"}'  # escape hatch —— 覆盖全部 86 个方法
 ```
 
-Rust `zotron` 默认输出 JSON；需要过滤时使用 shell 管道，例如 `zotron items list | jq ...`。`--install-completion {bash|zsh|fish|powershell}` 装 shell 补全。SDK 稳定契约见 [`docs/api-stability.md`](docs/api-stability.md)。
+Rust `zotron` 默认输出 JSON；需要过滤时使用 shell 管道，例如 `zotron items list | jq ...`。旧 Python CLI/SDK 只作为参考和 parity 材料保留。当前 CLI 稳定契约见 [`docs/api-stability.md`](docs/api-stability.md)。
 
 ### 路径 D —— 裸 HTTP
 
