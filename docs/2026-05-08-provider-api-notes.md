@@ -123,8 +123,8 @@ Normalization notes:
 
 Current Rust migration note: the live adapter now uses `/layout_parsing`,
 `glm-ocr`, and data-url encoding for local PDFs. Raw provider output and
-downloaded image/layout assets still need to be persisted as first-class
-artifacts.
+downloaded image/layout assets still need a GLM-specific sidecar ingestion
+command; MinerU is the first full parse/download/sidecar pipeline.
 
 ## PaddleOCR-VL
 
@@ -170,7 +170,8 @@ Notes:
 
 Current Rust migration note: the sync adapter now uses this `file` / `fileType`
 contract and `Authorization: token ...`. Raw `markdown.images`, `outputImages`,
-and provider-native Markdown still need to be persisted as first-class artifacts.
+and provider-native Markdown still need a Paddle-specific sidecar ingestion
+command; MinerU is the first full parse/download/sidecar pipeline.
 
 ### Async OCR jobs endpoint
 

@@ -5,6 +5,8 @@ use std::{
     io::{self, Read},
     path::{Path, PathBuf},
     process::Command as ProcessCommand,
+    thread,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use clap::{error::ErrorKind, Parser, Subcommand};
@@ -15,9 +17,9 @@ use zotron_types::{
     is_zotron_evidence_artifact, machine_artifact_exists_for_item,
     machine_artifact_exists_in_sidecar, machine_artifact_store_root,
     ocr_provider_spec as raw_ocr_provider_spec, parse_ocr_provider_response,
-    read_machine_artifact_sidecar, ArtifactStorePlatform, EmbeddingRequestInput,
-    MachineArtifactKind, OcrRequestInput, ProviderCommandRunner, ProviderHttpInvocation,
-    ProviderHttpTransport, DEFAULT_RPC_URL,
+    read_machine_artifact_sidecar, write_machine_artifact_sidecar, ArtifactStorePlatform,
+    EmbeddingRequestInput, MachineArtifactKind, OcrRequestInput, ProviderCommandRunner,
+    ProviderHttpInvocation, ProviderHttpTransport, DEFAULT_RPC_URL,
 };
 
 pub trait RpcCaller {
@@ -251,6 +253,41 @@ enum OcrCommand {
     Status {
         #[arg(long)]
         collection: String,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Parse a Zotero PDF through MinerU and write hidden sidecar OCR/RAG artifacts.
+    #[command(name = "parse-pdf")]
+    ParsePdf {
+        #[arg(long, default_value = "mineru")]
+        provider: String,
+        /// Parent Zotero item key.
+        #[arg(long)]
+        parent: String,
+        /// Zotero PDF attachment key.
+        #[arg(long)]
+        attachment: String,
+        /// Public URL for MinerU cloud parsing. Use --result-dir/--result-zip for offline ingestion.
+        #[arg(long = "source-url")]
+        source_url: Option<String>,
+        /// Already-extracted MinerU result directory, used by tests/offline replay.
+        #[arg(long = "result-dir")]
+        result_dir: Option<String>,
+        /// Already-downloaded MinerU result zip, used by tests/offline replay.
+        #[arg(long = "result-zip")]
+        result_zip: Option<String>,
+        /// Override MinerU submit endpoint.
+        #[arg(long = "provider-endpoint")]
+        provider_endpoint: Option<String>,
+        /// Environment variable containing the MinerU bearer token.
+        #[arg(long = "api-key-env", default_value = "ZOTRON_MINERU_API_KEY")]
+        api_key_env: String,
+        #[arg(long = "poll-interval-seconds", default_value_t = 5)]
+        poll_interval_seconds: u64,
+        #[arg(long = "timeout-seconds", default_value_t = 900)]
+        timeout_seconds: u64,
+        #[arg(long = "chunk-chars", default_value_t = 1200)]
+        chunk_chars: usize,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
@@ -1269,6 +1306,7 @@ fn command_url(command: &Command) -> String {
             OcrCommand::Providers => DEFAULT_RPC_URL.to_string(),
             OcrCommand::ProviderJson { .. } => DEFAULT_RPC_URL.to_string(),
             OcrCommand::Status { url, .. } => url.clone(),
+            OcrCommand::ParsePdf { url, .. } => url.clone(),
         },
         Command::Rag { command } => rag_command_url(command),
         Command::System { command } => match command {
@@ -1398,8 +1436,51 @@ fn run_ocr_command(command: OcrCommand, client: &mut impl RpcCaller) -> Result<S
             api_key_env,
         )?,
         OcrCommand::Status { collection, .. } => run_ocr_status_command(client, collection)?,
+        OcrCommand::ParsePdf {
+            provider,
+            parent,
+            attachment,
+            source_url,
+            result_dir,
+            result_zip,
+            provider_endpoint,
+            api_key_env,
+            poll_interval_seconds,
+            timeout_seconds,
+            chunk_chars,
+            ..
+        } => run_ocr_parse_pdf_command(
+            client,
+            OcrParsePdfOptions {
+                provider,
+                parent,
+                attachment,
+                source_url,
+                result_dir,
+                result_zip,
+                provider_endpoint,
+                api_key_env,
+                poll_interval_seconds,
+                timeout_seconds,
+                chunk_chars,
+            },
+        )?,
     };
     format_json(&value, JsonStyle::PythonCompact)
+}
+
+struct OcrParsePdfOptions {
+    provider: String,
+    parent: String,
+    attachment: String,
+    source_url: Option<String>,
+    result_dir: Option<String>,
+    result_zip: Option<String>,
+    provider_endpoint: Option<String>,
+    api_key_env: String,
+    poll_interval_seconds: u64,
+    timeout_seconds: u64,
+    chunk_chars: usize,
 }
 
 fn run_ocr_provider_json_command(
@@ -1459,6 +1540,713 @@ fn run_ocr_provider_json_command(
         "provider": request.provider,
         "blocks": blocks,
     }))
+}
+
+fn run_ocr_parse_pdf_command(
+    client: &mut impl RpcCaller,
+    options: OcrParsePdfOptions,
+) -> Result<Value, String> {
+    let spec = raw_ocr_provider_spec(&options.provider)?;
+    if spec.provider_key != "mineru" {
+        return Err(
+            "INVALID_ARGS: ocr parse-pdf currently supports only --provider mineru".to_string(),
+        );
+    }
+    if options.result_dir.is_some() && options.result_zip.is_some() {
+        return Err("INVALID_ARGS: use either --result-dir or --result-zip, not both".to_string());
+    }
+    if options.source_url.is_some()
+        && (options.result_dir.is_some() || options.result_zip.is_some())
+    {
+        return Err(
+            "INVALID_ARGS: --source-url cannot be combined with --result-dir/--result-zip"
+                .to_string(),
+        );
+    }
+
+    let attachment_path = resolve_attachment_path(client, &options.attachment)?;
+    let storage_dir = attachment_path
+        .parent()
+        .ok_or_else(|| {
+            format!(
+                "ATTACHMENT_PATH_INVALID: attachment path has no parent directory: {}",
+                attachment_path.display()
+            )
+        })?
+        .to_path_buf();
+    let file_name = attachment_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("document.pdf")
+        .to_string();
+
+    let source = load_mineru_result_source(&options, &attachment_path, &file_name)?;
+    let artifacts = persist_mineru_result_sidecars(
+        &storage_dir,
+        &options.parent,
+        &options.attachment,
+        &options.provider,
+        &source,
+        options.chunk_chars,
+    )?;
+
+    Ok(serde_json::json!({
+        "provider": "mineru",
+        "status": "indexed",
+        "item_key": options.parent,
+        "attachment_key": options.attachment,
+        "attachment_path": attachment_path,
+        "storage_dir": storage_dir,
+        "task_id": source.task_id,
+        "state": source.state,
+        "blocks": artifacts.block_count,
+        "chunks": artifacts.chunk_count,
+        "artifacts": artifacts.artifacts,
+    }))
+}
+
+struct MineruResultSource {
+    task_id: Option<String>,
+    state: String,
+    result_dir: PathBuf,
+    raw_zip_bytes: Option<Vec<u8>>,
+    task_status: Option<Value>,
+    payload: Value,
+    content_list_file: Option<PathBuf>,
+    markdown: Option<String>,
+}
+
+struct PersistedOcrArtifacts {
+    block_count: usize,
+    chunk_count: usize,
+    artifacts: Vec<Value>,
+}
+
+fn resolve_attachment_path(
+    client: &mut impl RpcCaller,
+    attachment_key: &str,
+) -> Result<PathBuf, String> {
+    let payload = client.call(
+        "attachments.getPath",
+        Some(serde_json::json!({"key": attachment_key})),
+    )?;
+    let raw_path = payload
+        .get("path")
+        .and_then(Value::as_str)
+        .filter(|path| !path.trim().is_empty())
+        .ok_or_else(|| {
+            format!("ATTACHMENT_PATH_NOT_FOUND: attachment {attachment_key} has no local PDF path")
+        })?;
+    Ok(PathBuf::from(local_path_from_zotero_path(raw_path)))
+}
+
+fn load_mineru_result_source(
+    options: &OcrParsePdfOptions,
+    attachment_path: &Path,
+    file_name: &str,
+) -> Result<MineruResultSource, String> {
+    if let Some(result_dir) = options.result_dir.as_deref() {
+        return mineru_result_source_from_dir(PathBuf::from(result_dir), None, None, None);
+    }
+    if let Some(result_zip) = options.result_zip.as_deref() {
+        let zip_path = PathBuf::from(result_zip);
+        let zip_bytes = fs::read(&zip_path)
+            .map_err(|err| format!("read MinerU result zip {}: {err}", zip_path.display()))?;
+        let result_dir = extract_zip_bytes_to_temp("zotron-mineru-result", &zip_bytes)?;
+        return mineru_result_source_from_dir(result_dir, Some(zip_bytes), None, None);
+    }
+
+    let Some(source_url) = options
+        .source_url
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    else {
+        return submit_mineru_local_file(options, attachment_path, file_name);
+    };
+    let input = OcrRequestInput {
+        item_key: options.parent.clone(),
+        attachment_key: options.attachment.clone(),
+        file_name: file_name.to_string(),
+        mime_type: "application/pdf".to_string(),
+        content_base64: format!("url:{source_url}"),
+        source_url: Some(source_url.to_string()),
+        local_path: None,
+        output_dir: None,
+    };
+    let task = submit_mineru_task(
+        &options.provider,
+        &input,
+        options.provider_endpoint.clone(),
+        &options.api_key_env,
+    )?;
+    let task_id = task
+        .get("data")
+        .and_then(|data| data.get("task_id"))
+        .and_then(Value::as_str)
+        .ok_or_else(|| "MinerU submit response missing data.task_id".to_string())?
+        .to_string();
+    let auth_header = provider_auth_header_value(&options.api_key_env, "bearer")?;
+    let status = poll_mineru_task(
+        options.provider_endpoint.as_deref(),
+        &task_id,
+        &auth_header,
+        options.poll_interval_seconds,
+        options.timeout_seconds,
+    )?;
+    let zip_url = status
+        .pointer("/data/full_zip_url")
+        .or_else(|| status.pointer("/data/result/full_zip_url"))
+        .and_then(Value::as_str)
+        .ok_or_else(|| "MinerU completed task missing data.full_zip_url".to_string())?;
+    let zip_bytes = download_bytes(zip_url)?;
+    let result_dir = extract_zip_bytes_to_temp("zotron-mineru-result", &zip_bytes)?;
+    mineru_result_source_from_dir(result_dir, Some(zip_bytes), Some(status), Some(task_id))
+}
+
+fn submit_mineru_local_file(
+    options: &OcrParsePdfOptions,
+    attachment_path: &Path,
+    file_name: &str,
+) -> Result<MineruResultSource, String> {
+    let auth_header = provider_auth_header_value(&options.api_key_env, "bearer")?;
+    let upload_request = create_mineru_file_upload(
+        options.provider_endpoint.as_deref(),
+        file_name,
+        &options.attachment,
+        &auth_header,
+    )?;
+    let upload_url = upload_request
+        .pointer("/data/file_urls/0")
+        .or_else(|| upload_request.pointer("/data/fileUrls/0"))
+        .and_then(Value::as_str)
+        .ok_or_else(|| "MinerU upload URL response missing data.file_urls[0]".to_string())?;
+    let batch_id = upload_request
+        .pointer("/data/batch_id")
+        .or_else(|| upload_request.pointer("/data/batchId"))
+        .and_then(Value::as_str)
+        .ok_or_else(|| "MinerU upload URL response missing data.batch_id".to_string())?
+        .to_string();
+    let bytes = fs::read(attachment_path)
+        .map_err(|err| format!("read attachment PDF {}: {err}", attachment_path.display()))?;
+    put_bytes(upload_url, &bytes)?;
+    let status = poll_mineru_batch(
+        options.provider_endpoint.as_deref(),
+        &batch_id,
+        &auth_header,
+        options.poll_interval_seconds,
+        options.timeout_seconds,
+    )?;
+    let zip_url = mineru_batch_zip_url(&status)
+        .ok_or_else(|| "MinerU completed batch missing full_zip_url".to_string())?;
+    let zip_bytes = download_bytes(&zip_url)?;
+    let result_dir = extract_zip_bytes_to_temp("zotron-mineru-result", &zip_bytes)?;
+    mineru_result_source_from_dir(result_dir, Some(zip_bytes), Some(status), Some(batch_id))
+}
+
+fn create_mineru_file_upload(
+    endpoint: Option<&str>,
+    file_name: &str,
+    data_id: &str,
+    auth_header: &str,
+) -> Result<Value, String> {
+    let url = mineru_file_urls_url(endpoint);
+    let body = serde_json::json!({
+        "files": [{"name": file_name, "data_id": data_id}],
+        "model_version": "vlm",
+        "is_ocr": false,
+        "enable_formula": true,
+        "enable_table": true,
+        "language": "ch",
+        "page_ranges": "1-200",
+    });
+    ureq::post(&url)
+        .set("Authorization", auth_header)
+        .send_json(body)
+        .map_err(|err| format!("POST {url} failed: {err}"))?
+        .into_json::<Value>()
+        .map_err(|err| format!("POST {url} returned invalid JSON: {err}"))
+}
+
+fn put_bytes(url: &str, bytes: &[u8]) -> Result<(), String> {
+    ureq::put(url)
+        .send_bytes(bytes)
+        .map_err(|err| format!("PUT {url} failed: {err}"))?;
+    Ok(())
+}
+
+fn submit_mineru_task(
+    provider: &str,
+    input: &OcrRequestInput,
+    endpoint: Option<String>,
+    api_key_env: &str,
+) -> Result<Value, String> {
+    let request = build_ocr_provider_request(provider, input)?;
+    let method = request
+        .method
+        .ok_or_else(|| "MinerU provider missing HTTP method".to_string())?;
+    let mut transport = provider_http_transport_with_auth(Some(api_key_env), "bearer")?;
+    transport.post_json(&ProviderHttpInvocation {
+        provider: request.provider.to_string(),
+        style: request.style.to_string(),
+        method: method.to_string(),
+        url: endpoint.or_else(|| request.url.map(ToString::to_string)),
+        auth_header_name: request.auth_header.map(ToString::to_string),
+        auth_header_value: None,
+        body: request.body,
+    })
+}
+
+fn poll_mineru_task(
+    endpoint: Option<&str>,
+    task_id: &str,
+    auth_header: &str,
+    poll_interval_seconds: u64,
+    timeout_seconds: u64,
+) -> Result<Value, String> {
+    let url = mineru_task_status_url(endpoint, task_id);
+    let started = Instant::now();
+    loop {
+        let status = get_json_with_auth(&url, auth_header)?;
+        let state = status
+            .pointer("/data/state")
+            .or_else(|| status.pointer("/data/status"))
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        match state {
+            "done" | "finished" | "success" => return Ok(status),
+            "failed" | "error" => return Err(format!("MinerU task {task_id} failed: {status}")),
+            _ => {
+                if started.elapsed() >= Duration::from_secs(timeout_seconds) {
+                    return Err(format!(
+                        "MinerU task {task_id} timed out after {timeout_seconds}s with state {state}"
+                    ));
+                }
+                thread::sleep(Duration::from_secs(poll_interval_seconds.max(1)));
+            }
+        }
+    }
+}
+
+fn mineru_task_status_url(endpoint: Option<&str>, task_id: &str) -> String {
+    let base = endpoint
+        .unwrap_or("https://mineru.net/api/v4/extract/task")
+        .trim_end_matches('/');
+    if base.ends_with("/extract/task") {
+        format!("{base}/{task_id}")
+    } else {
+        format!("{base}/extract/task/{task_id}")
+    }
+}
+
+fn mineru_file_urls_url(endpoint: Option<&str>) -> String {
+    let base = mineru_api_base(endpoint);
+    format!("{base}/file-urls/batch")
+}
+
+fn mineru_batch_status_url(endpoint: Option<&str>, batch_id: &str) -> String {
+    let base = mineru_api_base(endpoint);
+    format!("{base}/extract-results/batch/{batch_id}")
+}
+
+fn mineru_api_base(endpoint: Option<&str>) -> String {
+    let base = endpoint
+        .unwrap_or("https://mineru.net/api/v4/extract/task")
+        .trim_end_matches('/');
+    if let Some(stripped) = base.strip_suffix("/extract/task") {
+        return stripped.to_string();
+    }
+    if let Some(stripped) = base.strip_suffix("/extract") {
+        return stripped.to_string();
+    }
+    base.to_string()
+}
+
+fn poll_mineru_batch(
+    endpoint: Option<&str>,
+    batch_id: &str,
+    auth_header: &str,
+    poll_interval_seconds: u64,
+    timeout_seconds: u64,
+) -> Result<Value, String> {
+    let url = mineru_batch_status_url(endpoint, batch_id);
+    let started = Instant::now();
+    loop {
+        let status = get_json_with_auth(&url, auth_header)?;
+        let state = mineru_batch_state(&status).unwrap_or("unknown");
+        match state {
+            "done" | "finished" | "success" => return Ok(status),
+            "failed" | "error" => return Err(format!("MinerU batch {batch_id} failed: {status}")),
+            _ => {
+                if started.elapsed() >= Duration::from_secs(timeout_seconds) {
+                    return Err(format!(
+                        "MinerU batch {batch_id} timed out after {timeout_seconds}s with state {state}"
+                    ));
+                }
+                thread::sleep(Duration::from_secs(poll_interval_seconds.max(1)));
+            }
+        }
+    }
+}
+
+fn mineru_batch_state(status: &Value) -> Option<&str> {
+    status
+        .pointer("/data/extract_result/0/state")
+        .or_else(|| status.pointer("/data/extractResult/0/state"))
+        .or_else(|| status.pointer("/data/state"))
+        .and_then(Value::as_str)
+}
+
+fn mineru_batch_zip_url(status: &Value) -> Option<String> {
+    status
+        .pointer("/data/extract_result/0/full_zip_url")
+        .or_else(|| status.pointer("/data/extractResult/0/full_zip_url"))
+        .or_else(|| status.pointer("/data/full_zip_url"))
+        .and_then(Value::as_str)
+        .map(ToString::to_string)
+}
+
+fn provider_auth_header_value(api_key_env: &str, auth_scheme: &str) -> Result<String, String> {
+    let token = env::var(api_key_env)
+        .map_err(|_| format!("missing provider credential env var {api_key_env}"))?;
+    let token = token.trim();
+    if token.is_empty() {
+        return Err(format!(
+            "provider credential env var {api_key_env} is empty"
+        ));
+    }
+    Ok(match auth_scheme {
+        "bearer" if token.starts_with("Bearer ") => token.to_string(),
+        "bearer" => format!("Bearer {token}"),
+        "token" if token.starts_with("token ") => token.to_string(),
+        "token" => format!("token {token}"),
+        _ => token.to_string(),
+    })
+}
+
+fn get_json_with_auth(url: &str, auth_header: &str) -> Result<Value, String> {
+    ureq::get(url)
+        .set("Authorization", auth_header)
+        .call()
+        .map_err(|err| format!("GET {url} failed: {err}"))?
+        .into_json::<Value>()
+        .map_err(|err| format!("GET {url} returned invalid JSON: {err}"))
+}
+
+fn download_bytes(url: &str) -> Result<Vec<u8>, String> {
+    let response = ureq::get(url)
+        .call()
+        .map_err(|err| format!("download {url} failed: {err}"))?;
+    let mut bytes = Vec::new();
+    response
+        .into_reader()
+        .read_to_end(&mut bytes)
+        .map_err(|err| format!("read download {url}: {err}"))?;
+    Ok(bytes)
+}
+
+fn extract_zip_bytes_to_temp(prefix: &str, zip_bytes: &[u8]) -> Result<PathBuf, String> {
+    let dir = unique_temp_path(prefix);
+    fs::create_dir_all(&dir).map_err(|err| format!("create temp dir {}: {err}", dir.display()))?;
+    let zip_path = dir.with_extension("zip");
+    fs::write(&zip_path, zip_bytes)
+        .map_err(|err| format!("write temp zip {}: {err}", zip_path.display()))?;
+    let output = ProcessCommand::new("unzip")
+        .arg("-q")
+        .arg("-o")
+        .arg(&zip_path)
+        .arg("-d")
+        .arg(&dir)
+        .output()
+        .map_err(|err| format!("run unzip: {err}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "unzip {} failed: {}",
+            zip_path.display(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(dir)
+}
+
+fn unique_temp_path(prefix: &str) -> PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    env::temp_dir().join(format!("{prefix}-{}-{nanos}", std::process::id()))
+}
+
+fn mineru_result_source_from_dir(
+    result_dir: PathBuf,
+    raw_zip_bytes: Option<Vec<u8>>,
+    task_status: Option<Value>,
+    task_id: Option<String>,
+) -> Result<MineruResultSource, String> {
+    let (payload, content_list_file) = mineru_payload_from_result_dir(&result_dir)?;
+    let markdown = find_first_file_by_name(&result_dir, "full.md")
+        .map(|path| {
+            fs::read_to_string(&path)
+                .map_err(|err| format!("read native markdown {}: {err}", path.display()))
+        })
+        .transpose()?;
+    Ok(MineruResultSource {
+        task_id,
+        state: "done".to_string(),
+        result_dir,
+        raw_zip_bytes,
+        task_status,
+        payload,
+        content_list_file,
+        markdown,
+    })
+}
+
+fn mineru_payload_from_result_dir(result_dir: &Path) -> Result<(Value, Option<PathBuf>), String> {
+    let v2 = find_first_file_with_suffix(result_dir, "_content_list_v2.json");
+    if let Some(path) = v2 {
+        let value = read_json_file(&path)?;
+        return Ok((serde_json::json!({"content_list_v2": value}), Some(path)));
+    }
+    let content_list = find_first_file_with_suffix(result_dir, "_content_list.json");
+    if let Some(path) = content_list {
+        let value = read_json_file(&path)?;
+        return Ok((serde_json::json!({"content_list": value}), Some(path)));
+    }
+    let layout = find_first_file_by_name(result_dir, "layout.json");
+    if let Some(path) = layout {
+        return Ok((read_json_file(&path)?, Some(path)));
+    }
+    let markdown = find_first_file_by_name(result_dir, "full.md");
+    if let Some(path) = markdown {
+        let text = fs::read_to_string(&path)
+            .map_err(|err| format!("read native markdown {}: {err}", path.display()))?;
+        return Ok((serde_json::json!({"result": text}), Some(path)));
+    }
+    Err(format!(
+        "MinerU result directory {} missing content_list_v2/content_list/layout/full.md",
+        result_dir.display()
+    ))
+}
+
+fn read_json_file(path: &Path) -> Result<Value, String> {
+    let raw = fs::read_to_string(path).map_err(|err| format!("read {}: {err}", path.display()))?;
+    serde_json::from_str(&raw).map_err(|err| format!("parse JSON {}: {err}", path.display()))
+}
+
+fn persist_mineru_result_sidecars(
+    storage_dir: &Path,
+    item_key: &str,
+    attachment_key: &str,
+    provider: &str,
+    source: &MineruResultSource,
+    chunk_chars: usize,
+) -> Result<PersistedOcrArtifacts, String> {
+    let blocks = parse_ocr_provider_response(provider, &source.payload, item_key, attachment_key)?;
+    let chunks = zotron_types::chunks_from_blocks(&blocks, chunk_chars);
+    let assets = copy_mineru_assets(&source.result_dir, storage_dir)?;
+    let raw_bundle = serde_json::json!({
+        "provider": provider,
+        "item_key": item_key,
+        "attachment_key": attachment_key,
+        "task_id": source.task_id,
+        "state": source.state,
+        "task_status": source.task_status,
+        "content_list_file": source.content_list_file,
+        "payload": source.payload,
+    });
+
+    let mut artifacts = Vec::new();
+    artifacts.push(write_sidecar_json(
+        storage_dir,
+        item_key,
+        attachment_key,
+        MachineArtifactKind::OcrRaw,
+        &raw_bundle,
+    )?);
+    artifacts.push(write_sidecar_jsonl(
+        storage_dir,
+        item_key,
+        attachment_key,
+        MachineArtifactKind::Blocks,
+        &blocks,
+    )?);
+    artifacts.push(write_sidecar_jsonl(
+        storage_dir,
+        item_key,
+        attachment_key,
+        MachineArtifactKind::Chunks,
+        &chunks,
+    )?);
+    if let Some(markdown) = source.markdown.as_deref() {
+        artifacts.push(write_sidecar_bytes(
+            storage_dir,
+            item_key,
+            attachment_key,
+            MachineArtifactKind::OcrNativeMarkdown,
+            markdown.as_bytes(),
+        )?);
+    }
+    artifacts.push(write_sidecar_json(
+        storage_dir,
+        item_key,
+        attachment_key,
+        MachineArtifactKind::OcrNativeAssets,
+        &assets,
+    )?);
+    if let Some(bytes) = source.raw_zip_bytes.as_deref() {
+        artifacts.push(write_extra_sidecar_bytes(
+            storage_dir,
+            ".zotron/ocr/latest.raw.zip",
+            bytes,
+        )?);
+    }
+
+    Ok(PersistedOcrArtifacts {
+        block_count: blocks.len(),
+        chunk_count: chunks.len(),
+        artifacts,
+    })
+}
+
+fn write_sidecar_json(
+    storage_dir: &Path,
+    item_key: &str,
+    attachment_key: &str,
+    kind: MachineArtifactKind,
+    value: &Value,
+) -> Result<Value, String> {
+    let bytes = serde_json::to_vec_pretty(value).map_err(|err| err.to_string())?;
+    write_sidecar_bytes(storage_dir, item_key, attachment_key, kind, &bytes)
+}
+
+fn write_sidecar_jsonl<T: serde::Serialize>(
+    storage_dir: &Path,
+    item_key: &str,
+    attachment_key: &str,
+    kind: MachineArtifactKind,
+    values: &[T],
+) -> Result<Value, String> {
+    let mut out = String::new();
+    for value in values {
+        out.push_str(&serde_json::to_string(value).map_err(|err| err.to_string())?);
+        out.push('\n');
+    }
+    write_sidecar_bytes(storage_dir, item_key, attachment_key, kind, out.as_bytes())
+}
+
+fn write_sidecar_bytes(
+    storage_dir: &Path,
+    item_key: &str,
+    attachment_key: &str,
+    kind: MachineArtifactKind,
+    bytes: &[u8],
+) -> Result<Value, String> {
+    let record = write_machine_artifact_sidecar(storage_dir, item_key, attachment_key, kind, bytes)
+        .map_err(|err| format!("write sidecar {:?}: {err}", kind))?;
+    Ok(serde_json::json!({
+        "kind": kind,
+        "relative_path": record.relative_path,
+        "absolute_path": record.absolute_path,
+    }))
+}
+
+fn write_extra_sidecar_bytes(
+    storage_dir: &Path,
+    relative_path: &str,
+    bytes: &[u8],
+) -> Result<Value, String> {
+    let absolute_path = storage_dir.join(relative_path);
+    if let Some(parent) = absolute_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| format!("create {}: {err}", parent.display()))?;
+    }
+    fs::write(&absolute_path, bytes)
+        .map_err(|err| format!("write sidecar {}: {err}", absolute_path.display()))?;
+    Ok(serde_json::json!({
+        "kind": "ocr_raw_zip",
+        "relative_path": relative_path,
+        "absolute_path": absolute_path,
+    }))
+}
+
+fn copy_mineru_assets(result_dir: &Path, storage_dir: &Path) -> Result<Value, String> {
+    let mut images = Vec::new();
+    for file in collect_files(result_dir)? {
+        if !is_image_file(&file) {
+            continue;
+        }
+        let relative = file.strip_prefix(result_dir).unwrap_or(&file).to_path_buf();
+        let destination = storage_dir.join(".zotron").join("ocr").join(&relative);
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|err| format!("create {}: {err}", parent.display()))?;
+        }
+        fs::copy(&file, &destination).map_err(|err| {
+            format!(
+                "copy MinerU asset {} to {}: {err}",
+                file.display(),
+                destination.display()
+            )
+        })?;
+        images.push(serde_json::json!({
+            "source_relative": relative,
+            "sidecar_relative": PathBuf::from(".zotron").join("ocr").join(&relative),
+            "absolute_path": destination,
+        }));
+    }
+    Ok(serde_json::json!({
+        "provider": "mineru",
+        "images": images,
+    }))
+}
+
+fn is_image_file(path: &Path) -> bool {
+    matches!(
+        path.extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+            .as_str(),
+        "png" | "jpg" | "jpeg" | "webp" | "gif"
+    )
+}
+
+fn find_first_file_with_suffix(root: &Path, suffix: &str) -> Option<PathBuf> {
+    collect_files(root).ok()?.into_iter().find(|path| {
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.ends_with(suffix))
+    })
+}
+
+fn find_first_file_by_name(root: &Path, name: &str) -> Option<PathBuf> {
+    collect_files(root).ok()?.into_iter().find(|path| {
+        path.file_name()
+            .and_then(|file_name| file_name.to_str())
+            .is_some_and(|file_name| file_name == name)
+    })
+}
+
+fn collect_files(root: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut files = Vec::new();
+    collect_files_into(root, &mut files)?;
+    files.sort();
+    Ok(files)
+}
+
+fn collect_files_into(root: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
+    for entry in fs::read_dir(root).map_err(|err| format!("read dir {}: {err}", root.display()))? {
+        let entry = entry.map_err(|err| format!("read dir entry {}: {err}", root.display()))?;
+        let path = entry.path();
+        let file_type = entry
+            .file_type()
+            .map_err(|err| format!("stat {}: {err}", path.display()))?;
+        if file_type.is_dir() {
+            collect_files_into(&path, files)?;
+        } else if file_type.is_file() {
+            files.push(path);
+        }
+    }
+    Ok(())
 }
 
 fn ocr_async_task_result(provider: &str, payload: &Value) -> Option<Value> {

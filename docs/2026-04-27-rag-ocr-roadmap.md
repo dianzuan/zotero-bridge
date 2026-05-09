@@ -340,7 +340,7 @@ Provider 分三类，不要混成一种。
 | 层级 | Provider | 状态 |
 |---|---|---|
 | 默认 live | GLM-OCR | 默认 OCR provider；走智谱 layout parsing endpoint |
-| target parser | MinerU Cloud 精准解析 API | 待接云 API；主路径不再依赖本地 CLI |
+| target parser | MinerU Cloud 精准解析 API | Rust `zotron ocr parse-pdf` 已接本地文件上传、URL submit、poll、download、result-dir/result-zip ingestion，并写入 attachment hidden sidecar |
 | parser scaffold | Mistral OCR | 已有 raw parser scaffold；待接 `/v1/ocr` transport |
 | parser scaffold | PaddleOCR-VL | 已有 raw parser scaffold；待接本地/服务端 transport |
 | spec only | Mathpix | 公式/表格/STEM 专项候选 |
@@ -365,6 +365,15 @@ Provider 分三类，不要混成一种。
   `/api/v4/extract/task/{task_id}`，完成后下载 `full_zip_url`。Agent 轻量
   API 只返回 Markdown CDN 链接，适合临时 agent 工作流，不适合作为 Zotron
   证据库主路径。
+- Rust 当前落地路径：
+  `zotron ocr parse-pdf --provider mineru --parent <item_key> --attachment <attachment_key>`
+  会通过 Zotero `attachments.getPath` 取本地 PDF，申请 MinerU batch 上传 URL，
+  PUT 本地文件，轮询 batch 结果，下载 zip，解析 `*_content_list_v2.json`
+  或 `*_content_list.json`，并写入
+  `.zotron/ocr/latest.raw.json`、`.zotron/ocr/latest.blocks.jsonl`、
+  `.zotron/chunks/chunks.v1.jsonl`、`.zotron/ocr/latest.native.md`、
+  `.zotron/ocr/latest.assets.json`。有公网 PDF URL 时可传 `--source-url`
+  走 MinerU extract/task；`--result-dir` / `--result-zip` 用于离线回放和测试。
 - Mistral OCR 官方 `mistral-ocr-latest` / `/v1/ocr` 返回 markdown、图片 bbox 和文档结构 metadata；新版还支持 table_format、header/footer、confidence scores 等参数，适合云端结构化 OCR。
 - PaddleOCR/PaddleOCR-VL 是本地/服务化优先的开源路线；PaddleOCR-VL 1.5 面向 document parsing，适合做自托管 provider。
 
@@ -480,7 +489,10 @@ vectors
 ```text
 zotron ocr status --collection "中国工业经济"
 zotron ocr providers
-zotron ocr provider-json --provider mineru --input /tmp/request.json --output /tmp/result.json
+zotron ocr parse-pdf --provider mineru --parent ITEMKEY --attachment ATTACHKEY
+zotron ocr parse-pdf --provider mineru --parent ITEMKEY --attachment ATTACHKEY --source-url https://example.com/paper.pdf
+zotron ocr parse-pdf --provider mineru --parent ITEMKEY --attachment ATTACHKEY --result-dir /tmp/mineru-unzipped
+zotron ocr provider-json --provider mineru --input /tmp/request.json
 ```
 
 内部写入 attachment sidecar 或本机 artifact cache，不写入普通 Zotero

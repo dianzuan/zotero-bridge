@@ -833,6 +833,7 @@ dependencies = [
  "clap",
  "serde",
  "serde_json",
+ "ureq",
  "zotron-rpc",
  "zotron-types",
 ]

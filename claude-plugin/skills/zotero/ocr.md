@@ -24,9 +24,20 @@ zotron ocr status --collection "数字经济"
 # Inspect configured providers
 zotron ocr providers
 
+# Parse a Zotero PDF through MinerU and write hidden sidecar blocks/chunks
+zotron ocr parse-pdf --provider mineru --parent ITEMKEY --attachment ATTACHKEY
+
+# Use a public PDF URL instead of MinerU's local-file upload flow
+zotron ocr parse-pdf --provider mineru --parent ITEMKEY --attachment ATTACHKEY --source-url "https://example.com/paper.pdf"
+
+# Replay an already-downloaded/unzipped MinerU result without another provider call
+zotron ocr parse-pdf --provider mineru --parent ITEMKEY --attachment ATTACHKEY --result-dir /tmp/mineru-result
+
 # Run one provider request from an explicit JSON payload
-zotron ocr provider-json --provider mineru --input /tmp/request.json --output /tmp/mineru-result.json
+zotron ocr provider-json --provider mineru --input /tmp/request.json
 ```
+
+Use `parse-pdf` for the real pipeline. `provider-json` is only a low-level transport/debug command and may return a submitted async task instead of persisted artifacts.
 
 ## When to use
 

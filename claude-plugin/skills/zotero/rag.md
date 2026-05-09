@@ -80,7 +80,7 @@ fixtures/academic_zh_hits.jsonl
 ```bash
 zotron rag status --collection "数字经济"
 zotron rag embedding-providers
-zotron rag embedding-json --provider doubao --input /tmp/request.json --output /tmp/embedding-result.json
+zotron rag embedding-json --provider custom --input /tmp/request.json --endpoint "$EMBEDDING_ENDPOINT" --model "$EMBEDDING_MODEL"
 ```
 
 ## Why RAG saves tokens
@@ -93,6 +93,6 @@ With RAG: get 10 relevant paragraphs → ~5K tokens per query
 Default provider setup is managed from Zotron settings. Current recommended defaults are GLM for OCR and Doubao for embeddings; API tokens are user-provided and should not be hardcoded in commands or skill docs.
 
 ```bash
-zotron ocr provider-json --provider mineru --input /tmp/request.json --output /tmp/mineru-result.json
-zotron rag hits --zotero --item 5843 --output jsonl "研究问题"
+zotron ocr parse-pdf --provider mineru --parent ITEMKEY --attachment ATTACHKEY
+zotron rag hits --zotero --key ITEMKEY --output jsonl "研究问题"
 ```

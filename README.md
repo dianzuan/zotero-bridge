@@ -209,6 +209,16 @@ Retrieval hits are one JSON object per line with required `item_key`, `title`, a
 
 Markdown is allowed as a derived convenience output, but it is not the source of truth for OCR/RAG because it loses page, bbox, table, figure, provider, and reading-order provenance.
 
+MinerU ingestion is exposed through the single Rust binary:
+
+```bash
+zotron ocr parse-pdf --provider mineru --parent ITEMKEY --attachment ATTACHKEY
+zotron ocr parse-pdf --provider mineru --parent ITEMKEY --attachment ATTACHKEY --source-url https://example.com/paper.pdf
+zotron ocr parse-pdf --provider mineru --parent ITEMKEY --attachment ATTACHKEY --result-dir /tmp/mineru-unzipped
+```
+
+Without `--source-url`, `parse-pdf` resolves the Zotero attachment path and uses MinerU's batch file-upload API for the local PDF. It writes the hidden sidecar files above and keeps provider Markdown/images as audit assets. `provider-json` remains a low-level provider transport/debug command.
+
 ## Development
 
 Node 18+, Zotero 8 installed locally. (WSL recommended on Windows.)

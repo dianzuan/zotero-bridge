@@ -43,7 +43,7 @@ When the user wants to write a literature review for a specific topic:
 
 1. **Check collection** — `collections.tree` to find the relevant collection
 2. **Check OCR status** — `zotron ocr status --collection "NAME"`
-3. **OCR/layout parse if needed** — `zotron ocr provider-json --provider mineru --input /tmp/request.json --output /tmp/result.json`
+3. **OCR/layout parse if needed** — `zotron ocr parse-pdf --provider mineru --parent ITEMKEY --attachment ATTACHKEY`
 4. **Check RAG artifacts** — `zotron rag status --collection "NAME"`
 5. **Semantic search** — `zotron rag hits --zotero --collection "NAME" "research question"`
 7. **Synthesize** — combine relevant paragraphs into literature review

@@ -1519,6 +1519,17 @@ fn normalize_ocr_payload(payload: &Value) -> Value {
         if let Some(value) = parse_json_string(candidate) {
             return normalize_ocr_payload(&value);
         }
+        if let Some(markdown) = candidate.as_str() {
+            let blocks = blocks_from_markdown_text(markdown);
+            if !blocks.is_empty() {
+                return json!({
+                    "pages": [{
+                        "page": 1,
+                        "blocks": blocks,
+                    }],
+                });
+            }
+        }
         if candidate.is_object() || candidate.is_array() {
             return normalize_ocr_payload(candidate);
         }
@@ -1537,13 +1548,16 @@ fn normalize_mineru_content_list_v2(content_list: &[Value]) -> Value {
                 .or_else(|| page.get("page"))
                 .and_then(Value::as_u64)
                 .unwrap_or(index as u64 + 1);
-            let blocks = page
-                .get("blocks")
-                .or_else(|| page.get("items"))
-                .or_else(|| page.get("content"))
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default();
+            let blocks = if let Some(blocks) = page.as_array() {
+                blocks.clone()
+            } else {
+                page.get("blocks")
+                    .or_else(|| page.get("items"))
+                    .or_else(|| page.get("content"))
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default()
+            };
             (!blocks.is_empty()).then(|| {
                 json!({
                     "page": page_idx,
@@ -1697,13 +1711,10 @@ fn push_blocks(
         let text = if is_table_type(normalized_type) {
             table_text_from_raw(raw)
         } else {
-            raw.get("text")
-                .or_else(|| raw.get("block_content"))
-                .or_else(|| raw.get("content"))
-                .or_else(|| raw.get("caption"))
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string()
+            ["text", "block_content", "content", "caption"]
+                .into_iter()
+                .find_map(|key| evidence_text_part(raw.get(key)))
+                .unwrap_or_default()
         };
         if is_heading_type(&block_type) {
             *section_path = vec![text.clone()];
@@ -1756,13 +1767,53 @@ fn table_text_from_raw(raw: &Value) -> String {
 }
 
 fn evidence_text_part(value: Option<&Value>) -> Option<String> {
-    let value = value?;
-    let text = match value {
-        Value::String(text) => text.trim().to_string(),
-        Value::Array(_) | Value::Object(_) => serde_json::to_string(value).ok()?,
-        Value::Null => return None,
-        other => other.to_string(),
-    };
+    let text = ocr_text_from_value(value?)?;
+    (!text.is_empty()).then_some(text)
+}
+
+fn ocr_text_from_value(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) => non_empty_string(text),
+        Value::Array(items) => join_ocr_text(items.iter().filter_map(ocr_text_from_value)),
+        Value::Object(map) => {
+            for key in [
+                "text",
+                "block_content",
+                "markdown",
+                "html",
+                "latex",
+                "title",
+                "caption",
+                "content",
+                "title_content",
+                "paragraph_content",
+                "table_body",
+                "table_caption",
+                "table_footnote",
+                "image_caption",
+                "list_content",
+                "children",
+                "items",
+                "rows",
+                "cells",
+                "table",
+            ] {
+                if let Some(text) = map.get(key).and_then(ocr_text_from_value) {
+                    return Some(text);
+                }
+            }
+            join_ocr_text(map.values().filter_map(ocr_text_from_value))
+        }
+        Value::Number(_) | Value::Bool(_) | Value::Null => None,
+    }
+}
+
+fn join_ocr_text(parts: impl Iterator<Item = String>) -> Option<String> {
+    let text = parts
+        .map(|part| part.trim().to_string())
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
     (!text.is_empty()).then_some(text)
 }
 

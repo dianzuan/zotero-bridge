@@ -607,6 +607,232 @@ fn zotron_ocr_provider_json_returns_async_task_for_mineru_precise_submit() {
 }
 
 #[test]
+fn ocr_parse_pdf_ingests_mineru_result_dir_into_hidden_sidecars() {
+    let root = std::env::temp_dir().join(format!(
+        "zotron-mineru-ingest-{}-{}",
+        std::process::id(),
+        thread_id_suffix()
+    ));
+    let storage_dir = root.join("storage").join("ATTACHKEY");
+    let result_dir = root.join("mineru-result");
+    fs::create_dir_all(storage_dir.join(".zotron")).expect("create storage dir");
+    fs::create_dir_all(result_dir.join("images")).expect("create result dir");
+    let pdf_path = storage_dir.join("paper.pdf");
+    fs::write(&pdf_path, b"%PDF-1").expect("write pdf placeholder");
+    fs::write(result_dir.join("full.md"), "# 引言\n\n正文 evidence").expect("write markdown");
+    fs::write(result_dir.join("images").join("figure.jpg"), b"jpg").expect("write image");
+    fs::write(
+        result_dir.join("abc_content_list_v2.json"),
+        serde_json::to_vec_pretty(&json!([
+            [
+                {
+                    "type": "title",
+                    "content": {
+                        "title_content": [{"type": "text", "content": "引言"}],
+                        "level": 1
+                    },
+                    "bbox": [1, 2, 3, 4]
+                },
+                {
+                    "type": "paragraph",
+                    "content": {
+                        "paragraph_content": [{"type": "text", "content": "数字经济促进体育产业创新发展。"}]
+                    },
+                    "bbox": [10, 20, 30, 40]
+                },
+                {
+                    "type": "table",
+                    "content": {
+                        "table_body": [{"type": "text", "content": "| 年份 | 指标 |"}]
+                    },
+                    "bbox": [50, 60, 70, 80]
+                }
+            ]
+        ]))
+        .expect("serialize content list"),
+    )
+    .expect("write content list");
+
+    let mut client = FakeClient::with_response(json!({
+        "key": "ATTACHKEY",
+        "path": pdf_path.to_string_lossy(),
+    }));
+    let out = run_with_client(
+        [
+            "zotron",
+            "ocr",
+            "parse-pdf",
+            "--provider",
+            "mineru",
+            "--parent",
+            "ITEMKEY",
+            "--attachment",
+            "ATTACHKEY",
+            "--result-dir",
+            result_dir.to_str().expect("result dir path is utf8"),
+            "--chunk-chars",
+            "1200",
+        ],
+        &mut client,
+    )
+    .expect("parse-pdf ingests MinerU result");
+    let payload: Value = serde_json::from_str(&out).expect("parse-pdf output is JSON");
+
+    assert_eq!(payload["status"], "indexed");
+    assert_eq!(payload["blocks"], 3);
+    assert_eq!(payload["chunks"], 2);
+    assert_eq!(
+        client.calls,
+        vec![(
+            "attachments.getPath".to_string(),
+            Some(json!({"key": "ATTACHKEY"}))
+        )]
+    );
+
+    let blocks_path = storage_dir.join(".zotron/ocr/latest.blocks.jsonl");
+    let chunks_path = storage_dir.join(".zotron/chunks/chunks.v1.jsonl");
+    let markdown_path = storage_dir.join(".zotron/ocr/latest.native.md");
+    let assets_path = storage_dir.join(".zotron/ocr/latest.assets.json");
+    let image_path = storage_dir.join(".zotron/ocr/images/figure.jpg");
+    assert!(storage_dir.join(".zotron/ocr/latest.raw.json").exists());
+    assert!(blocks_path.exists());
+    assert!(chunks_path.exists());
+    assert!(markdown_path.exists());
+    assert!(assets_path.exists());
+    assert!(image_path.exists());
+
+    let blocks = fs::read_to_string(&blocks_path).expect("read blocks");
+    assert!(blocks.contains("数字经济促进体育产业创新发展。"));
+    assert!(blocks.contains("| 年份 | 指标 |"));
+    assert!(!blocks.contains("item_id"));
+    assert!(!blocks.contains("attachment_id"));
+    let chunks = fs::read_to_string(&chunks_path).expect("read chunks");
+    assert_eq!(chunks.lines().count(), 2);
+    assert!(chunks.contains("\"chunk_key\":\"ATTACHKEY:c0\""));
+    assert!(chunks.contains("\"block_keys\""));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn ocr_parse_pdf_uploads_local_zotero_pdf_to_mineru_batch_endpoint() {
+    let _guard = ENV_LOCK.lock().expect("env lock");
+    let root = std::env::temp_dir().join(format!(
+        "zotron-mineru-live-contract-{}-{}",
+        std::process::id(),
+        thread_id_suffix()
+    ));
+    let storage_dir = root.join("storage").join("ATTACHKEY");
+    fs::create_dir_all(&storage_dir).expect("create storage dir");
+    let pdf_path = storage_dir.join("paper.pdf");
+    fs::write(&pdf_path, b"%PDF-1 local").expect("write pdf placeholder");
+    let zip_bytes = mineru_fixture_zip_bytes();
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local MinerU server");
+    let base = format!("http://{}", listener.local_addr().expect("local addr"));
+    let (tx, rx) = mpsc::channel();
+    let server_base = base.clone();
+    let handle = thread::spawn(move || {
+        let (stream, _) = listener.accept().expect("accept file-url request");
+        let mut reader = BufReader::new(stream);
+        let (headers, body) = read_http_request_optional_body(&mut reader);
+        tx.send(("file-urls".to_string(), headers, body))
+            .expect("send file-url request");
+        let response = format!(
+            r#"{{"code":0,"data":{{"batch_id":"batch1","file_urls":["{server_base}/upload/paper.pdf"]}}}}"#
+        );
+        let mut stream = reader.into_inner();
+        write_json_response(&mut stream, response.as_bytes());
+
+        let (stream, _) = listener.accept().expect("accept upload request");
+        let mut reader = BufReader::new(stream);
+        let (headers, body) = read_http_request_optional_body(&mut reader);
+        tx.send(("upload".to_string(), headers, body))
+            .expect("send upload request");
+        let mut stream = reader.into_inner();
+        write_json_response(&mut stream, br#"{"ok":true}"#);
+
+        let (stream, _) = listener.accept().expect("accept batch status request");
+        let mut reader = BufReader::new(stream);
+        let (headers, body) = read_http_request_optional_body(&mut reader);
+        tx.send(("status".to_string(), headers, body))
+            .expect("send status request");
+        let response = format!(
+            r#"{{"code":0,"data":{{"extract_result":[{{"state":"done","full_zip_url":"{server_base}/result.zip"}}]}}}}"#
+        );
+        let mut stream = reader.into_inner();
+        write_json_response(&mut stream, response.as_bytes());
+
+        let (stream, _) = listener.accept().expect("accept zip request");
+        let mut reader = BufReader::new(stream);
+        let (headers, body) = read_http_request_optional_body(&mut reader);
+        tx.send(("zip".to_string(), headers, body))
+            .expect("send zip request");
+        let mut stream = reader.into_inner();
+        write_json_response(&mut stream, &zip_bytes);
+    });
+
+    std::env::set_var("ZOTRON_TEST_MINERU_PARSE_KEY", "mineru-env-key");
+    let mut client = FakeClient::with_response(json!({
+        "key": "ATTACHKEY",
+        "path": pdf_path.to_string_lossy(),
+    }));
+    let out = run_with_client(
+        [
+            "zotron",
+            "ocr",
+            "parse-pdf",
+            "--provider",
+            "mineru",
+            "--parent",
+            "ITEMKEY",
+            "--attachment",
+            "ATTACHKEY",
+            "--provider-endpoint",
+            &format!("{base}/api/v4/extract/task"),
+            "--api-key-env",
+            "ZOTRON_TEST_MINERU_PARSE_KEY",
+            "--poll-interval-seconds",
+            "1",
+            "--timeout-seconds",
+            "10",
+        ],
+        &mut client,
+    )
+    .expect("parse-pdf uploads local file, downloads result, and writes sidecars");
+    let payload: Value = serde_json::from_str(&out).expect("parse-pdf output is JSON");
+    assert_eq!(payload["status"], "indexed");
+    assert_eq!(payload["task_id"], "batch1");
+    assert_eq!(payload["blocks"], 2);
+    assert!(storage_dir.join(".zotron/ocr/latest.raw.zip").exists());
+    assert!(storage_dir.join(".zotron/ocr/latest.blocks.jsonl").exists());
+    assert!(storage_dir.join(".zotron/chunks/chunks.v1.jsonl").exists());
+
+    let file_urls = rx.recv().expect("file-url request captured");
+    assert_eq!(file_urls.0, "file-urls");
+    assert!(file_urls
+        .1
+        .iter()
+        .any(|header| { header.eq_ignore_ascii_case("Authorization: Bearer mineru-env-key") }));
+    let upload_body: Value = serde_json::from_str(&file_urls.2).expect("file-url body JSON");
+    assert_eq!(upload_body["files"][0]["name"], "paper.pdf");
+    assert_eq!(upload_body["files"][0]["data_id"], "ATTACHKEY");
+
+    let upload = rx.recv().expect("upload request captured");
+    assert_eq!(upload.0, "upload");
+    assert_eq!(upload.2.as_bytes(), b"%PDF-1 local");
+    let status = rx.recv().expect("status request captured");
+    assert_eq!(status.0, "status");
+    assert!(status.1[0].contains("/api/v4/extract-results/batch/batch1"));
+    let zip = rx.recv().expect("zip request captured");
+    assert_eq!(zip.0, "zip");
+
+    std::env::remove_var("ZOTRON_TEST_MINERU_PARSE_KEY");
+    let _ = fs::remove_dir_all(root);
+    handle.join().expect("server thread joins");
+}
+
+#[test]
 fn zotron_rag_subcommand_embedding_json_executes_custom_provider_against_local_http() {
     let _guard = ENV_LOCK.lock().expect("env lock");
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind local embedding server");
@@ -1531,6 +1757,35 @@ fn read_http_request(reader: &mut BufReader<std::net::TcpStream>) -> (Vec<String
     (headers, String::from_utf8(body).expect("utf8 request body"))
 }
 
+fn read_http_request_optional_body(
+    reader: &mut BufReader<std::net::TcpStream>,
+) -> (Vec<String>, String) {
+    let mut headers = Vec::new();
+    loop {
+        let mut line = String::new();
+        reader.read_line(&mut line).expect("read header line");
+        let trimmed = line.trim_end().to_string();
+        if trimmed.is_empty() {
+            break;
+        }
+        headers.push(trimmed);
+    }
+    let content_length = headers
+        .iter()
+        .find_map(|header| {
+            let (name, value) = header.split_once(':')?;
+            name.eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse::<usize>().ok())
+                .flatten()
+        })
+        .unwrap_or(0);
+    let mut body = vec![0; content_length];
+    if content_length > 0 {
+        reader.read_exact(&mut body).expect("read request body");
+    }
+    (headers, String::from_utf8(body).expect("utf8 request body"))
+}
+
 fn write_json_response(stream: &mut std::net::TcpStream, response: &[u8]) {
     write!(
         stream,
@@ -1539,6 +1794,55 @@ fn write_json_response(stream: &mut std::net::TcpStream, response: &[u8]) {
     )
     .expect("write response headers");
     stream.write_all(response).expect("write response body");
+}
+
+fn mineru_fixture_zip_bytes() -> Vec<u8> {
+    let root = std::env::temp_dir().join(format!(
+        "zotron-mineru-zip-fixture-{}-{}",
+        std::process::id(),
+        thread_id_suffix()
+    ));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(root.join("images")).expect("create zip fixture dir");
+    fs::write(root.join("full.md"), "# 摘要\n\n数字经济 evidence").expect("write full.md");
+    fs::write(root.join("images").join("figure.jpg"), b"jpg").expect("write image");
+    fs::write(
+        root.join("abc_content_list_v2.json"),
+        serde_json::to_vec_pretty(&json!([
+            [
+                {
+                    "type": "title",
+                    "content": {"title_content": [{"type": "text", "content": "摘要"}]},
+                    "bbox": [1, 2, 3, 4]
+                },
+                {
+                    "type": "paragraph",
+                    "content": {"paragraph_content": [{"type": "text", "content": "数字经济 evidence"}]},
+                    "bbox": [5, 6, 7, 8]
+                }
+            ]
+        ]))
+        .expect("serialize content list"),
+    )
+    .expect("write content list");
+    let zip_path = root.with_extension("zip");
+    let output = ProcessCommand::new("zip")
+        .arg("-q")
+        .arg("-r")
+        .arg(&zip_path)
+        .arg(".")
+        .current_dir(&root)
+        .output()
+        .expect("run zip");
+    assert!(
+        output.status.success(),
+        "zip should succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let bytes = fs::read(&zip_path).expect("read zip fixture");
+    let _ = fs::remove_dir_all(&root);
+    let _ = fs::remove_file(&zip_path);
+    bytes
 }
 
 fn fixture_names() -> Vec<String> {
