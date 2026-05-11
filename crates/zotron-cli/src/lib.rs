@@ -919,12 +919,18 @@ enum ExportCommand {
     /// Print BibTeX for the given item keys.
     Bibtex {
         keys: Vec<String>,
+        /// Export all items from this collection (name or key).
+        #[arg(long)]
+        collection: Option<String>,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
     /// Print RIS for the given item keys.
     Ris {
         keys: Vec<String>,
+        /// Export all items from this collection (name or key).
+        #[arg(long)]
+        collection: Option<String>,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
@@ -932,12 +938,18 @@ enum ExportCommand {
     #[command(name = "csl-json")]
     CslJson {
         keys: Vec<String>,
+        /// Export all items from this collection (name or key).
+        #[arg(long)]
+        collection: Option<String>,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
     /// Print a formatted bibliography.
     Bibliography {
         keys: Vec<String>,
+        /// Export all items from this collection (name or key).
+        #[arg(long)]
+        collection: Option<String>,
         #[arg(
             long,
             default_value = "http://www.zotero.org/styles/gb-t-7714-2015-numeric"
@@ -4718,16 +4730,53 @@ fn run_collections_command(
     Ok((value, JsonStyle::Pretty))
 }
 
+fn resolve_export_keys(
+    client: &mut impl RpcCaller,
+    mut keys: Vec<String>,
+    collection: Option<String>,
+) -> Result<Vec<String>, String> {
+    if let Some(name) = collection {
+        let col_key = resolve_collection(client, &name)?;
+        let response = client.call(
+            "collections.getItems",
+            Some(serde_json::json!({"key": col_key})),
+        )?;
+        let items = collection_items(&response);
+        for item in items {
+            if let Some(key) = item.get("key").and_then(Value::as_str) {
+                if !keys.contains(&key.to_string()) {
+                    keys.push(key.to_string());
+                }
+            }
+        }
+    }
+    if keys.is_empty() {
+        return Err("No item keys provided. Pass positional keys and/or --collection.".to_string());
+    }
+    Ok(keys)
+}
+
 fn run_export_command(
     command: ExportCommand,
     client: &mut impl RpcCaller,
 ) -> Result<String, String> {
     match command {
-        ExportCommand::Bibtex { keys, .. } => {
+        ExportCommand::Bibtex {
+            keys, collection, ..
+        } => {
+            let keys = resolve_export_keys(client, keys, collection)?;
             run_export_content_command(client, "export.bibtex", keys)
         }
-        ExportCommand::Ris { keys, .. } => run_export_content_command(client, "export.ris", keys),
-        ExportCommand::CslJson { keys, .. } => {
+        ExportCommand::Ris {
+            keys, collection, ..
+        } => {
+            let keys = resolve_export_keys(client, keys, collection)?;
+            run_export_content_command(client, "export.ris", keys)
+        }
+        ExportCommand::CslJson {
+            keys, collection, ..
+        } => {
+            let keys = resolve_export_keys(client, keys, collection)?;
             let response =
                 client.call("export.cslJson", Some(serde_json::json!({"keys": keys})))?;
             if let Some(content) = response.get("content") {
@@ -4737,8 +4786,13 @@ fn run_export_command(
             }
         }
         ExportCommand::Bibliography {
-            keys, style, html, ..
+            keys,
+            collection,
+            style,
+            html,
+            ..
         } => {
+            let keys = resolve_export_keys(client, keys, collection)?;
             let response = client.call(
                 "export.bibliography",
                 Some(serde_json::json!({"keys": keys, "style": style})),
