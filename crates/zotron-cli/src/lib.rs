@@ -264,9 +264,9 @@ enum OcrCommand {
         /// Parent Zotero item key.
         #[arg(long)]
         parent: String,
-        /// Zotero PDF attachment key.
+        /// Zotero PDF attachment key (auto-resolved from --parent when omitted).
         #[arg(long)]
-        attachment: String,
+        attachment: Option<String>,
         /// Public URL for MinerU cloud parsing. Use --result-dir/--result-zip for offline ingestion.
         #[arg(long = "source-url")]
         source_url: Option<String>,
@@ -1484,7 +1484,7 @@ fn run_ocr_command(command: OcrCommand, client: &mut impl RpcCaller) -> Result<S
 struct OcrParsePdfOptions {
     provider: String,
     parent: String,
-    attachment: String,
+    attachment: Option<String>,
     source_url: Option<String>,
     result_dir: Option<String>,
     result_zip: Option<String>,
@@ -1566,7 +1566,7 @@ fn run_ocr_provider_json_command(options: OcrProviderJsonOptions) -> Result<Valu
 
 fn run_ocr_parse_pdf_command(
     client: &mut impl RpcCaller,
-    options: OcrParsePdfOptions,
+    mut options: OcrParsePdfOptions,
 ) -> Result<Value, String> {
     let spec = raw_ocr_provider_spec(&options.provider)?;
     if spec.provider_key != "mineru" {
@@ -1586,7 +1586,13 @@ fn run_ocr_parse_pdf_command(
         );
     }
 
-    let attachment_path = resolve_attachment_path(client, &options.attachment)?;
+    let attachment = match options.attachment.take() {
+        Some(key) => key,
+        None => resolve_first_pdf_attachment_key(client, &options.parent)?,
+    };
+    options.attachment = Some(attachment.clone());
+
+    let attachment_path = resolve_attachment_path(client, &attachment)?;
     let storage_dir = attachment_path
         .parent()
         .ok_or_else(|| {
@@ -1606,7 +1612,7 @@ fn run_ocr_parse_pdf_command(
     let artifacts = persist_mineru_result_sidecars(
         &storage_dir,
         &options.parent,
-        &options.attachment,
+        &attachment,
         &options.provider,
         &source,
         options.chunk_chars,
@@ -1616,7 +1622,7 @@ fn run_ocr_parse_pdf_command(
         "provider": "mineru",
         "status": "indexed",
         "item_key": options.parent,
-        "attachment_key": options.attachment,
+        "attachment_key": attachment,
         "attachment_path": attachment_path,
         "storage_dir": storage_dir,
         "task_id": source.task_id,
@@ -1662,6 +1668,35 @@ fn resolve_attachment_path(
     Ok(PathBuf::from(local_path_from_zotero_path(raw_path)))
 }
 
+/// Resolve the first PDF attachment key for a parent item via `attachments.list`.
+fn resolve_first_pdf_attachment_key(
+    client: &mut impl RpcCaller,
+    parent_key: &str,
+) -> Result<String, String> {
+    let response = client.call(
+        "attachments.list",
+        Some(serde_json::json!({"parentKey": parent_key})),
+    )?;
+    // The XPI returns {items: [...], total: N}.
+    let attachments = response
+        .get("items")
+        .and_then(Value::as_array)
+        .or_else(|| response.as_array())
+        .ok_or_else(|| {
+            format!("NO_PDF_ATTACHMENT: no attachments found for item {parent_key}")
+        })?;
+    for attachment in attachments {
+        if is_pdf_attachment(attachment) {
+            if let Some(key) = attachment.get("key").and_then(Value::as_str) {
+                return Ok(key.to_string());
+            }
+        }
+    }
+    Err(format!(
+        "NO_PDF_ATTACHMENT: no PDF attachment found for item {parent_key}"
+    ))
+}
+
 fn load_mineru_result_source(
     options: &OcrParsePdfOptions,
     attachment_path: &Path,
@@ -1687,7 +1722,7 @@ fn load_mineru_result_source(
     };
     let input = OcrRequestInput {
         item_key: options.parent.clone(),
-        attachment_key: options.attachment.clone(),
+        attachment_key: options.attachment.clone().expect("attachment resolved"),
         file_name: file_name.to_string(),
         mime_type: "application/pdf".to_string(),
         content_base64: format!("url:{source_url}"),
@@ -1734,7 +1769,7 @@ fn submit_mineru_local_file(
     let upload_request = create_mineru_file_upload(
         options.provider_endpoint.as_deref(),
         file_name,
-        &options.attachment,
+        options.attachment.as_deref().expect("attachment resolved"),
         &auth_header,
     )?;
     let upload_url = upload_request
