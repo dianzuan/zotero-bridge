@@ -26,7 +26,8 @@ export const collectionsHandlers = {
   async list() {
     const libraryID = Zotero.Libraries.userLibraryID;
     const cols = Zotero.Collections.getByLibrary(libraryID, true);
-    return cols.map(serializeCollection);
+    const items = cols.map(serializeCollection);
+    return { items, total: items.length };
   },
 
   async get(params: { key: number | string }) {

@@ -54,14 +54,15 @@ describe("annotations handler", () => {
       const { annotationsHandlers } = await import("../../src/handlers/annotations");
       const result = await annotationsHandlers.list({ parentKey: 1 });
 
-      expect(result).to.have.lengthOf(2);
-      expect(result[0].annotationType).to.equal("highlight");
-      expect(result[0].annotationText).to.equal("important text");
-      expect(result[0].annotationComment).to.equal("my comment");
-      expect(result[0].annotationColor).to.equal("#ffd400");
-      expect(result[0].annotationPosition).to.deep.equal({ pageIndex: 0, rects: [[0, 0, 100, 100]] });
-      expect(result[1].annotationType).to.equal("note");
-      expect(result[1].annotationPosition).to.be.null;
+      expect(result.items).to.have.lengthOf(2);
+      expect(result.total).to.equal(2);
+      expect(result.items[0].annotationType).to.equal("highlight");
+      expect(result.items[0].annotationText).to.equal("important text");
+      expect(result.items[0].annotationComment).to.equal("my comment");
+      expect(result.items[0].annotationColor).to.equal("#ffd400");
+      expect(result.items[0].annotationPosition).to.deep.equal({ pageIndex: 0, rects: [[0, 0, 100, 100]] });
+      expect(result.items[1].annotationType).to.equal("note");
+      expect(result.items[1].annotationPosition).to.be.null;
     });
 
     it("returns empty array when item has no annotations", async () => {
@@ -73,7 +74,7 @@ describe("annotations handler", () => {
       const { annotationsHandlers } = await import("../../src/handlers/annotations");
       const result = await annotationsHandlers.list({ parentKey: 2 });
 
-      expect(result).to.deep.equal([]);
+      expect(result).to.deep.equal({ items: [], total: 0 });
     });
 
     it("accepts Zotero 9 annotation item refs from getAnnotations", async () => {
@@ -105,9 +106,10 @@ describe("annotations handler", () => {
       const { annotationsHandlers } = await import("../../src/handlers/annotations");
       const result = await annotationsHandlers.list({ parentKey: 2 });
 
-      expect(result).to.have.lengthOf(1);
-      expect(result[0].key).to.equal("ANN12");
-      expect(result[0].annotationType).to.equal("underline");
+      expect(result.items).to.have.lengthOf(1);
+      expect(result.total).to.equal(1);
+      expect(result.items[0].key).to.equal("ANN12");
+      expect(result.items[0].annotationType).to.equal("underline");
     });
   });
 

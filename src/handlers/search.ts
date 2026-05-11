@@ -116,11 +116,12 @@ export const searchHandlers = {
   async savedSearches() {
     const libraryID = Zotero.Libraries.userLibraryID;
     const searches = await (Zotero.Searches as any).getAll(libraryID);
-    return searches.map((s: any) => ({
+    const items = searches.map((s: any) => ({
       key: s.key,
       name: s.name,
       conditions: s.getConditions(),
     }));
+    return { items, total: items.length };
   },
 
   async createSavedSearch(params: {

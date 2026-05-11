@@ -231,25 +231,23 @@ export const itemsHandlers = {
     const libraryID = Zotero.Libraries.userLibraryID;
     const limit = params.limit ?? 20;
     const offset = params.offset ?? 0;
-    // Zotero.Search has no orderByField/sortDirection conditions — query DB
-    // directly for top-N item keys sorted by dateAdded or dateModified.
-    // Excludes notes / attachments (top-level only) and deleted items.
     const sortColumn = params.type === "modified" ? "dateModified" : "dateAdded";
-    const sql = `SELECT itemID FROM items
-                 WHERE libraryID=?
+    const whereClause = `WHERE libraryID=?
                    AND itemTypeID NOT IN (
                      SELECT itemTypeID FROM itemTypes WHERE typeName IN ('note', 'attachment'))
-                   AND itemID NOT IN (SELECT itemID FROM deletedItems)
+                   AND itemID NOT IN (SELECT itemID FROM deletedItems)`;
+    const total = Number(await Zotero.DB.valueQueryAsync(
+      `SELECT COUNT(*) FROM items ${whereClause}`, [libraryID]));
+    const sql = `SELECT itemID FROM items ${whereClause}
                  ORDER BY ${sortColumn} DESC LIMIT ? OFFSET ?`;
     const ids: number[] = await Zotero.DB.columnQueryAsync(sql, [libraryID, limit, offset]);
     const items = ids.length > 0 ? await Zotero.Items.getAsync(ids) : [];
-    const result: Record<string, any> = {
+    return {
       items: items.map(serializeItem),
-      total: items.length,
+      total,
+      limit,
+      offset,
     };
-    if (params.limit !== undefined) result.limit = params.limit;
-    if (params.offset !== undefined) result.offset = params.offset;
-    return result;
   },
 
   async addByDOI(params: { doi: string; collection?: number }) {
@@ -386,17 +384,19 @@ export const itemsHandlers = {
     const offset = params.offset ?? 0;
     const sortColumn = params.sort === "dateModified" ? "dateModified" : "dateAdded";
     const sortDir = params.direction === "asc" ? "ASC" : "DESC";
-    const sql = `SELECT itemID FROM items
-                 WHERE libraryID=?
+    const whereClause = `WHERE libraryID=?
                    AND itemTypeID NOT IN (
                      SELECT itemTypeID FROM itemTypes WHERE typeName IN ('note', 'attachment'))
-                   AND itemID NOT IN (SELECT itemID FROM deletedItems)
+                   AND itemID NOT IN (SELECT itemID FROM deletedItems)`;
+    const total = Number(await Zotero.DB.valueQueryAsync(
+      `SELECT COUNT(*) FROM items ${whereClause}`, [libraryID]));
+    const sql = `SELECT itemID FROM items ${whereClause}
                  ORDER BY ${sortColumn} ${sortDir} LIMIT ? OFFSET ?`;
     const ids: number[] = await Zotero.DB.columnQueryAsync(sql, [libraryID, limit, offset]);
     const items = ids.length > 0 ? await Zotero.Items.getAsync(ids) : [];
     return {
       items: items.map(serializeItem),
-      total: items.length,
+      total,
       limit,
       offset,
     };

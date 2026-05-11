@@ -31,10 +31,11 @@ describe("search handler", () => {
       const result = await searchHandlers.savedSearches();
 
       expect(getAllStub.calledOnceWith(1)).to.equal(true);
-      expect(result).to.have.lengthOf(1);
-      expect(result[0]).to.not.have.property("id");
-      expect(result[0].key).to.equal("S1");
-      expect(result[0].name).to.equal("My Search");
+      expect(result).to.have.property("items").with.lengthOf(1);
+      expect(result).to.have.property("total", 1);
+      expect(result.items[0]).to.not.have.property("id");
+      expect(result.items[0].key).to.equal("S1");
+      expect(result.items[0].name).to.equal("My Search");
     });
   });
 

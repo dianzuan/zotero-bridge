@@ -63,8 +63,9 @@ describe("collections handler", () => {
       const result = await collectionsHandlers.list();
 
       expect(getByLibraryStub.firstCall.args).to.deep.equal([1, true]);
-      expect(result.map((collection: any) => collection.key)).to.deep.equal(["PARENT01", "CHILD001"]);
-      expect(result[1].parentKey).to.equal("PARENT01");
+      expect(result.items.map((collection: any) => collection.key)).to.deep.equal(["PARENT01", "CHILD001"]);
+      expect(result.total).to.equal(2);
+      expect(result.items[1].parentKey).to.equal("PARENT01");
     });
 
     it("serializeCollection returns key-first, no id, parentKey, children as keys", async () => {
@@ -87,12 +88,12 @@ describe("collections handler", () => {
       const { collectionsHandlers } = await import("../../src/handlers/collections");
       const result = await collectionsHandlers.list();
 
-      expect(result[0]).to.not.have.property("id");
-      expect(result[0].key).to.equal("PARENT01");
-      expect(result[0]).to.have.property("version");
-      expect(result[0].parentKey).to.equal(null);
-      expect(result[0]).to.not.have.property("parentID");
-      expect(result[0].childCollections).to.deep.equal(["CHILD001"]);
+      expect(result.items[0]).to.not.have.property("id");
+      expect(result.items[0].key).to.equal("PARENT01");
+      expect(result.items[0]).to.have.property("version");
+      expect(result.items[0].parentKey).to.equal(null);
+      expect(result.items[0]).to.not.have.property("parentID");
+      expect(result.items[0].childCollections).to.deep.equal(["CHILD001"]);
     });
   });
 

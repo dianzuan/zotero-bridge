@@ -118,15 +118,16 @@ describe("attachments handler", () => {
       const { attachmentsHandlers } = await import("../../src/handlers/attachments");
       const result = await attachmentsHandlers.list({ parentKey: 1 });
 
-      expect(result).to.have.lengthOf(2);
+      expect(result.items).to.have.lengthOf(2);
+      expect(result.total).to.equal(2);
       // serializeItem-shape — has the standard envelope keys
-      expect(result[0]).to.include.keys("key", "version", "itemType", "title", "dateAdded", "dateModified", "creators", "tags", "collections", "relations");
-      expect(result[0]).to.include({
+      expect(result.items[0]).to.include.keys("key", "version", "itemType", "title", "dateAdded", "dateModified", "creators", "tags", "collections", "relations");
+      expect(result.items[0]).to.include({
         contentType: "application/pdf",
         linkMode: 1,
         path: "/storage/paper.pdf",
       });
-      expect(result[1]).to.include({
+      expect(result.items[1]).to.include({
         contentType: "application/octet-stream",
         path: "/storage/paper2.PDF",
       });

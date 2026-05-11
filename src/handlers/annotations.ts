@@ -10,9 +10,9 @@ export const annotationsHandlers = {
   async list(params: { parentKey: number | string }) {
     const item = await requireItem(params.parentKey);
     const annotationRefs: any[] = (item as any).getAnnotations?.() ?? [];
-    if (annotationRefs.length === 0) return [];
+    if (annotationRefs.length === 0) return { items: [], total: 0 };
     const anns = await resolveAnnotationRefs(item.libraryID, annotationRefs);
-    return anns.map((a: any) => {
+    const items = anns.map((a: any) => {
       const data = serializeItem(a);
       data.annotationType = a.annotationType;
       data.annotationText = a.annotationText || "";
@@ -21,6 +21,7 @@ export const annotationsHandlers = {
       data.annotationPosition = a.annotationPosition ? JSON.parse(a.annotationPosition) : null;
       return data;
     });
+    return { items, total: items.length };
   },
 
   async create(params: {

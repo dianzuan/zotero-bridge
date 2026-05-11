@@ -21,10 +21,15 @@ describe("tags handler", () => {
 
       const result = await tagsHandlers.list({});
 
-      expect(result).to.deep.equal([
-        { tag: "manual-tag", type: 0 },
-        { tag: "auto-tag", type: 1 },
-      ]);
+      expect(result).to.deep.equal({
+        items: [
+          { tag: "manual-tag", type: 0 },
+          { tag: "auto-tag", type: 1 },
+        ],
+        total: 2,
+        limit: 200,
+        offset: 0,
+      });
     });
   });
 
@@ -91,10 +96,15 @@ describe("tags handler", () => {
       delete require.cache[require.resolve("../../src/handlers/tags")];
       const { tagsHandlers } = await import("../../src/handlers/tags");
       const result = await tagsHandlers.list({ offset: 2, limit: 2 });
-      expect(result).to.deep.equal([
-        { tag: "c", type: 1 },
-        { tag: "d", type: 1 },
-      ]);
+      expect(result).to.deep.equal({
+        items: [
+          { tag: "c", type: 1 },
+          { tag: "d", type: 1 },
+        ],
+        total: 5,
+        limit: 2,
+        offset: 2,
+      });
     });
   });
 });
