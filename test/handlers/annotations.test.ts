@@ -13,6 +13,8 @@ describe("annotations handler", () => {
     it("returns serialized annotations with annotation-specific fields", async () => {
       const parent: any = {
         id: 1,
+        key: "ATT01",
+        isAttachment: () => true,
         getAnnotations: () => [10, 11],
       };
       const ann1: any = {
@@ -56,6 +58,7 @@ describe("annotations handler", () => {
 
       expect(result.items).to.have.lengthOf(2);
       expect(result.total).to.equal(2);
+      expect(result.attachmentKey).to.equal("ATT01");
       expect(result.items[0].annotationType).to.equal("highlight");
       expect(result.items[0].annotationText).to.equal("important text");
       expect(result.items[0].annotationComment).to.equal("my comment");
@@ -66,7 +69,7 @@ describe("annotations handler", () => {
     });
 
     it("returns empty array when item has no annotations", async () => {
-      const parent: any = { id: 2, getAnnotations: () => [] };
+      const parent: any = { id: 2, key: "ATT02", isAttachment: () => true, getAnnotations: () => [] };
       installZotero({
         Items: { getAsync: sinon.stub().withArgs(2).resolves(parent) },
       });
@@ -74,7 +77,7 @@ describe("annotations handler", () => {
       const { annotationsHandlers } = await import("../../src/handlers/annotations");
       const result = await annotationsHandlers.list({ parentKey: 2 });
 
-      expect(result).to.deep.equal({ items: [], total: 0 });
+      expect(result).to.deep.equal({ items: [], total: 0, attachmentKey: "ATT02" });
     });
 
     it("accepts Zotero 9 annotation item refs from getAnnotations", async () => {
@@ -93,7 +96,9 @@ describe("annotations handler", () => {
       };
       const parent: any = {
         id: 2,
+        key: "ATT02",
         libraryID: 1,
+        isAttachment: () => true,
         getAnnotations: () => [ann],
       };
       installZotero({
@@ -108,14 +113,124 @@ describe("annotations handler", () => {
 
       expect(result.items).to.have.lengthOf(1);
       expect(result.total).to.equal(1);
+      expect(result.attachmentKey).to.equal("ATT02");
       expect(result.items[0].key).to.equal("ANN12");
       expect(result.items[0].annotationType).to.equal("underline");
+    });
+
+    it("auto-resolves item key to first PDF attachment", async () => {
+      const pdfAttachment: any = {
+        id: 20,
+        key: "PDFATT01",
+        libraryID: 1,
+        isAttachment: () => true,
+        attachmentContentType: "application/pdf",
+        getAnnotations: () => [30],
+      };
+      const ann: any = {
+        id: 30, key: "ANN30", itemType: "annotation", itemTypeID: 99,
+        dateAdded: "", dateModified: "", deleted: false,
+        getField: () => "",
+        isNote: () => false, isAttachment: () => false,
+        getCreators: () => [], getTags: () => [], getCollections: () => [], getRelations: () => ({}),
+        annotationType: "highlight",
+        annotationText: "auto-resolved",
+        annotationComment: "",
+        annotationColor: "#ffd400",
+        annotationPosition: JSON.stringify({ pageIndex: 0, rects: [[0, 0, 50, 50]] }),
+      };
+      const regularItem: any = {
+        id: 10,
+        key: "ITEM01",
+        isAttachment: () => false,
+        getAttachments: () => [20],
+      };
+
+      const getAsyncStub = sinon.stub();
+      getAsyncStub.withArgs(10).resolves(regularItem);
+      getAsyncStub.withArgs(20).resolves(pdfAttachment);
+      getAsyncStub.withArgs([30]).resolves([ann]);
+
+      installZotero({
+        Items: { getAsync: getAsyncStub },
+        ItemFields: { getItemTypeFields: () => [], getName: () => "" },
+        CreatorTypes: { getName: () => "author" },
+        Collections: { get: () => null },
+      });
+
+      const { annotationsHandlers } = await import("../../src/handlers/annotations");
+      const result = await annotationsHandlers.list({ parentKey: 10 });
+
+      expect(result.items).to.have.lengthOf(1);
+      expect(result.total).to.equal(1);
+      expect(result.attachmentKey).to.equal("PDFATT01");
+      expect(result.items[0].key).to.equal("ANN30");
+      expect(result.items[0].annotationText).to.equal("auto-resolved");
+    });
+
+    it("throws -32602 when item has no PDF attachments", async () => {
+      const regularItem: any = {
+        id: 10,
+        key: "ITEM01",
+        isAttachment: () => false,
+        getAttachments: () => [],
+      };
+
+      installZotero({
+        Items: { getAsync: sinon.stub().withArgs(10).resolves(regularItem) },
+      });
+
+      const { annotationsHandlers } = await import("../../src/handlers/annotations");
+      try {
+        await annotationsHandlers.list({ parentKey: 10 });
+        expect.fail("should have thrown");
+      } catch (e: any) {
+        expect(e.code).to.equal(-32602);
+        expect(e.message).to.match(/No PDF attachment found/);
+      }
+    });
+
+    it("skips non-PDF attachments when auto-resolving", async () => {
+      const htmlAttachment: any = {
+        id: 21,
+        isAttachment: () => true,
+        attachmentContentType: "text/html",
+      };
+      const pdfAttachment: any = {
+        id: 22,
+        key: "PDFATT02",
+        libraryID: 1,
+        isAttachment: () => true,
+        attachmentContentType: "application/pdf",
+        getAnnotations: () => [],
+      };
+      const regularItem: any = {
+        id: 10,
+        key: "ITEM01",
+        isAttachment: () => false,
+        getAttachments: () => [21, 22],
+      };
+
+      const getAsyncStub = sinon.stub();
+      getAsyncStub.withArgs(10).resolves(regularItem);
+      getAsyncStub.withArgs(21).resolves(htmlAttachment);
+      getAsyncStub.withArgs(22).resolves(pdfAttachment);
+
+      installZotero({
+        Items: { getAsync: getAsyncStub },
+      });
+
+      const { annotationsHandlers } = await import("../../src/handlers/annotations");
+      const result = await annotationsHandlers.list({ parentKey: 10 });
+
+      expect(result.attachmentKey).to.equal("PDFATT02");
+      expect(result.items).to.have.lengthOf(0);
     });
   });
 
   describe("create", () => {
-    it("creates an annotation and returns {ok, key}", async () => {
-      const parent: any = { id: 5, libraryID: 1 };
+    it("creates an annotation and returns {ok, key, attachmentKey}", async () => {
+      const parent: any = { id: 5, key: "ATT05", libraryID: 1, isAttachment: () => true };
       const saveTxStub = sinon.stub().resolves();
       let createdItem: any = null;
 
@@ -148,6 +263,7 @@ describe("annotations handler", () => {
 
       expect(result.ok).to.equal(true);
       expect(result.key).to.equal("NEWANN01");
+      expect(result.attachmentKey).to.equal("ATT05");
       expect(saveTxStub.calledOnce).to.equal(true);
       expect(createdItem.libraryID).to.equal(1);
       expect(createdItem.parentID).to.equal(5);
@@ -161,8 +277,87 @@ describe("annotations handler", () => {
       });
     });
 
+    it("auto-resolves item key to PDF attachment for create", async () => {
+      const pdfAttachment: any = {
+        id: 50,
+        key: "PDFATT50",
+        libraryID: 1,
+        isAttachment: () => true,
+        attachmentContentType: "application/pdf",
+      };
+      const regularItem: any = {
+        id: 40,
+        key: "ITEM40",
+        isAttachment: () => false,
+        getAttachments: () => [50],
+      };
+      const saveTxStub = sinon.stub().resolves();
+      let createdItem: any = null;
+
+      const getAsyncStub = sinon.stub();
+      getAsyncStub.withArgs(40).resolves(regularItem);
+      getAsyncStub.withArgs(50).resolves(pdfAttachment);
+
+      installZotero({
+        Items: { getAsync: getAsyncStub },
+        Item: function (itemType: string) {
+          createdItem = {
+            itemType,
+            libraryID: 0,
+            parentID: 0,
+            key: "NEWANN03",
+            saveTx: saveTxStub,
+          };
+          return createdItem;
+        },
+      });
+
+      (globalThis as any).Zotero.Item = (globalThis as any).Zotero.Item;
+
+      const { annotationsHandlers } = await import("../../src/handlers/annotations");
+      const result = await annotationsHandlers.create({
+        parentKey: 40,
+        type: "highlight",
+        text: "resolved text",
+        position: { pageIndex: 0, rects: [[5, 10, 15, 20]] },
+      });
+
+      expect(result.ok).to.equal(true);
+      expect(result.key).to.equal("NEWANN03");
+      expect(result.attachmentKey).to.equal("PDFATT50");
+      expect(createdItem.parentID).to.equal(50);
+      expect(createdItem.libraryID).to.equal(1);
+    });
+
+    it("throws -32602 when item has no PDF for create", async () => {
+      const regularItem: any = {
+        id: 40,
+        key: "ITEM40",
+        isAttachment: () => false,
+        getAttachments: () => [],
+      };
+
+      installZotero({
+        Items: { getAsync: sinon.stub().withArgs(40).resolves(regularItem) },
+      });
+
+      const { annotationsHandlers } = await import("../../src/handlers/annotations");
+      try {
+        await annotationsHandlers.create({
+          parentKey: 40,
+          type: "highlight",
+          text: "will fail",
+          position: { pageIndex: 0, rects: [[0, 0, 10, 10]] },
+        });
+        expect.fail("should have thrown");
+      } catch (e: any) {
+        expect(e.code).to.equal(-32602);
+        expect(e.message).to.match(/No PDF attachment found/);
+      }
+    });
+
     it("preserves explicit Zotero PDF sortIndex strings", async () => {
-      const parent: any = { id: 5, libraryID: 1 };
+      const parent: any = { id: 5, key: "ATT05", libraryID: 1, isAttachment: () => true };
       const saveTxStub = sinon.stub().resolves();
       let createdItem: any = null;
 
@@ -194,7 +389,7 @@ describe("annotations handler", () => {
     });
 
     it("rejects invalid annotation type with -32602", async () => {
-      const parent: any = { id: 5, libraryID: 1 };
+      const parent: any = { id: 5, key: "ATT05", libraryID: 1, isAttachment: () => true };
       installZotero({
         Items: { getAsync: sinon.stub().withArgs(5).resolves(parent) },
       });
@@ -214,7 +409,7 @@ describe("annotations handler", () => {
     });
 
     it("rejects missing annotation position with -32602", async () => {
-      const parent: any = { id: 5, libraryID: 1 };
+      const parent: any = { id: 5, key: "ATT05", libraryID: 1, isAttachment: () => true };
       installZotero({
         Items: { getAsync: sinon.stub().withArgs(5).resolves(parent) },
       });
@@ -235,7 +430,7 @@ describe("annotations handler", () => {
     });
 
     it("rejects malformed annotation position with -32602", async () => {
-      const parent: any = { id: 5, libraryID: 1 };
+      const parent: any = { id: 5, key: "ATT05", libraryID: 1, isAttachment: () => true };
       installZotero({
         Items: { getAsync: sinon.stub().withArgs(5).resolves(parent) },
       });
@@ -256,7 +451,7 @@ describe("annotations handler", () => {
     });
 
     it("rejects invalid sortIndex with -32602", async () => {
-      const parent: any = { id: 5, libraryID: 1 };
+      const parent: any = { id: 5, key: "ATT05", libraryID: 1, isAttachment: () => true };
       installZotero({
         Items: { getAsync: sinon.stub().withArgs(5).resolves(parent) },
       });
@@ -278,7 +473,7 @@ describe("annotations handler", () => {
     });
 
     it("rejects boolean sortIndex with -32602", async () => {
-      const parent: any = { id: 5, libraryID: 1 };
+      const parent: any = { id: 5, key: "ATT05", libraryID: 1, isAttachment: () => true };
       installZotero({
         Items: { getAsync: sinon.stub().withArgs(5).resolves(parent) },
       });

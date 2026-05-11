@@ -6,12 +6,33 @@ import { serializeItem } from "../utils/serialize";
 import { requireItem } from "../utils/guards";
 import { validateAnnotationParams } from "../utils/annotation";
 
+/**
+ * Resolve a parentKey to the annotation-bearing attachment item.
+ *
+ * If the item is already an attachment, return it directly.
+ * If the item is a regular item, find its first PDF attachment and return that.
+ * Throws -32602 if the item has no PDF attachments.
+ */
+async function resolveAnnotationParent(parentKey: number | string): Promise<Zotero.Item> {
+  const item = await requireItem(parentKey);
+  if (item.isAttachment()) return item;
+
+  const attIDs = item.getAttachments ? item.getAttachments() : [];
+  for (const attID of attIDs) {
+    const att = await Zotero.Items.getAsync(attID);
+    if (att && att.isAttachment() && (att as any).attachmentContentType === "application/pdf") {
+      return att;
+    }
+  }
+  throw { code: -32602, message: `No PDF attachment found for item ${item.key ?? parentKey}` };
+}
+
 export const annotationsHandlers = {
   async list(params: { parentKey: number | string }) {
-    const item = await requireItem(params.parentKey);
-    const annotationRefs: any[] = (item as any).getAnnotations?.() ?? [];
-    if (annotationRefs.length === 0) return { items: [], total: 0 };
-    const anns = await resolveAnnotationRefs(item.libraryID, annotationRefs);
+    const attachment = await resolveAnnotationParent(params.parentKey);
+    const annotationRefs: any[] = (attachment as any).getAnnotations?.() ?? [];
+    if (annotationRefs.length === 0) return { items: [], total: 0, attachmentKey: attachment.key };
+    const anns = await resolveAnnotationRefs(attachment.libraryID, annotationRefs);
     const items = anns.map((a: any) => {
       const data = serializeItem(a);
       data.annotationType = a.annotationType;
@@ -21,7 +42,7 @@ export const annotationsHandlers = {
       data.annotationPosition = a.annotationPosition ? JSON.parse(a.annotationPosition) : null;
       return data;
     });
-    return { items, total: items.length };
+    return { items, total: items.length, attachmentKey: attachment.key };
   },
 
   async create(params: {
@@ -33,7 +54,7 @@ export const annotationsHandlers = {
     position: any;
     sortIndex?: unknown;
   }) {
-    const parent = await requireItem(params.parentKey);
+    const parent = await resolveAnnotationParent(params.parentKey);
     const validation = validateAnnotationParams({
       type: params.type as any,
       text: params.text,
@@ -57,7 +78,7 @@ export const annotationsHandlers = {
       params.sortIndex,
     );
     await ann.saveTx();
-    return { ok: true, key: ann.key };
+    return { ok: true, key: ann.key, attachmentKey: parent.key };
   },
 
   async delete(params: { key: number | string }) {
