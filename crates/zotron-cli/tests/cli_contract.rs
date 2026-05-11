@@ -180,6 +180,32 @@ fn attachments_add_dry_run_translates_local_path_for_zotero() {
 }
 
 #[test]
+fn attachments_path_translates_zotero_path_for_local_cli_use() {
+    let zotero_path = r"C:\Users\bslhz\Zotero\storage\ATTACH1\paper.pdf";
+    let mut client = FakeClient::with_response(json!({
+        "key": "ATTACH1",
+        "path": zotero_path,
+    }));
+
+    let out = run_with_client(["zotron", "attachments", "path", "ATTACH1"], &mut client)
+        .expect("attachment path succeeds");
+
+    assert_eq!(
+        client.calls,
+        vec![(
+            "attachments.getPath".to_string(),
+            Some(json!({"key": "ATTACH1"})),
+        )]
+    );
+    let payload: Value = serde_json::from_str(&out).expect("path output is JSON");
+    assert_eq!(payload["key"], "ATTACH1");
+    assert_eq!(
+        payload["path"],
+        expected_local_path_from_zotero(zotero_path)
+    );
+}
+
+#[test]
 fn collections_get_accepts_collection_key_reference() {
     let mut client = FakeClient::with_responses(vec![
         json!([
@@ -1972,6 +1998,22 @@ fn expected_zotero_path(path: &Path) -> String {
             .unwrap_or(canonical);
     }
     canonical
+}
+
+fn expected_local_path_from_zotero(path: &str) -> String {
+    if test_is_wsl() && path.as_bytes().get(1) == Some(&b':') {
+        return ProcessCommand::new("wslpath")
+            .arg("-u")
+            .arg(path)
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .and_then(|output| String::from_utf8(output.stdout).ok())
+            .map(|converted| converted.trim().to_string())
+            .filter(|converted| !converted.is_empty())
+            .unwrap_or_else(|| path.to_string());
+    }
+    path.to_string()
 }
 
 fn test_is_wsl() -> bool {

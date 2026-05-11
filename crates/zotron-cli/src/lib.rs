@@ -1425,7 +1425,7 @@ fn run_ocr_command(command: OcrCommand, client: &mut impl RpcCaller) -> Result<S
             mime_type,
             endpoint,
             api_key_env,
-        } => run_ocr_provider_json_command(
+        } => run_ocr_provider_json_command(OcrProviderJsonOptions {
             provider,
             input,
             file,
@@ -1434,7 +1434,7 @@ fn run_ocr_command(command: OcrCommand, client: &mut impl RpcCaller) -> Result<S
             mime_type,
             endpoint,
             api_key_env,
-        )?,
+        })?,
         OcrCommand::Status { collection, .. } => run_ocr_status_command(client, collection)?,
         OcrCommand::ParsePdf {
             provider,
@@ -1483,7 +1483,7 @@ struct OcrParsePdfOptions {
     chunk_chars: usize,
 }
 
-fn run_ocr_provider_json_command(
+struct OcrProviderJsonOptions {
     provider: String,
     input: Option<String>,
     file: Option<String>,
@@ -1492,27 +1492,37 @@ fn run_ocr_provider_json_command(
     mime_type: Option<String>,
     endpoint: Option<String>,
     api_key_env: Option<String>,
-) -> Result<Value, String> {
-    let input: OcrRequestInput = match (input, file) {
+}
+
+fn run_ocr_provider_json_command(options: OcrProviderJsonOptions) -> Result<Value, String> {
+    let input: OcrRequestInput = match (options.input, options.file) {
         (Some(input), None) => read_json_input(&input)?,
-        (None, Some(file)) => ocr_input_from_file(file, item_key, attachment_key, mime_type)?,
+        (None, Some(file)) => ocr_input_from_file(
+            file,
+            options.item_key,
+            options.attachment_key,
+            options.mime_type,
+        )?,
         (Some(_), Some(_)) => {
             return Err("INVALID_ARGS: use either --input or --file, not both".to_string())
         }
         (None, None) => return Err("INVALID_ARGS: provide --input JSON or --file".to_string()),
     };
-    let request = build_ocr_provider_request(&provider, &input)?;
+    let request = build_ocr_provider_request(&options.provider, &input)?;
     let payload = if request.command.is_empty() {
         let method = request
             .method
             .ok_or_else(|| format!("OCR provider {} missing HTTP method", request.provider))?;
-        let auth_scheme = raw_ocr_provider_spec(&provider)?.auth;
-        let mut transport = provider_http_transport_with_auth(api_key_env.as_deref(), auth_scheme)?;
+        let auth_scheme = raw_ocr_provider_spec(&options.provider)?.auth;
+        let mut transport =
+            provider_http_transport_with_auth(options.api_key_env.as_deref(), auth_scheme)?;
         transport.post_json(&ProviderHttpInvocation {
             provider: request.provider.to_string(),
             style: request.style.to_string(),
             method: method.to_string(),
-            url: endpoint.or_else(|| request.url.map(ToString::to_string)),
+            url: options
+                .endpoint
+                .or_else(|| request.url.map(ToString::to_string)),
             auth_header_name: request.auth_header.map(ToString::to_string),
             auth_header_value: None,
             body: request.body,
@@ -2455,7 +2465,7 @@ fn find_collection_in_tree(
     let nodes = tree
         .as_array()
         .ok_or_else(|| "collections.tree returned non-array result".to_string())?;
-    Ok(search_collection_tree(nodes, collection).map(Clone::clone))
+    Ok(search_collection_tree(nodes, collection).cloned())
 }
 
 fn search_collection_tree<'a>(nodes: &'a [Value], collection: &str) -> Option<&'a Value> {
@@ -2764,7 +2774,7 @@ fn unique_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
 }
 
 fn rag_status_from_store(collection: &str, store_path: &Path) -> Result<Value, String> {
-    let raw = fs::read_to_string(&store_path)
+    let raw = fs::read_to_string(store_path)
         .map_err(|err| format!("read RAG store {}: {err}", store_path.display()))?;
     let store: Value = serde_json::from_str(&raw)
         .map_err(|err| format!("parse RAG store {}: {err}", store_path.display()))?;
@@ -4348,9 +4358,9 @@ fn run_attachments_command(
             "attachments.getFulltext",
             Some(serde_json::json!({"key": key})),
         )?,
-        AttachmentsCommand::Path { key, .. } => {
-            client.call("attachments.getPath", Some(serde_json::json!({"key": key})))?
-        }
+        AttachmentsCommand::Path { key, .. } => localize_attachment_path_response(
+            client.call("attachments.getPath", Some(serde_json::json!({"key": key})))?,
+        ),
         AttachmentsCommand::Add {
             parent,
             path,
@@ -4410,6 +4420,16 @@ fn run_attachments_command(
         )?,
     };
     Ok((value, JsonStyle::Pretty))
+}
+
+fn localize_attachment_path_response(mut value: Value) -> Value {
+    if let Some(path) = value.get("path").and_then(Value::as_str) {
+        let local = local_path_from_zotero_path(path);
+        if let Some(map) = value.as_object_mut() {
+            map.insert("path".to_string(), Value::String(local));
+        }
+    }
+    value
 }
 
 fn run_notes_command(
