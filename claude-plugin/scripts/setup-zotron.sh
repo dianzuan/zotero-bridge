@@ -24,17 +24,16 @@ if [ -f "${REPO_ROOT}/crates/zotron-cli/Cargo.toml" ]; then
   cargo install --path "${REPO_ROOT}/crates/zotron-cli" --root "${BIN_DIR}/.." --force
   echo "Rust Zotron CLI installed in ${BIN_DIR}."
 else
-  if ! command -v uv >/dev/null 2>&1; then
+  if [ -n "${ZOTRON_RUST_BIN:-}" ] && [ -x "${ZOTRON_RUST_BIN}" ]; then
+    ln -sfn "${PLUGIN_ROOT}/bin/zotron" "${BIN_DIR}/zotron"
+    echo "Rust Zotron CLI wrapper linked in ${BIN_DIR}; ZOTRON_RUST_BIN=${ZOTRON_RUST_BIN}."
+  elif command -v zotron >/dev/null 2>&1; then
+    echo "Rust Zotron CLI already available at $(command -v zotron)."
+  else
     echo "MISSING_RUST_ZOTRON"
     echo "This plugin package does not include the Rust source tree. Install the Rust zotron binary or set ZOTRON_RUST_BIN."
     exit 1
   fi
-  if [ ! -d "${PLUGIN_ROOT}/python" ]; then
-    echo "BROKEN_PLUGIN: missing ${PLUGIN_ROOT}/python"
-    exit 1
-  fi
-  ln -sfn "${PLUGIN_ROOT}/bin/zotron" "${BIN_DIR}/zotron"
-  echo "Legacy Zotron CLI shim linked in ${BIN_DIR}; OCR/RAG require the Rust binary."
 fi
 
 case ":${PATH}:" in

@@ -1,12 +1,25 @@
 # Zotron — Project Rules
 
+Current handoff for the Rust migration and next work is in
+`docs/2026-05-11-claude-handoff.md`. Read it before continuing product work.
+
 ## Architecture
 
-Three layers: XPI plugin (TypeScript, `src/`) → Python CLI/SDK (`claude-plugin/python/`) → Claude Code plugin (`claude-plugin/skills/`).
+Three layers: XPI plugin (TypeScript, `src/`) → Rust CLI/SDK (`crates/`) → Claude Code/Codex plugin (`claude-plugin/`).
 
 - XPI: JSON-RPC 2.0 server inside Zotero, 86 methods across 11 namespaces
-- Python CLI: typer-based, noun-verb subcommands (`zotron items get`, `zotron search quick`)
+- Rust CLI: noun-verb subcommands (`zotron items get`, `zotron search quick`); Python is legacy reference material only
 - Plugin: skills + agents for Claude Code and Codex
+
+## Design Note: CLI vs MCP
+
+Zotron's primary interface is the Rust CLI, not MCP. The project goal is to give shell-capable agents such as Codex and Claude Code a stable, low-token, composable command surface over Zotero RPC.
+
+MCP may be useful later as an optional compatibility layer for clients that cannot use shell commands, but it should not mirror every RPC or CLI command. If MCP is added, expose only a few high-level tools such as search, fetch/content, annotate, RAG hits, and status.
+
+The token issue is not only that bad MCP servers expose all tool definitions up front. MCP tool schemas are verbose, large tool lists make tool selection harder, multi-step tool calls push intermediate results back into model context, and large responses often get injected directly unless the server is carefully designed. CLI can avoid this by using `--help` on demand, writing large outputs to files, returning JSON/JSONL, and letting agents filter locally with `jq`, `rg`, `head`, or small wrapper commands.
+
+Do not solve CLI roughness by duplicating the surface in MCP. Prefer improving CLI help, stable output envelopes, compact JSONL/file outputs, and a small number of task-level aggregate commands.
 
 ## Test Commands
 
