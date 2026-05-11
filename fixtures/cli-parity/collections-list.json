@@ -8,21 +8,24 @@
   "rpc": {
     "method": "collections.list",
     "params": null,
-    "result": [
-      {
-        "key": "COL1",
-        "name": "Research",
-        "parentKey": null
-      },
-      {
-        "key": "COL2",
-        "name": "乡村振兴",
-        "parentKey": "COL1"
-      }
-    ]
+    "result": {
+      "items": [
+        {
+          "key": "COL1",
+          "name": "Research",
+          "parentKey": null
+        },
+        {
+          "key": "COL2",
+          "name": "乡村振兴",
+          "parentKey": "COL1"
+        }
+      ],
+      "total": 2
+    }
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "[\n  {\n    \"key\": \"COL1\",\n    \"name\": \"Research\",\n    \"parentKey\": null\n  },\n  {\n    \"key\": \"COL2\",\n    \"name\": \"乡村振兴\",\n    \"parentKey\": \"COL1\"\n  }\n]\n"
+    "stdout": "{\n  \"items\": [\n    {\n      \"key\": \"COL1\",\n      \"name\": \"Research\",\n      \"parentKey\": null\n    },\n    {\n      \"key\": \"COL2\",\n      \"name\": \"乡村振兴\",\n      \"parentKey\": \"COL1\"\n    }\n  ],\n  \"total\": 2,\n  \"offset\": 0,\n  \"hasMore\": false\n}\n"
   }
 }

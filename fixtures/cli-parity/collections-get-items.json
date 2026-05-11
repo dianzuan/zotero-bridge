@@ -15,18 +15,21 @@
       {
         "method": "collections.list",
         "params": null,
-        "result": [
-          {
-            "key": "COL1",
-            "name": "Research",
-            "parentKey": null
-          },
-          {
-            "key": "COL2",
-            "name": "乡村振兴",
-            "parentKey": "COL1"
-          }
-        ]
+        "result": {
+          "items": [
+            {
+              "key": "COL1",
+              "name": "Research",
+              "parentKey": null
+            },
+            {
+              "key": "COL2",
+              "name": "乡村振兴",
+              "parentKey": "COL1"
+            }
+          ],
+          "total": 2
+        }
       },
       {
         "method": "collections.getItems",
@@ -42,13 +45,15 @@
               "title": "乡村振兴与数字经济"
             }
           ],
-          "total": 1
+          "total": 1,
+          "limit": 2,
+          "offset": 5
         }
       }
     ]
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\n  \"items\": [\n    {\n      \"key\": \"ITEM1\",\n      \"title\": \"乡村振兴与数字经济\"\n    }\n  ],\n  \"total\": 1\n}\n"
+    "stdout": "{\n  \"items\": [\n    {\n      \"key\": \"ITEM1\",\n      \"title\": \"乡村振兴与数字经济\"\n    }\n  ],\n  \"total\": 1,\n  \"limit\": 2,\n  \"offset\": 5,\n  \"hasMore\": false\n}\n"
   }
 }

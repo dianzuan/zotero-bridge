@@ -30,6 +30,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\n  \"hits\": [\n    {\n      \"item_key\": \"ABC123\",\n      \"title\": \"Climate Paper\",\n      \"text\": \"sea level rise evidence\",\n      \"score\": 0.91\n    }\n  ],\n  \"total\": 1\n}\n"
+    "stdout": "{\n  \"items\": [\n    {\n      \"item_key\": \"ABC123\",\n      \"title\": \"Climate Paper\",\n      \"text\": \"sea level rise evidence\",\n      \"score\": 0.91\n    }\n  ],\n  \"total\": 1,\n  \"limit\": 2,\n  \"offset\": 0,\n  \"hasMore\": false\n}\n"
   }
 }

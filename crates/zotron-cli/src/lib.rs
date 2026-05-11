@@ -2721,20 +2721,20 @@ fn run_rag_hits_command(
         .unwrap_or_default();
     if options.output == "jsonl" {
         let mut out = String::new();
-        for hit in hits {
-            out.push_str(&serde_json::to_string(&hit).map_err(|err| err.to_string())?);
+        for hit in &hits {
+            out.push_str(&serde_json::to_string(hit).map_err(|err| err.to_string())?);
             out.push('\n');
         }
         Ok(out)
     } else {
-        let total = hits.len();
-        format_json(
-            &serde_json::json!({
-                "hits": hits,
-                "total": total,
-            }),
-            JsonStyle::Pretty,
-        )
+        let total = hits.len() as u64;
+        let value = normalize_list_envelope(
+            serde_json::json!({"items": hits, "total": total}),
+            "items",
+            Some(options.top_k),
+            0,
+        );
+        format_json(&value, JsonStyle::Pretty)
     }
 }
 
@@ -3356,7 +3356,7 @@ fn run_search_command(
                     Some(serde_json::json!({"query": query, "limit": limit})),
                 )?)
             };
-            Ok((value, JsonStyle::Pretty))
+            Ok((normalize_list_envelope(value, "items", Some(limit), 0), JsonStyle::Pretty))
         }
         SearchCommand::Fulltext {
             query,
@@ -3371,10 +3371,8 @@ fn run_search_command(
                     resolve_collection(client, &collection)?,
                 );
             }
-            Ok((
-                client.call("search.fulltext", Some(params))?,
-                JsonStyle::Pretty,
-            ))
+            let value = client.call("search.fulltext", Some(params))?;
+            Ok((normalize_list_envelope(value, "items", Some(limit), 0), JsonStyle::Pretty))
         }
         SearchCommand::ByIdentifier {
             doi, isbn, issn, ..
@@ -3392,10 +3390,8 @@ fn run_search_command(
             if params.is_empty() {
                 return Err("INVALID_ARGS: give at least one of --doi/--isbn/--issn".to_string());
             }
-            Ok((
-                client.call("search.byIdentifier", Some(Value::Object(params)))?,
-                JsonStyle::Pretty,
-            ))
+            let value = client.call("search.byIdentifier", Some(Value::Object(params)))?;
+            Ok((normalize_list_envelope(value, "items", None, 0), JsonStyle::Pretty))
         }
         SearchCommand::Advanced {
             condition,
@@ -3413,30 +3409,28 @@ fn run_search_command(
                 .iter()
                 .map(|raw| parse_search_condition(raw))
                 .collect::<Result<Vec<_>, _>>()?;
-            Ok((
-                client.call(
-                    "search.advanced",
-                    Some(serde_json::json!({
-                        "conditions": conditions,
-                        "operator": operator,
-                        "limit": limit,
-                        "offset": offset,
-                    })),
-                )?,
-                JsonStyle::Pretty,
-            ))
+            let value = client.call(
+                "search.advanced",
+                Some(serde_json::json!({
+                    "conditions": conditions,
+                    "operator": operator,
+                    "limit": limit,
+                    "offset": offset,
+                })),
+            )?;
+            Ok((normalize_list_envelope(value, "items", Some(limit), offset), JsonStyle::Pretty))
         }
         SearchCommand::ByTag {
             tag, limit, offset, ..
-        } => Ok((
-            client.call(
+        } => {
+            let value = client.call(
                 "search.byTag",
                 Some(serde_json::json!({"tag": tag, "limit": limit, "offset": offset})),
-            )?,
-            JsonStyle::Pretty,
-        )),
+            )?;
+            Ok((normalize_list_envelope(value, "items", Some(limit), offset), JsonStyle::Pretty))
+        }
         SearchCommand::SavedSearches { .. } => Ok((
-            client.call("search.savedSearches", None)?,
+            normalize_list_envelope(client.call("search.savedSearches", None)?, "items", None, 0),
             JsonStyle::Pretty,
         )),
         SearchCommand::CreateSaved {
@@ -3576,6 +3570,47 @@ fn parse_search_condition(raw: &str) -> Result<Value, String> {
             "INVALID_ARGS: --condition must be 'field operator value', got: {raw:?}"
         )),
     }
+}
+
+fn normalize_list_envelope(value: Value, list_key: &str, limit: Option<u64>, offset: u64) -> Value {
+    if let Value::Array(arr) = value {
+        let total = arr.len() as u64;
+        let mut obj = serde_json::Map::new();
+        obj.insert(list_key.to_string(), Value::Array(arr));
+        obj.insert("total".to_string(), Value::from(total));
+        if let Some(limit) = limit {
+            obj.insert("limit".to_string(), Value::from(limit));
+        }
+        obj.insert("offset".to_string(), Value::from(offset));
+        obj.insert("hasMore".to_string(), Value::Bool(false));
+        return Value::Object(obj);
+    }
+
+    let mut obj = match value {
+        Value::Object(obj) if obj.contains_key(list_key) => obj,
+        other => return other,
+    };
+
+    let items_len = obj
+        .get(list_key)
+        .and_then(Value::as_array)
+        .map_or(0, |a| a.len()) as u64;
+    let total = obj
+        .get("total")
+        .and_then(Value::as_u64)
+        .unwrap_or(items_len);
+
+    obj.insert("total".to_string(), Value::from(total));
+    if let Some(limit) = limit {
+        obj.insert("limit".to_string(), Value::from(limit));
+    }
+    obj.insert("offset".to_string(), Value::from(offset));
+    obj.insert(
+        "hasMore".to_string(),
+        Value::Bool(offset + items_len < total),
+    );
+
+    Value::Object(obj)
 }
 
 const RPC_PAGINATION_SAFETY_CAP: usize = 10_000;
@@ -3933,19 +3968,20 @@ fn run_items_command(
             if let (Some(sort), Some(map)) = (sort, params.as_object_mut()) {
                 map.insert("sort".to_string(), Value::String(sort));
             }
-            (client.call("items.list", Some(params))?, JsonStyle::Pretty)
+            let value = client.call("items.list", Some(params))?;
+            (normalize_list_envelope(value, "items", Some(limit), offset), JsonStyle::Pretty)
         }
         ItemsCommand::FindDuplicates { .. } => (
             client.call("items.findDuplicates", None)?,
             JsonStyle::Pretty,
         ),
-        ItemsCommand::ListTrash { limit, offset, .. } => (
-            client.call(
+        ItemsCommand::ListTrash { limit, offset, .. } => {
+            let value = client.call(
                 "items.getTrash",
                 Some(serde_json::json!({"limit": limit, "offset": offset})),
-            )?,
-            JsonStyle::Pretty,
-        ),
+            )?;
+            (normalize_list_envelope(value, "items", Some(limit), offset), JsonStyle::Pretty)
+        }
         ItemsCommand::Recent {
             limit,
             offset,
@@ -3957,22 +3993,25 @@ fn run_items_command(
                     "--type must be added or modified, got {recent_type:?}"
                 ));
             }
-            (
-                client.call(
-                    "items.getRecent",
-                    Some(
-                        serde_json::json!({"limit": limit, "offset": offset, "type": recent_type}),
-                    ),
-                )?,
-                JsonStyle::Pretty,
-            )
+            let value = client.call(
+                "items.getRecent",
+                Some(
+                    serde_json::json!({"limit": limit, "offset": offset, "type": recent_type}),
+                ),
+            )?;
+            (normalize_list_envelope(value, "items", Some(limit), offset), JsonStyle::Pretty)
         }
         ItemsCommand::Fulltext { key, .. } => (
             client.call("items.getFullText", Some(serde_json::json!({"key": key})))?,
             JsonStyle::Pretty,
         ),
         ItemsCommand::Related { key, .. } => (
-            client.call("items.getRelated", Some(serde_json::json!({"key": key})))?,
+            normalize_list_envelope(
+                client.call("items.getRelated", Some(serde_json::json!({"key": key})))?,
+                "items",
+                None,
+                0,
+            ),
             JsonStyle::Pretty,
         ),
         ItemsCommand::CitationKey { key, .. } => (
@@ -4109,10 +4148,10 @@ fn run_tags_command(
     client: &mut impl RpcCaller,
 ) -> Result<(Value, JsonStyle), String> {
     let (value, style) = match command {
-        TagsCommand::List { limit, .. } => (
-            client.call("tags.list", Some(serde_json::json!({"limit": limit})))?,
-            JsonStyle::Pretty,
-        ),
+        TagsCommand::List { limit, .. } => {
+            let value = client.call("tags.list", Some(serde_json::json!({"limit": limit})))?;
+            (normalize_list_envelope(value, "items", Some(limit), 0), JsonStyle::Pretty)
+        }
         TagsCommand::Rename {
             old, new, dry_run, ..
         } => run_tag_mutation(
@@ -4197,12 +4236,13 @@ fn run_annotations_command(
     client: &mut impl RpcCaller,
 ) -> Result<(Value, JsonStyle), String> {
     let (value, style) = match command {
-        AnnotationsCommand::List { parent, .. } => client
-            .call(
+        AnnotationsCommand::List { parent, .. } => {
+            let value = client.call(
                 "annotations.list",
                 Some(serde_json::json!({"parentKey": parent})),
-            )
-            .map(|value| (value, JsonStyle::Pretty))?,
+            )?;
+            (normalize_list_envelope(value, "items", None, 0), JsonStyle::Pretty)
+        }
         AnnotationsCommand::Create {
             parent,
             annotation_type,
@@ -4347,10 +4387,15 @@ fn run_attachments_command(
             limit,
             offset,
             ..
-        } => client.call(
-            "attachments.list",
-            Some(serde_json::json!({"parentKey": parent, "limit": limit, "offset": offset})),
-        )?,
+        } => normalize_list_envelope(
+            client.call(
+                "attachments.list",
+                Some(serde_json::json!({"parentKey": parent})),
+            )?,
+            "items",
+            Some(limit),
+            offset,
+        ),
         AttachmentsCommand::Get { key, .. } => {
             client.call("attachments.get", Some(serde_json::json!({"key": key})))?
         }
@@ -4442,12 +4487,13 @@ fn run_notes_command(
             limit,
             offset,
             ..
-        } => client
-            .call(
+        } => {
+            let value = client.call(
                 "notes.list",
-                Some(serde_json::json!({"parentKey": parent, "limit": limit, "offset": offset})),
-            )
-            .map(|value| (value, JsonStyle::Pretty))?,
+                Some(serde_json::json!({"parentKey": parent})),
+            )?;
+            (normalize_list_envelope(value, "items", Some(limit), offset), JsonStyle::Pretty)
+        }
         NotesCommand::Get { note_key, .. } => {
             let value = client.call("notes.get", Some(serde_json::json!({"key": note_key})))?;
             (value, JsonStyle::Pretty)
@@ -4492,12 +4538,13 @@ fn run_notes_command(
                 dry_run,
             )?
         }
-        NotesCommand::Search { query, limit, .. } => client
-            .call(
+        NotesCommand::Search { query, limit, .. } => {
+            let value = client.call(
                 "notes.search",
                 Some(serde_json::json!({"query": query, "limit": limit})),
-            )
-            .map(|value| (value, JsonStyle::Pretty))?,
+            )?;
+            (normalize_list_envelope(value, "items", Some(limit), 0), JsonStyle::Pretty)
+        }
     };
     Ok((value, style))
 }
@@ -4530,7 +4577,12 @@ fn run_collections_command(
     client: &mut impl RpcCaller,
 ) -> Result<(Value, JsonStyle), String> {
     let value = match command {
-        CollectionsCommand::List { .. } => client.call("collections.list", None)?,
+        CollectionsCommand::List { .. } => normalize_list_envelope(
+            client.call("collections.list", None)?,
+            "items",
+            None,
+            0,
+        ),
         CollectionsCommand::Tree { .. } => client.call("collections.tree", None)?,
         CollectionsCommand::Get { name_or_id, .. } => {
             let key = resolve_collection(client, &name_or_id)?;
@@ -4552,7 +4604,12 @@ fn run_collections_command(
                     map.insert("offset".to_string(), Value::Number(offset.into()));
                 }
             }
-            client.call("collections.getItems", Some(params))?
+            normalize_list_envelope(
+                client.call("collections.getItems", Some(params))?,
+                "items",
+                limit,
+                offset,
+            )
         }
         CollectionsCommand::Stats { name_or_id, .. } => {
             let key = resolve_collection(client, &name_or_id)?;
@@ -4763,7 +4820,9 @@ fn resolve_collection(client: &mut impl RpcCaller, name_or_id: &str) -> Result<V
 
     let collections = client.call("collections.list", None)?;
     let items = collections
-        .as_array()
+        .get("items")
+        .and_then(Value::as_array)
+        .or_else(|| collections.as_array())
         .ok_or_else(|| "collections.list returned non-array result".to_string())?;
 
     if let Some(collection) = items

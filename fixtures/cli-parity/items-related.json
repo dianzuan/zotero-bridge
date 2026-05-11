@@ -11,15 +11,18 @@
     "params": {
       "key": "ITEM1"
     },
-    "result": [
-      {
-        "key": "ITEM2",
-        "title": "Related Paper"
-      }
-    ]
+    "result": {
+      "items": [
+        {
+          "key": "ITEM2",
+          "title": "Related Paper"
+        }
+      ],
+      "total": 1
+    }
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "[\n  {\n    \"key\": \"ITEM2\",\n    \"title\": \"Related Paper\"\n  }\n]\n"
+    "stdout": "{\n  \"items\": [\n    {\n      \"key\": \"ITEM2\",\n      \"title\": \"Related Paper\"\n    }\n  ],\n  \"total\": 1,\n  \"offset\": 0,\n  \"hasMore\": false\n}\n"
   }
 }

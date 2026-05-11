@@ -14,9 +14,7 @@
   "rpc": {
     "method": "attachments.list",
     "params": {
-      "parentKey": "ITEM1",
-      "limit": 10,
-      "offset": 20
+      "parentKey": "ITEM1"
     },
     "result": {
       "items": [

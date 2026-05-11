@@ -14,9 +14,7 @@
   "rpc": {
     "method": "notes.list",
     "params": {
-      "parentKey": "ITEM1",
-      "limit": 2,
-      "offset": 1
+      "parentKey": "ITEM1"
     },
     "result": {
       "items": [

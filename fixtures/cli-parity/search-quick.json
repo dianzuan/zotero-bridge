@@ -23,11 +23,13 @@
           "year": 2023
         }
       ],
-      "total": 2
+      "total": 2,
+      "limit": 2,
+      "offset": 0
     }
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\n  \"items\": [\n    {\n      \"key\": \"ITEM1\",\n      \"title\": \"乡村振兴与数字经济\",\n      \"itemType\": \"journalArticle\",\n      \"year\": 2024\n    },\n    {\n      \"key\": \"ITEM2\",\n      \"title\": \"县域产业发展研究\",\n      \"itemType\": \"book\",\n      \"year\": 2023\n    }\n  ],\n  \"total\": 2\n}\n"
+    "stdout": "{\n  \"items\": [\n    {\n      \"key\": \"ITEM1\",\n      \"title\": \"乡村振兴与数字经济\",\n      \"itemType\": \"journalArticle\",\n      \"year\": 2024\n    },\n    {\n      \"key\": \"ITEM2\",\n      \"title\": \"县域产业发展研究\",\n      \"itemType\": \"book\",\n      \"year\": 2023\n    }\n  ],\n  \"total\": 2,\n  \"limit\": 2,\n  \"offset\": 0,\n  \"hasMore\": false\n}\n"
   }
 }

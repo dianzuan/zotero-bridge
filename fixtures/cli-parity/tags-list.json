@@ -12,19 +12,24 @@
     "params": {
       "limit": 3
     },
-    "result": [
-      {
-        "tag": "乡村振兴",
-        "type": 0
-      },
-      {
-        "tag": "数字经济",
-        "type": 1
-      }
-    ]
+    "result": {
+      "items": [
+        {
+          "tag": "乡村振兴",
+          "type": 0
+        },
+        {
+          "tag": "数字经济",
+          "type": 1
+        }
+      ],
+      "total": 2,
+      "limit": 3,
+      "offset": 0
+    }
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "[\n  {\n    \"tag\": \"乡村振兴\",\n    \"type\": 0\n  },\n  {\n    \"tag\": \"数字经济\",\n    \"type\": 1\n  }\n]\n"
+    "stdout": "{\n  \"items\": [\n    {\n      \"tag\": \"乡村振兴\",\n      \"type\": 0\n    },\n    {\n      \"tag\": \"数字经济\",\n      \"type\": 1\n    }\n  ],\n  \"total\": 2,\n  \"limit\": 3,\n  \"offset\": 0,\n  \"hasMore\": false\n}\n"
   }
 }

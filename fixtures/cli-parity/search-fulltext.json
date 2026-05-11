@@ -24,11 +24,12 @@
         }
       ],
       "total": 1,
-      "limit": 3
+      "limit": 3,
+      "offset": 0
     }
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\n  \"items\": [\n    {\n      \"key\": \"PDF1\",\n      \"title\": \"Attention Is All You Need\",\n      \"itemType\": \"journalArticle\",\n      \"score\": 0.98\n    }\n  ],\n  \"total\": 1,\n  \"limit\": 3\n}\n"
+    "stdout": "{\n  \"items\": [\n    {\n      \"key\": \"PDF1\",\n      \"title\": \"Attention Is All You Need\",\n      \"itemType\": \"journalArticle\",\n      \"score\": 0.98\n    }\n  ],\n  \"total\": 1,\n  \"limit\": 3,\n  \"offset\": 0,\n  \"hasMore\": false\n}\n"
   }
 }
