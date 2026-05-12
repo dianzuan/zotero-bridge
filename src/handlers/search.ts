@@ -119,7 +119,10 @@ export const searchHandlers = {
     const items = searches.map((s: any) => ({
       key: s.key,
       name: s.name,
-      conditions: s.getConditions(),
+      conditions: Object.values(s.getConditions()).map((c: any) => {
+        const { conditionID, ...rest } = c;
+        return rest;
+      }),
     }));
     return { items, total: items.length };
   },

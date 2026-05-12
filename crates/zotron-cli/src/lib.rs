@@ -485,25 +485,10 @@ enum SystemCommand {
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
-    /// List all available Zotero item types.
-    #[command(name = "item-types")]
-    ItemTypes {
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
-    /// List all fields for a given item type.
-    #[command(name = "item-fields")]
-    ItemFields {
+    /// Show item type schema. Without --type, lists all types. With --type, shows fields and creator types.
+    Schema {
         #[arg(long = "type")]
-        item_type: String,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
-    /// List creator types for a given item type.
-    #[command(name = "creator-types")]
-    CreatorTypes {
-        #[arg(long = "type")]
-        item_type: String,
+        item_type: Option<String>,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
@@ -1207,9 +1192,7 @@ fn command_url(command: &Command) -> String {
             SystemCommand::Version { url }
             | SystemCommand::Libraries { url }
             | SystemCommand::LibraryStats { url, .. }
-            | SystemCommand::ItemTypes { url }
-            | SystemCommand::ItemFields { url, .. }
-            | SystemCommand::CreatorTypes { url, .. }
+            | SystemCommand::Schema { url, .. }
             | SystemCommand::CurrentCollection { url }
             | SystemCommand::ListMethods { url }
             | SystemCommand::Describe { url, .. } => url.clone(),
@@ -3701,15 +3684,32 @@ fn run_system_command(
             let params = library.map(|id| serde_json::json!({"id": id}));
             client.call("system.libraryStats", params)?
         }
-        SystemCommand::ItemTypes { .. } => client.call("system.itemTypes", None)?,
-        SystemCommand::ItemFields { item_type, .. } => client.call(
-            "system.itemFields",
-            Some(serde_json::json!({"itemType": item_type})),
-        )?,
-        SystemCommand::CreatorTypes { item_type, .. } => client.call(
-            "system.creatorTypes",
-            Some(serde_json::json!({"itemType": item_type})),
-        )?,
+        SystemCommand::Schema { item_type, .. } => {
+            if let Some(item_type) = item_type {
+                let fields = client.call("system.itemFields", Some(serde_json::json!({"itemType": item_type})))?;
+                let creators = client.call("system.creatorTypes", Some(serde_json::json!({"itemType": item_type})))?;
+                let field_names: Vec<Value> = fields.as_array().unwrap_or(&vec![])
+                    .iter()
+                    .filter_map(|f| f.get("field").cloned())
+                    .collect();
+                let creator_names: Vec<Value> = creators.as_array().unwrap_or(&vec![])
+                    .iter()
+                    .filter_map(|c| c.get("creatorType").cloned())
+                    .collect();
+                serde_json::json!({
+                    "itemType": item_type,
+                    "fields": field_names,
+                    "creatorTypes": creator_names,
+                })
+            } else {
+                let types = client.call("system.itemTypes", None)?;
+                let type_names: Vec<Value> = types.as_array().unwrap_or(&vec![])
+                    .iter()
+                    .filter_map(|t| t.get("itemType").cloned())
+                    .collect();
+                Value::Array(type_names)
+            }
+        }
         SystemCommand::CurrentCollection { .. } => client.call("system.currentCollection", None)?,
         SystemCommand::ListMethods { .. } => client.call("system.listMethods", None)?,
         SystemCommand::Describe { method, .. } => {
