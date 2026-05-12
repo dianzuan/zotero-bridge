@@ -43,22 +43,21 @@ zotron search "就业" --collection "数字经济" --author "张三" --after 202
 | 命令 | 参数 | 说明 |
 |------|------|------|
 | `items get <key>` | — | 获取单个条目的完整元数据 |
-| `items list` | `--limit` `--offset` `--sort` `--direction` | 列出库中所有条目 |
+| `items list` | `--limit` `--offset` `--sort` `--direction` `--trash` | 列出库中所有条目。`--trash` 列出回收站条目 |
 | `items recent` | `--limit` `--offset` `--type (added/modified)` | 最近添加/修改的条目 |
 | `items fulltext <key>` | — | 获取条目 PDF 附件的全文（自动查找附件） |
 | `items related <key>` | — | 列出相关条目 |
 | `items citation-key <key>` | — | 获取引用 key |
 | `items find-duplicates` | — | 查找重复条目 |
-| `items list-trash` | `--limit` `--offset` | 列出回收站中的条目 |
 
 ### 添加
 
 | 命令 | 参数 | 说明 |
 |------|------|------|
-| `items add-by-doi <DOI>` | `--collection` `--dry-run` | 通过 DOI 添加论文 |
-| `items add-by-isbn <ISBN>` | `--collection` `--dry-run` | 通过 ISBN 添加书籍 |
-| `items add-by-url <URL>` | `--collection` `--dry-run` | 通过网页 URL 添加 |
-| `items add-from-file <路径>` | `--collection` `--dry-run` | 从本地文件添加 |
+| `items add --doi <DOI>` | `--collection` `--dry-run` | 通过 DOI 添加论文 |
+| `items add --isbn <ISBN>` | `--collection` `--dry-run` | 通过 ISBN 添加书籍 |
+| `items add --from-url <URL>` | `--collection` `--dry-run` | 通过网页 URL 添加 |
+| `items add --file <路径>` | `--collection` `--dry-run` | 从本地文件添加 |
 | `items create` | `--type` `--field "key=value"` `--dry-run` | 手动创建条目 |
 
 ### 修改
@@ -67,9 +66,8 @@ zotron search "就业" --collection "数字经济" --author "张三" --after 202
 |------|------|------|
 | `items update <key>` | `--field "key=value"` `--dry-run` | 更新条目字段 |
 | `items delete <key>` | `--dry-run` | 永久删除 |
-| `items trash <key>` | `--dry-run` | 移入回收站 |
+| `items trash <key1> [key2] ...` | `--dry-run` | 移入回收站（支持多个 key） |
 | `items restore <key>` | `--dry-run` | 从回收站恢复 |
-| `items batch-trash <key1> <key2> ...` | `--dry-run` | 批量移入回收站 |
 | `items merge-duplicates <key1> <key2> ...` | `--dry-run` | 合并重复条目 |
 | `items add-related <key> --target <key>` | `--dry-run` | 添加关联关系 |
 | `items remove-related <key> --target <key>` | `--dry-run` | 移除关联关系 |
@@ -115,11 +113,9 @@ zotron search "就业" --collection "数字经济" --author "张三" --after 202
 | `attachments fulltext <attachment key>` | — | 获取附件全文 |
 | `attachments path <attachment key>` | — | 获取附件本地文件路径 |
 | `attachments add --parent <key> --path <文件>` | `--title` `--dry-run` | 附加本地文件 |
-| `attachments add-by-url --parent <key> --source-url <URL>` | `--title` `--dry-run` | 附加远程文件 |
+| `attachments add --parent <key> --from-url <URL>` | `--title` `--dry-run` | 附加远程文件 |
 | `attachments delete <key>` | `--dry-run` | 删除附件 |
 | `attachments find-pdf --parent <key>` | — | 触发 Zotero 查找可用 PDF |
-
-**痛点：** `fulltext`、`path` 只接受 attachment key，不接受 item key。对比 `items fulltext` 已经能自动查找附件。
 
 ---
 
@@ -128,36 +124,32 @@ zotron search "就业" --collection "数字经济" --author "张三" --after 202
 | 命令 | 参数 | 说明 |
 |------|------|------|
 | `tags list` | `--limit` | 列出所有标签 |
-| `tags add <item key> --tag <标签>` | `--dry-run` | 给条目加标签 |
-| `tags remove <item key> --tag <标签>` | `--dry-run` | 移除条目标签 |
+| `tags add <key1> [key2] ... --tag <标签>` | `--dry-run` | 给条目加标签（支持多个 key） |
+| `tags remove <key1> [key2] ... --tag <标签>` | `--dry-run` | 移除条目标签（支持多个 key） |
 | `tags rename <旧名> <新名>` | `--dry-run` | 全局重命名标签 |
 | `tags delete <标签>` | `--dry-run` | 全局删除标签 |
-| `tags batch-update <key1> <key2> ...` | `--add` `--remove` `--dry-run` | 批量增删标签 |
 
 ---
 
-## annotations — 批注（这里同意 但是这个如果接受itemkey的话 万一有bug 里面有两个pdf怎么办？）
+## annotations — 批注
 
 | 命令 | 参数 | 说明 |
 |------|------|------|
-| `annotations list --parent <attachment key>` | — | 列出 PDF 上的批注 |
-| `annotations create --parent <attachment key> --type <类型>` | `--position` `--sort-index` `--text` `--comment` `--color` `--dry-run` | 创建批注。类型：highlight/note/underline/image/ink |
+| `annotations list --parent <item/attachment key>` | — | 列出 PDF 上的批注（自动解析 item key） |
+| `annotations create --parent <item/attachment key> --type <类型>` | `--position` `--sort-index` `--text` `--comment` `--color` `--dry-run` | 创建批注。类型：highlight/note/underline/image/ink |
 | `annotations delete <annotation key>` | `--dry-run` | 删除批注 |
 
-**痛点：** `--parent` 只接受 attachment key，不接受 item key。agent 每次要先 `attachments list` 找到 PDF 附件 key。
-
 ---
 
-## export — 导出（同意痛点）
+## export — 导出
 
 | 命令 | 参数 | 说明 |
 |------|------|------|
-| `export bibtex <key1> <key2> ...` | — | 导出 BibTeX |
-| `export ris <key1> <key2> ...` | — | 导出 RIS |
-| `export csl-json <key1> <key2> ...` | — | 导出 CSL-JSON |
-| `export bibliography <key1> <key2> ...` | `--style` `--html` | 导出格式化参考文献。默认 GB/T 7714 |
-
-**痛点：** 不支持 `--collection`，必须手动收集 key 列表。
+| `export <key1> <key2> ... --format bibtex` | — | 导出 BibTeX（默认格式） |
+| `export <key1> <key2> ... --format ris` | — | 导出 RIS |
+| `export <key1> <key2> ... --format csl-json` | — | 导出 CSL-JSON |
+| `export <key1> <key2> ... --format bibliography` | `--style` `--html` | 导出格式化参考文献。默认 GB/T 7714 |
+| `export --collection <名称> --format bibtex` | — | 导出整个集合 |
 
 ---
 
@@ -166,11 +158,9 @@ zotron search "就业" --collection "数字经济" --author "张三" --after 202
 | 命令 | 参数 | 说明 |
 |------|------|------|
 | `ocr providers` | — | 列出支持的 OCR 提供商 |
-| `ocr provider-json --provider <名称>` | `--input` `--file` `--item-key` `--attachment-key` `--mime-type` `--endpoint` `--api-key-env` | 执行 OCR 请求并输出标准化 blocks |
+| `ocr run --provider <名称>` | `--input` `--file` `--item-key` `--attachment-key` `--mime-type` `--endpoint` `--api-key-env` | 执行 OCR 请求并输出标准化 blocks |
 | `ocr status --collection <名称>` | — | 查看集合的 OCR 状态 |
-| `ocr parse-pdf --parent <item key> --attachment <attachment key>` | `--provider` `--source-url` `--result-dir` `--result-zip` `--provider-endpoint` `--api-key-env` `--poll-interval-seconds` `--timeout-seconds` `--chunk-chars` | 解析 PDF 并写入隐藏 sidecar |
-
-**痛点：** `parse-pdf` 的 `--attachment` 只接受 attachment key，不接受 item key 自动查找。
+| `ocr process --parent <item key>` | `--attachment` `--provider` `--source-url` `--result-dir` `--result-zip` `--provider-endpoint` `--api-key-env` `--poll-interval-seconds` `--timeout-seconds` `--chunk-chars` | 解析 PDF 并写入隐藏 sidecar。`--attachment` 可选，自动从 parent 查找 |
 
 ---
 
@@ -178,10 +168,10 @@ zotron search "就业" --collection "数字经济" --author "张三" --after 202
 
 | 命令 | 参数 | 说明 |
 |------|------|------|
-| `rag embedding-providers` | — | 列出支持的 embedding 提供商 |
-| `rag embedding-json --provider <名称> --input <文件>` | `--endpoint` `--model` `--input-type` `--api-key-env` | 执行 embedding 请求 |
+| `rag providers` | — | 列出支持的 embedding 提供商 |
+| `rag embed --provider <名称> --input <文件>` | `--endpoint` `--model` `--input-type` `--api-key-env` | 执行 embedding 请求 |
 | `rag status --collection <名称>` | — | 查看集合的 RAG 索引状态 |
-| `rag hits <查询词>` | `--collection` `--key` `--zotero` `--top-spans-per-item` `--include-fulltext-spans` `--limit` `--output (json/jsonl)` | 语义检索，返回相关段落 |
+| `rag search <查询词>` | `--collection` `--key` `--zotero` `--top-spans-per-item` `--include-fulltext-spans` `--limit` `--output (json/jsonl)` | 语义检索，返回相关段落 |
 
 ---
 
@@ -191,8 +181,8 @@ zotron search "就业" --collection "数字经济" --author "张三" --after 202
 |------|------|------|
 | `settings list` | — | 列出所有设置 |
 | `settings get <key>` | — | 获取单个设置值 |
-| `settings set <key> <value>` | `--dry-run` | 设置单个值 |
-| `settings set-all --file <JSON文件>` | `--dry-run` | 批量设置 |
+| `settings set <key> <value> [key value ...]` | `--dry-run` | 设置一个或多个值 |
+| `settings set --file <JSON文件>` | `--dry-run` | 从 JSON 文件批量设置 |
 
 ---
 
@@ -203,9 +193,8 @@ zotron search "就业" --collection "数字经济" --author "张三" --after 202
 | `system version` | — | XPI 版本和方法数 |
 | `system libraries` | — | 列出所有库 |
 | `system library-stats` | `--library` | 库统计 |
-| `system item-types` | — | 列出所有条目类型 |
-| `system item-fields --type <类型>` | — | 列出某类型的字段 |
-| `system creator-types --type <类型>` | — | 列出某类型的创建者类型 |
+| `system schema` | — | 列出所有条目类型 |
+| `system schema --type <类型>` | — | 列出某类型的字段和创建者类型 |
 | `system current-collection` | — | 获取当前选中的集合 |
 | `system list-methods` | — | 列出所有 RPC 方法 |
 | `system describe [方法名]` | — | 描述某个/所有 RPC 方法 |
@@ -215,10 +204,3 @@ zotron search "就业" --collection "数字经济" --author "张三" --after 202
 ## 通用参数
 
 所有命令都有 `--url`（默认 `http://127.0.0.1:23119/zotron/rpc`），写操作都有 `--dry-run`。
-
-## 已识别的痛点汇总
-
-1. ~~**annotations list/create** — `--parent` 只接受 attachment key，不接受 item key~~ ✓ 已修复（自动解析 item key → PDF attachment）
-2. ~~**ocr parse-pdf** — `--attachment` 只接受 attachment key~~ ✓ 已修复（--attachment 可选，自动查找）
-3. ~~**export** — 不支持 `--collection`~~ ✓ 已修复（所有 export 子命令支持 --collection）
-4. ~~**search** — 命令碎片化~~ ✓ 已修复（统一为 `zotron search` + 人体工学 flag）
