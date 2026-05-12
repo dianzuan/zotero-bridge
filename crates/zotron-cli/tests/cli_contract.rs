@@ -438,7 +438,7 @@ fn embedding_provider_contracts_cover_volcengine_alibaba_and_custom_without_ids(
 #[test]
 fn zotron_rag_subcommand_embedding_providers_prints_provider_matrix_without_rpc() {
     let mut client = FakeClient::default();
-    let out = run_with_client(["zotron", "rag", "embedding-providers"], &mut client)
+    let out = run_with_client(["zotron", "rag", "providers"], &mut client)
         .expect("embedding providers succeeds");
     let payload: Value = serde_json::from_str(&out).expect("embedding providers output is JSON");
 
@@ -456,7 +456,7 @@ fn zotron_rag_subcommand_embedding_providers_prints_provider_matrix_without_rpc(
 }
 
 #[test]
-fn zotron_ocr_provider_json_executes_local_http_with_endpoint_and_env_credential() {
+fn zotron_ocr_run_subcommand_executes_local_http_with_endpoint_and_env_credential() {
     let _guard = ENV_LOCK.lock().expect("env lock");
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider server");
     let url = format!("http://{}", listener.local_addr().expect("local addr"));
@@ -488,7 +488,7 @@ fn zotron_ocr_provider_json_executes_local_http_with_endpoint_and_env_credential
     let out = zotron_cli::run([
         "zotron",
         "ocr",
-        "provider-json",
+        "run",
         "--provider",
         "glm",
         "--input",
@@ -551,7 +551,7 @@ fn zotron_ocr_provider_json_can_build_input_from_local_file_without_shell_base64
     let out = zotron_cli::run([
         "zotron",
         "ocr",
-        "provider-json",
+        "run",
         "--provider",
         "glm",
         "--file",
@@ -609,7 +609,7 @@ fn zotron_ocr_provider_json_returns_async_task_for_mineru_precise_submit() {
     let out = zotron_cli::run([
         "zotron",
         "ocr",
-        "provider-json",
+        "run",
         "--provider",
         "mineru",
         "--input",
@@ -687,7 +687,7 @@ fn ocr_parse_pdf_ingests_mineru_result_dir_into_hidden_sidecars() {
         [
             "zotron",
             "ocr",
-            "parse-pdf",
+            "process",
             "--provider",
             "mineru",
             "--parent",
@@ -807,7 +807,7 @@ fn ocr_parse_pdf_uploads_local_zotero_pdf_to_mineru_batch_endpoint() {
         [
             "zotron",
             "ocr",
-            "parse-pdf",
+            "process",
             "--provider",
             "mineru",
             "--parent",
@@ -890,7 +890,7 @@ fn zotron_rag_subcommand_embedding_json_executes_custom_provider_against_local_h
     let out = zotron_cli::run([
         "zotron",
         "rag",
-        "embedding-json",
+        "embed",
         "--provider",
         "custom",
         "--input",
@@ -1547,7 +1547,7 @@ fn rag_status_sidecar_accepts_collection_key() {
 #[test]
 fn rag_hits_missing_collection_returns_coded_error_instead_of_raw_json() {
     let mut client = FakeClient::default();
-    let err = run_with_client(["zotron", "rag", "hits", "query", "--zotero"], &mut client)
+    let err = run_with_client(["zotron", "rag", "search", "query", "--zotero"], &mut client)
         .expect_err("missing collection should fail");
 
     assert_eq!(
@@ -1572,7 +1572,7 @@ fn rag_hits_accepts_item_key_filter_without_collection() {
         [
             "zotron",
             "rag",
-            "hits",
+            "search",
             "数字经济",
             "--zotero",
             "--key",
@@ -1713,7 +1713,7 @@ fn plugin_zotron_wrapper_forwards_ocr_and_rag_to_rust_binary() {
 
     for (args, expected) in [
         (&["ocr", "providers"][..], "mineru"),
-        (&["rag", "embedding-providers"][..], "doubao"),
+        (&["rag", "providers"][..], "doubao"),
     ] {
         let output = ProcessCommand::new("bash")
             .arg(&wrapper)

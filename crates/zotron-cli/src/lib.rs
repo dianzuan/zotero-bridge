@@ -223,8 +223,8 @@ enum OcrCommand {
     /// Print supported OCR provider contracts.
     Providers,
     /// Execute an OCR provider request from JSON and emit normalized blocks.
-    #[command(name = "provider-json")]
-    ProviderJson {
+    #[command(name = "run")]
+    Run {
         #[arg(long)]
         provider: String,
         /// Path to an OcrRequestInput JSON file, or "-" to read stdin.
@@ -257,8 +257,8 @@ enum OcrCommand {
         url: String,
     },
     /// Parse a Zotero PDF through MinerU and write hidden sidecar OCR/RAG artifacts.
-    #[command(name = "parse-pdf")]
-    ParsePdf {
+    #[command(name = "process")]
+    Process {
         #[arg(long, default_value = "mineru")]
         provider: String,
         /// Parent Zotero item key.
@@ -414,11 +414,11 @@ struct RagHitsOptions {
 #[derive(Debug, Subcommand)]
 enum RagCommand {
     /// Print supported embedding provider contracts.
-    #[command(name = "embedding-providers")]
-    EmbeddingProviders,
+    #[command(name = "providers")]
+    Providers,
     /// Execute an embedding provider request from JSON and emit vectors.
-    #[command(name = "embedding-json")]
-    EmbeddingJson {
+    #[command(name = "embed")]
+    Embed {
         #[arg(long)]
         provider: String,
         /// Path to an EmbeddingRequestInput JSON file, or "-" to read stdin.
@@ -445,7 +445,8 @@ enum RagCommand {
         url: String,
     },
     /// Emit academic-zh retrieval hits with item_key/title/text provenance.
-    Hits {
+    #[command(name = "search")]
+    Search {
         query: String,
         #[arg(long)]
         collection: Option<String>,
@@ -1284,10 +1285,10 @@ pub fn run_with_client(
 
 fn rag_command_url(command: &RagCommand) -> String {
     match command {
-        RagCommand::EmbeddingProviders => DEFAULT_RPC_URL.to_string(),
-        RagCommand::EmbeddingJson { .. } => DEFAULT_RPC_URL.to_string(),
+        RagCommand::Providers => DEFAULT_RPC_URL.to_string(),
+        RagCommand::Embed { .. } => DEFAULT_RPC_URL.to_string(),
         RagCommand::Status { url, .. } => url.clone(),
-        RagCommand::Hits { url, .. } => url.clone(),
+        RagCommand::Search { url, .. } => url.clone(),
     }
 }
 
@@ -1299,9 +1300,9 @@ fn command_url(command: &Command) -> String {
         | Command::FindPdfs { url, .. } => url.clone(),
         Command::Ocr { command } => match command {
             OcrCommand::Providers => DEFAULT_RPC_URL.to_string(),
-            OcrCommand::ProviderJson { .. } => DEFAULT_RPC_URL.to_string(),
+            OcrCommand::Run { .. } => DEFAULT_RPC_URL.to_string(),
             OcrCommand::Status { url, .. } => url.clone(),
-            OcrCommand::ParsePdf { url, .. } => url.clone(),
+            OcrCommand::Process { url, .. } => url.clone(),
         },
         Command::Rag { command } => rag_command_url(command),
         Command::System { command } => match command {
@@ -1407,7 +1408,7 @@ fn run_ocr_command(command: OcrCommand, client: &mut impl RpcCaller) -> Result<S
         OcrCommand::Providers => serde_json::json!({
             "providers": ocr_provider_specs(),
         }),
-        OcrCommand::ProviderJson {
+        OcrCommand::Run {
             provider,
             input,
             file,
@@ -1427,7 +1428,7 @@ fn run_ocr_command(command: OcrCommand, client: &mut impl RpcCaller) -> Result<S
             api_key_env,
         })?,
         OcrCommand::Status { collection, .. } => run_ocr_status_command(client, collection)?,
-        OcrCommand::ParsePdf {
+        OcrCommand::Process {
             provider,
             parent,
             attachment,
@@ -2581,7 +2582,7 @@ fn run_command(command: Command, client: &mut impl RpcCaller) -> Result<String, 
 
 fn run_rag_command(command: RagCommand, client: &mut impl RpcCaller) -> Result<String, String> {
     match command {
-        RagCommand::EmbeddingProviders => format_json(
+        RagCommand::Providers => format_json(
             &serde_json::json!({
                 "providers": [
                     embedding_provider_spec("volcengine")?,
@@ -2591,7 +2592,7 @@ fn run_rag_command(command: RagCommand, client: &mut impl RpcCaller) -> Result<S
             }),
             JsonStyle::Pretty,
         ),
-        RagCommand::EmbeddingJson {
+        RagCommand::Embed {
             provider,
             input,
             endpoint,
@@ -2613,7 +2614,7 @@ fn run_rag_command(command: RagCommand, client: &mut impl RpcCaller) -> Result<S
             let value = rag_status_value(client, &collection)?;
             format_json(&value, JsonStyle::PythonCompact)
         }
-        RagCommand::Hits {
+        RagCommand::Search {
             query,
             collection,
             keys,
