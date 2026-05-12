@@ -1,19 +1,11 @@
 {
   "schemaVersion": 1,
-  "name": "search by identifier",
-  "command": [
-    "search",
-    "by-identifier",
-    "--doi",
-    "10.1038/nature12373",
-    "--isbn",
-    "9780262035613"
-  ],
+  "name": "search by DOI",
+  "command": ["search", "--doi", "10.1038/nature12373"],
   "rpc": {
     "method": "search.byIdentifier",
     "params": {
-      "doi": "10.1038/nature12373",
-      "isbn": "9780262035613"
+      "doi": "10.1038/nature12373"
     },
     "result": {
       "key": "ID1",

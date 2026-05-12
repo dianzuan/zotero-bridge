@@ -964,7 +964,7 @@ fn search_quick_filters_zotron_ocr_and_embedding_artifacts_from_cli_output() {
         "total": 4
     }));
 
-    let out = run_with_client(["zotron", "search", "quick", "risk"], &mut client)
+    let out = run_with_client(["zotron", "search", "risk"], &mut client)
         .expect("search succeeds");
     let payload: Value = serde_json::from_str(&out).expect("search output is JSON");
     assert_eq!(payload["total"], 1);
@@ -991,7 +991,6 @@ fn search_quick_collection_filters_collection_items_locally() {
         [
             "zotron",
             "search",
-            "quick",
             "宏观 因子",
             "--collection",
             "习中心",
@@ -1033,7 +1032,7 @@ fn search_fulltext_forwards_collection_filter_to_rpc() {
         [
             "zotron",
             "search",
-            "fulltext",
+            "--fulltext",
             "数字经济 体育产业",
             "--collection",
             "test",

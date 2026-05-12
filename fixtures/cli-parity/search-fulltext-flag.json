@@ -1,13 +1,7 @@
 {
   "schemaVersion": 1,
-  "name": "search fulltext",
-  "command": [
-    "search",
-    "fulltext",
-    "attention is all you need",
-    "--limit",
-    "3"
-  ],
+  "name": "search with --fulltext flag",
+  "command": ["search", "--fulltext", "attention is all you need", "--limit", "3"],
   "rpc": {
     "method": "search.fulltext",
     "params": {

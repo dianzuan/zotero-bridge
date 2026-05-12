@@ -337,10 +337,7 @@ enum Command {
         command: SystemCommand,
     },
     /// Search items by text, tag, identifier, or structured conditions.
-    Search {
-        #[command(subcommand)]
-        command: SearchCommand,
-    },
+    Search(SearchArgs),
     /// Inspect and manage Zotero items.
     Items {
         #[command(subcommand)]
@@ -532,66 +529,52 @@ enum SystemCommand {
     },
 }
 
+#[derive(Debug, clap::Args)]
+struct SearchArgs {
+    /// Search query (title/creator/year by default; PDF content with --fulltext).
+    query: Option<String>,
+    /// Search inside PDF full-text content instead of metadata.
+    #[arg(long)]
+    fulltext: bool,
+    /// Filter by author/creator name (contains match).
+    #[arg(long)]
+    author: Option<String>,
+    /// Filter by date after (YYYY or YYYY-MM-DD).
+    #[arg(long)]
+    after: Option<String>,
+    /// Filter by date before (YYYY or YYYY-MM-DD).
+    #[arg(long)]
+    before: Option<String>,
+    /// Filter by journal/publication title (contains match).
+    #[arg(long)]
+    journal: Option<String>,
+    /// Filter by tag (exact match).
+    #[arg(long)]
+    tag: Option<String>,
+    /// Find by DOI.
+    #[arg(long)]
+    doi: Option<String>,
+    /// Find by ISBN.
+    #[arg(long)]
+    isbn: Option<String>,
+    /// Find by ISSN.
+    #[arg(long)]
+    issn: Option<String>,
+    /// Limit results to a collection name or key.
+    #[arg(long)]
+    collection: Option<String>,
+    #[arg(long, default_value_t = 50)]
+    limit: u64,
+    #[arg(long, default_value_t = 0)]
+    offset: u64,
+    #[arg(long, default_value = DEFAULT_RPC_URL)]
+    url: String,
+    #[command(subcommand)]
+    management: Option<SearchManagementCommand>,
+}
+
 #[derive(Debug, Subcommand)]
-enum SearchCommand {
-    /// Zotero quick-search (title, creator, year, tags).
-    Quick {
-        query: String,
-        #[arg(long, default_value_t = 50)]
-        limit: u64,
-        /// Limit quick search to a collection name or key.
-        #[arg(long)]
-        collection: Option<String>,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
-    /// Full-text search across PDF contents.
-    Fulltext {
-        query: String,
-        #[arg(long, default_value_t = 50)]
-        limit: u64,
-        /// Limit full-text search to a collection name or key.
-        #[arg(long)]
-        collection: Option<String>,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
-    /// Find an item by DOI / ISBN / ISSN.
-    #[command(name = "by-identifier")]
-    ByIdentifier {
-        #[arg(long)]
-        doi: Option<String>,
-        #[arg(long)]
-        isbn: Option<String>,
-        #[arg(long)]
-        issn: Option<String>,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
-    /// Advanced search using structured field/operator/value conditions.
-    Advanced {
-        #[arg(long = "condition", required = true)]
-        condition: Vec<String>,
-        #[arg(long, default_value = "and")]
-        operator: String,
-        #[arg(long, default_value_t = 50)]
-        limit: u64,
-        #[arg(long, default_value_t = 0)]
-        offset: u64,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
-    /// List items that have the given tag.
-    #[command(name = "by-tag")]
-    ByTag {
-        tag: String,
-        #[arg(long, default_value_t = 50)]
-        limit: u64,
-        #[arg(long, default_value_t = 0)]
-        offset: u64,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
+enum SearchManagementCommand {
     /// List all saved searches in the library.
     #[command(name = "saved-searches")]
     SavedSearches {
@@ -1332,15 +1315,11 @@ fn command_url(command: &Command) -> String {
             | SystemCommand::ListMethods { url }
             | SystemCommand::Describe { url, .. } => url.clone(),
         },
-        Command::Search { command } => match command {
-            SearchCommand::Quick { url, .. }
-            | SearchCommand::Fulltext { url, .. }
-            | SearchCommand::ByIdentifier { url, .. }
-            | SearchCommand::Advanced { url, .. }
-            | SearchCommand::ByTag { url, .. }
-            | SearchCommand::SavedSearches { url }
-            | SearchCommand::CreateSaved { url, .. }
-            | SearchCommand::DeleteSaved { url, .. } => url.clone(),
+        Command::Search(ref args) => match &args.management {
+            Some(SearchManagementCommand::SavedSearches { url })
+            | Some(SearchManagementCommand::CreateSaved { url, .. })
+            | Some(SearchManagementCommand::DeleteSaved { url, .. }) => url.clone(),
+            None => args.url.clone(),
         },
         Command::Items { command } => match command {
             ItemsCommand::AddByDoi { url, .. }
@@ -2571,7 +2550,13 @@ fn run_command(command: Command, client: &mut impl RpcCaller) -> Result<String, 
             ..
         } => return run_push_command(json_file, pdf, collection, on_duplicate, dry_run, client),
         Command::System { command } => run_system_command(command, client)?,
-        Command::Search { command } => run_search_command(command, client)?,
+        Command::Search(args) => {
+            if let Some(mgmt) = args.management {
+                run_search_management_command(mgmt, client)?
+            } else {
+                run_search(args, client)?
+            }
+        }
         Command::Items { command } => run_items_command(command, client)?,
         Command::Collections { command } => run_collections_command(command, client)?,
         Command::Notes { command } => run_notes_command(command, client)?,
@@ -3379,112 +3364,113 @@ fn push_result(
     })
 }
 
-fn run_search_command(
-    command: SearchCommand,
+fn run_search(
+    args: SearchArgs,
+    client: &mut impl RpcCaller,
+) -> Result<(Value, JsonStyle), String> {
+    let SearchArgs {
+        query, fulltext, author, after, before, journal, tag,
+        doi, isbn, issn, collection, limit, offset, ..
+    } = args;
+
+    let has_identifier = doi.is_some() || isbn.is_some() || issn.is_some();
+    if has_identifier {
+        let mut params = serde_json::Map::new();
+        if let Some(doi) = doi { params.insert("doi".into(), Value::String(doi)); }
+        if let Some(isbn) = isbn { params.insert("isbn".into(), Value::String(isbn)); }
+        if let Some(issn) = issn { params.insert("issn".into(), Value::String(issn)); }
+        let value = client.call("search.byIdentifier", Some(Value::Object(params)))?;
+        return Ok((normalize_list_envelope(value, "items", None, 0), JsonStyle::Pretty));
+    }
+
+    if fulltext {
+        let query = query.ok_or("INVALID_ARGS: --fulltext requires a search query")?;
+        let mut params = serde_json::json!({"query": query, "limit": limit});
+        if let (Some(col), Some(map)) = (collection, params.as_object_mut()) {
+            map.insert("collection".into(), resolve_collection(client, &col)?);
+        }
+        let value = client.call("search.fulltext", Some(params))?;
+        return Ok((normalize_list_envelope(value, "items", Some(limit), 0), JsonStyle::Pretty));
+    }
+
+    let has_filters = author.is_some() || after.is_some() || before.is_some()
+        || journal.is_some() || tag.is_some();
+    if has_filters {
+        let mut conditions: Vec<Value> = Vec::new();
+        if let Some(query) = &query {
+            conditions.push(serde_json::json!({
+                "field": "quicksearch-titleCreatorYear",
+                "operator": "contains",
+                "value": query,
+            }));
+        }
+        if let Some(author) = author {
+            conditions.push(serde_json::json!({
+                "field": "creator", "operator": "contains", "value": author,
+            }));
+        }
+        if let Some(after) = after {
+            conditions.push(serde_json::json!({
+                "field": "date", "operator": "isAfter", "value": after,
+            }));
+        }
+        if let Some(before) = before {
+            conditions.push(serde_json::json!({
+                "field": "date", "operator": "isBefore", "value": before,
+            }));
+        }
+        if let Some(journal) = journal {
+            conditions.push(serde_json::json!({
+                "field": "publicationTitle", "operator": "contains", "value": journal,
+            }));
+        }
+        if let Some(tag) = tag {
+            conditions.push(serde_json::json!({
+                "field": "tag", "operator": "is", "value": tag,
+            }));
+        }
+        let value = client.call(
+            "search.advanced",
+            Some(serde_json::json!({
+                "conditions": conditions,
+                "operator": "and",
+                "limit": limit,
+                "offset": offset,
+            })),
+        )?;
+        return Ok((normalize_list_envelope(value, "items", Some(limit), offset), JsonStyle::Pretty));
+    }
+
+    let query = query.ok_or(
+        "INVALID_ARGS: provide a search query, or use --doi/--isbn/--issn for identifier lookup"
+    )?;
+    let value = if let Some(col) = collection {
+        let key = resolve_collection(client, &col)?;
+        let response = client.call(
+            "collections.getItems",
+            Some(serde_json::json!({"key": key})),
+        )?;
+        collection_quick_search_response(&response, &query, limit)
+    } else {
+        filter_search_artifacts(client.call(
+            "search.quick",
+            Some(serde_json::json!({"query": query, "limit": limit})),
+        )?)
+    };
+    Ok((normalize_list_envelope(value, "items", Some(limit), 0), JsonStyle::Pretty))
+}
+
+fn run_search_management_command(
+    command: SearchManagementCommand,
     client: &mut impl RpcCaller,
 ) -> Result<(Value, JsonStyle), String> {
     match command {
-        SearchCommand::Quick {
-            query,
-            limit,
-            collection,
-            ..
-        } => {
-            let value = if let Some(collection) = collection {
-                let key = resolve_collection(client, &collection)?;
-                let response = client.call(
-                    "collections.getItems",
-                    Some(serde_json::json!({"key": key})),
-                )?;
-                collection_quick_search_response(&response, &query, limit)
-            } else {
-                filter_search_artifacts(client.call(
-                    "search.quick",
-                    Some(serde_json::json!({"query": query, "limit": limit})),
-                )?)
-            };
-            Ok((normalize_list_envelope(value, "items", Some(limit), 0), JsonStyle::Pretty))
-        }
-        SearchCommand::Fulltext {
-            query,
-            limit,
-            collection,
-            ..
-        } => {
-            let mut params = serde_json::json!({"query": query, "limit": limit});
-            if let (Some(collection), Some(map)) = (collection, params.as_object_mut()) {
-                map.insert(
-                    "collection".to_string(),
-                    resolve_collection(client, &collection)?,
-                );
-            }
-            let value = client.call("search.fulltext", Some(params))?;
-            Ok((normalize_list_envelope(value, "items", Some(limit), 0), JsonStyle::Pretty))
-        }
-        SearchCommand::ByIdentifier {
-            doi, isbn, issn, ..
-        } => {
-            let mut params = serde_json::Map::new();
-            if let Some(doi) = doi {
-                params.insert("doi".to_string(), Value::String(doi));
-            }
-            if let Some(isbn) = isbn {
-                params.insert("isbn".to_string(), Value::String(isbn));
-            }
-            if let Some(issn) = issn {
-                params.insert("issn".to_string(), Value::String(issn));
-            }
-            if params.is_empty() {
-                return Err("INVALID_ARGS: give at least one of --doi/--isbn/--issn".to_string());
-            }
-            let value = client.call("search.byIdentifier", Some(Value::Object(params)))?;
-            Ok((normalize_list_envelope(value, "items", None, 0), JsonStyle::Pretty))
-        }
-        SearchCommand::Advanced {
-            condition,
-            operator,
-            limit,
-            offset,
-            ..
-        } => {
-            if operator != "and" && operator != "or" {
-                return Err(format!(
-                    "INVALID_ARGS: --operator must be 'and' or 'or', got {operator:?}"
-                ));
-            }
-            let conditions = condition
-                .iter()
-                .map(|raw| parse_search_condition(raw))
-                .collect::<Result<Vec<_>, _>>()?;
-            let value = client.call(
-                "search.advanced",
-                Some(serde_json::json!({
-                    "conditions": conditions,
-                    "operator": operator,
-                    "limit": limit,
-                    "offset": offset,
-                })),
-            )?;
-            Ok((normalize_list_envelope(value, "items", Some(limit), offset), JsonStyle::Pretty))
-        }
-        SearchCommand::ByTag {
-            tag, limit, offset, ..
-        } => {
-            let value = client.call(
-                "search.byTag",
-                Some(serde_json::json!({"tag": tag, "limit": limit, "offset": offset})),
-            )?;
-            Ok((normalize_list_envelope(value, "items", Some(limit), offset), JsonStyle::Pretty))
-        }
-        SearchCommand::SavedSearches { .. } => Ok((
+        SearchManagementCommand::SavedSearches { .. } => Ok((
             normalize_list_envelope(client.call("search.savedSearches", None)?, "items", None, 0),
             JsonStyle::Pretty,
         )),
-        SearchCommand::CreateSaved {
-            name,
-            condition,
-            dry_run,
-            ..
+        SearchManagementCommand::CreateSaved {
+            name, condition, dry_run, ..
         } => {
             let conditions = condition
                 .iter()
@@ -3492,33 +3478,19 @@ fn run_search_command(
                 .collect::<Result<Vec<_>, _>>()?;
             let params = serde_json::json!({"name": name, "conditions": conditions});
             if dry_run {
-                Ok((
-                    dry_run_value("search.createSavedSearch", params),
-                    JsonStyle::PythonCompact,
-                ))
+                Ok((dry_run_value("search.createSavedSearch", params), JsonStyle::PythonCompact))
             } else {
-                Ok((
-                    client.call("search.createSavedSearch", Some(params))?,
-                    JsonStyle::PythonCompact,
-                ))
+                Ok((client.call("search.createSavedSearch", Some(params))?, JsonStyle::PythonCompact))
             }
         }
-        SearchCommand::DeleteSaved {
-            search_key,
-            dry_run,
-            ..
+        SearchManagementCommand::DeleteSaved {
+            search_key, dry_run, ..
         } => {
             let params = serde_json::json!({"key": search_key});
             if dry_run {
-                Ok((
-                    dry_run_value("search.deleteSavedSearch", params),
-                    JsonStyle::PythonCompact,
-                ))
+                Ok((dry_run_value("search.deleteSavedSearch", params), JsonStyle::PythonCompact))
             } else {
-                Ok((
-                    client.call("search.deleteSavedSearch", Some(params))?,
-                    JsonStyle::PythonCompact,
-                ))
+                Ok((client.call("search.deleteSavedSearch", Some(params))?, JsonStyle::PythonCompact))
             }
         }
     }

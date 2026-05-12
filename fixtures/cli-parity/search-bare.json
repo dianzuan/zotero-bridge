@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "name": "search quick",
-  "command": ["search", "quick", "乡村振兴", "--limit", "2"],
+  "name": "search bare query",
+  "command": ["search", "乡村振兴", "--limit", "2"],
   "rpc": {
     "method": "search.quick",
     "params": {
