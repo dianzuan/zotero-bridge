@@ -1,18 +1,17 @@
 {
   "schemaVersion": 1,
-  "name": "items list trash",
+  "name": "items list --trash flag",
   "command": [
     "items",
-    "list-trash",
+    "list",
+    "--trash",
     "--limit",
-    "2",
-    "--offset",
-    "0"
+    "10"
   ],
   "rpc": {
     "method": "items.getTrash",
     "params": {
-      "limit": 2,
+      "limit": 10,
       "offset": 0
     },
     "result": {
@@ -23,12 +22,12 @@
         }
       ],
       "total": 1,
-      "limit": 2,
+      "limit": 10,
       "offset": 0
     }
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\n  \"items\": [\n    {\n      \"key\": \"TRASH1\",\n      \"title\": \"Deleted draft\"\n    }\n  ],\n  \"total\": 1,\n  \"limit\": 2,\n  \"offset\": 0,\n  \"hasMore\": false\n}\n"
+    "stdout": "{\n  \"items\": [\n    {\n      \"key\": \"TRASH1\",\n      \"title\": \"Deleted draft\"\n    }\n  ],\n  \"total\": 1,\n  \"limit\": 10,\n  \"offset\": 0,\n  \"hasMore\": false\n}\n"
   }
 }

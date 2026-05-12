@@ -654,9 +654,9 @@ enum ItemsCommand {
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
-    /// Move item to trash.
+    /// Move one or more items to trash.
     Trash {
-        item: String,
+        items: Vec<String>,
         #[arg(long)]
         dry_run: bool,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
@@ -665,15 +665,6 @@ enum ItemsCommand {
     /// Restore a trashed item.
     Restore {
         item: String,
-        #[arg(long)]
-        dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
-    /// Move multiple items to trash in one call.
-    #[command(name = "batch-trash")]
-    BatchTrash {
-        keys: Vec<String>,
         #[arg(long)]
         dry_run: bool,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
@@ -726,22 +717,15 @@ enum ItemsCommand {
         sort: Option<String>,
         #[arg(long, default_value = "asc")]
         direction: String,
+        /// List trashed items instead of regular items.
+        #[arg(long)]
+        trash: bool,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
     /// Run Zotero's duplicate scan and print groups.
     #[command(name = "find-duplicates")]
     FindDuplicates {
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
-    /// List items currently in the trash.
-    #[command(name = "list-trash")]
-    ListTrash {
-        #[arg(long, default_value_t = 50)]
-        limit: u64,
-        #[arg(long, default_value_t = 0)]
-        offset: u64,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
@@ -1304,14 +1288,12 @@ fn command_url(command: &Command) -> String {
             | ItemsCommand::Delete { url, .. }
             | ItemsCommand::Trash { url, .. }
             | ItemsCommand::Restore { url, .. }
-            | ItemsCommand::BatchTrash { url, .. }
             | ItemsCommand::MergeDuplicates { url, .. }
             | ItemsCommand::AddRelated { url, .. }
             | ItemsCommand::RemoveRelated { url, .. }
             | ItemsCommand::Get { url, .. }
             | ItemsCommand::List { url, .. }
             | ItemsCommand::FindDuplicates { url }
-            | ItemsCommand::ListTrash { url, .. }
             | ItemsCommand::Recent { url, .. }
             | ItemsCommand::Fulltext { url, .. }
             | ItemsCommand::Related { url, .. }
@@ -3871,22 +3853,29 @@ fn run_items_command(
             serde_json::json!({"key": key}),
             dry_run,
         )?,
-        ItemsCommand::Trash { item, dry_run, .. } => run_mutation_command(
-            client,
-            "items.trash",
-            serde_json::json!({"key": item}),
-            dry_run,
-        )?,
+        ItemsCommand::Trash {
+            items, dry_run, ..
+        } => {
+            if items.len() == 1 {
+                run_mutation_command(
+                    client,
+                    "items.trash",
+                    serde_json::json!({"key": items[0]}),
+                    dry_run,
+                )?
+            } else {
+                run_mutation_command(
+                    client,
+                    "items.batchTrash",
+                    serde_json::json!({"keys": items}),
+                    dry_run,
+                )?
+            }
+        }
         ItemsCommand::Restore { item, dry_run, .. } => run_mutation_command(
             client,
             "items.restore",
             serde_json::json!({"key": item}),
-            dry_run,
-        )?,
-        ItemsCommand::BatchTrash { keys, dry_run, .. } => run_mutation_command(
-            client,
-            "items.batchTrash",
-            serde_json::json!({"keys": keys}),
             dry_run,
         )?,
         ItemsCommand::MergeDuplicates { keys, dry_run, .. } => {
@@ -3931,30 +3920,32 @@ fn run_items_command(
             offset,
             sort,
             direction,
+            trash,
             ..
         } => {
-            let mut params = serde_json::json!({
-                "limit": limit,
-                "offset": offset,
-                "direction": direction,
-            });
-            if let (Some(sort), Some(map)) = (sort, params.as_object_mut()) {
-                map.insert("sort".to_string(), Value::String(sort));
+            if trash {
+                let value = client.call(
+                    "items.getTrash",
+                    Some(serde_json::json!({"limit": limit, "offset": offset})),
+                )?;
+                (normalize_list_envelope(value, "items", Some(limit), offset), JsonStyle::Pretty)
+            } else {
+                let mut params = serde_json::json!({
+                    "limit": limit,
+                    "offset": offset,
+                    "direction": direction,
+                });
+                if let (Some(sort), Some(map)) = (sort, params.as_object_mut()) {
+                    map.insert("sort".to_string(), Value::String(sort));
+                }
+                let value = client.call("items.list", Some(params))?;
+                (normalize_list_envelope(value, "items", Some(limit), offset), JsonStyle::Pretty)
             }
-            let value = client.call("items.list", Some(params))?;
-            (normalize_list_envelope(value, "items", Some(limit), offset), JsonStyle::Pretty)
         }
         ItemsCommand::FindDuplicates { .. } => (
             client.call("items.findDuplicates", None)?,
             JsonStyle::Pretty,
         ),
-        ItemsCommand::ListTrash { limit, offset, .. } => {
-            let value = client.call(
-                "items.getTrash",
-                Some(serde_json::json!({"limit": limit, "offset": offset})),
-            )?;
-            (normalize_list_envelope(value, "items", Some(limit), offset), JsonStyle::Pretty)
-        }
         ItemsCommand::Recent {
             limit,
             offset,
