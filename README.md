@@ -107,7 +107,7 @@ After Zotero restarts:
 
 ```bash
 zotron ping
-zotron search quick "transformer attention" --limit 10
+zotron search "transformer attention" --limit 10
 ```
 
 After `zotron ping` succeeds, Codex can call `zotron` subcommands or raw HTTP directly through the installed plugin skill.
@@ -120,7 +120,7 @@ After `zotron ping` succeeds, Codex can call `zotron` subcommands or raw HTTP di
 cargo install --path crates/zotron-cli --root ~/.local --force
 
 zotron ping
-zotron search quick "transformer attention" --limit 10
+zotron search "transformer attention" --limit 10
 zotron rpc items.get '{"key":"YR5BUGHG"}'  # escape hatch — covers all 86 methods
 ```
 
@@ -169,7 +169,7 @@ The Rust RAG surface returns each retrieved chunk as a provenance-rich hit carry
 
 ```bash
 zotron rag status --collection "ML Papers"
-zotron rag hits --zotero "how do transformers attend to long-range context?" --collection "ML Papers" --output jsonl
+zotron rag search --zotero "how do transformers attend to long-range context?" --collection "ML Papers" --output jsonl
 ```
 
 `--output jsonl` is the AI-facing stable contract:
@@ -212,12 +212,12 @@ Markdown is allowed as a derived convenience output, but it is not the source of
 MinerU ingestion is exposed through the single Rust binary:
 
 ```bash
-zotron ocr parse-pdf --provider mineru --parent ITEMKEY --attachment ATTACHKEY
-zotron ocr parse-pdf --provider mineru --parent ITEMKEY --attachment ATTACHKEY --source-url https://example.com/paper.pdf
-zotron ocr parse-pdf --provider mineru --parent ITEMKEY --attachment ATTACHKEY --result-dir /tmp/mineru-unzipped
+zotron ocr process --provider mineru --parent ITEMKEY --attachment ATTACHKEY
+zotron ocr process --provider mineru --parent ITEMKEY --attachment ATTACHKEY --source-url https://example.com/paper.pdf
+zotron ocr process --provider mineru --parent ITEMKEY --attachment ATTACHKEY --result-dir /tmp/mineru-unzipped
 ```
 
-Without `--source-url`, `parse-pdf` resolves the Zotero attachment path and uses MinerU's batch file-upload API for the local PDF. It writes the hidden sidecar files above and keeps provider Markdown/images as audit assets. `provider-json` remains a low-level provider transport/debug command.
+Without `--source-url`, `process` resolves the Zotero attachment path and uses MinerU's batch file-upload API for the local PDF. It writes the hidden sidecar files above and keeps provider Markdown/images as audit assets. `run` remains a low-level provider transport/debug command.
 
 ## Development
 

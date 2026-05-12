@@ -8,38 +8,38 @@ Usually you need to search first, then export:
 
 ```bash
 # 1. Find the papers
-zotron search quick "数字经济" --limit 10
+zotron search "数字经济" --limit 10
 
-# 2. Note the IDs from results, then export
-zotron export bibliography 10 13 16
+# 2. Note the keys from results, then export
+zotron export --format bibliography YR5BUGHG BF4I9QX4 X6LYTXEJ
 ```
 
 ## Formats
 
 | Format | When to use | Command |
 |--------|------------|---------|
-| **GB/T 7714** (default) | Chinese academic papers, 中文参考文献 | `zotron export bibliography` |
-| BibTeX | LaTeX users, .bib file | `zotron export bibtex` |
-| RIS | EndNote/other reference managers | `zotron export ris` |
-| CSL-JSON | Programmatic use | `zotron export csl-json` |
+| **GB/T 7714** (default) | Chinese academic papers, 中文参考文献 | `zotron export --format bibliography` |
+| BibTeX (default format) | LaTeX users, .bib file | `zotron export` |
+| RIS | EndNote/other reference managers | `zotron export --format ris` |
+| CSL-JSON | Programmatic use | `zotron export --format csl-json` |
 
 ## GB/T 7714 (中文学术默认)
 
 ```bash
-zotron export bibliography 10 13 16
+zotron export --format bibliography YR5BUGHG BF4I9QX4 X6LYTXEJ
 ```
 
 Returns both `html` and `text` versions. Use `text` for plain output.
 
 For the author-date variant:
 ```bash
-zotron export bibliography 10 --style apa
+zotron export --format bibliography YR5BUGHG --style apa
 ```
 
 ## BibTeX
 
 ```bash
-zotron export bibtex 10 13 16
+zotron export YR5BUGHG BF4I9QX4 X6LYTXEJ
 ```
 
 ## Citation key
@@ -47,13 +47,14 @@ zotron export bibtex 10 13 16
 Look up a paper's Better-BibTeX citation key for LaTeX `\cite{}`:
 
 ```bash
-zotron items citation-key 10
+zotron items citation-key YR5BUGHG
 ```
 
-## CSV (via RPC)
+## Collection-scoped export
 
 ```bash
-zotron rpc export.csv '{"keys":["YR5BUGHG","ABC12345"]}'
+zotron export --collection "数字经济"
+zotron export --format bibliography --collection "数字经济"
 ```
 
 ## Present to user

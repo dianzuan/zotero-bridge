@@ -6,9 +6,9 @@ Search and browse the user's Zotero library — find papers by keywords, read PD
 
 | User wants | Command | When to use |
 |-----------|---------|-------------|
-| Find by title/author/year | `zotron search quick` | Most common, start here |
-| Find by title/author/year inside a collection | `zotron search quick --collection` | User gives both keyword and collection |
-| Search inside PDF text | `zotron search fulltext` | User asks "which paper mentions X" |
+| Find by title/author/year | `zotron search "query"` | Most common, start here |
+| Find by title/author/year inside a collection | `zotron search "query" --collection X` | User gives both keyword and collection |
+| Search inside PDF text | `zotron search "query" --fulltext` | User asks "which paper mentions X" |
 | Multiple filters | `zotron search advanced` | Author + date range + journal |
 | Papers with a tag | `zotron search by-tag` | User mentions a specific tag |
 | Browse a collection | `zotron collections get-items` | User asks "what's in my X collection" |
@@ -16,20 +16,20 @@ Search and browse the user's Zotero library — find papers by keywords, read PD
 ## Quick search (default)
 
 ```bash
-zotron search quick "数字经济 就业" --limit 10
-zotron search quick "数字经济 就业" --collection "宏观因子" --limit 10
+zotron search "数字经济 就业" --limit 10
+zotron search "数字经济 就业" --collection "宏观因子" --limit 10
 ```
 
 Returns an envelope: `{"items":[...],"total":N}`. Use item keys for follow-up operations.
 
-In the Rust CLI, `--collection` limits quick search to items in that collection. This is a convenience layer over `collections.getItems`; it is for metadata/title/author/year-style filtering, not full PDF text search.
+`--collection` limits search to items in that collection. This is for metadata/title/author/year-style filtering, not full PDF text search.
 
 ## Fulltext PDF search
 
 When the user asks "which of my papers talks about X" — this searches inside PDF content, not just metadata.
 
 ```bash
-zotron search fulltext "regression discontinuity" --limit 10
+zotron search "regression discontinuity" --fulltext --limit 10
 ```
 
 ## Advanced multi-field search

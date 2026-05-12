@@ -12,7 +12,7 @@ zotron ocr status --collection "财务报表造假识别"
 zotron rag status --collection "财务报表造假识别"
 
 # 3. Emit academic-zh retrieval hits via Zotero XPI JSON-RPC.
-zotron rag hits --zotero \
+zotron rag search --zotero \
   --collection "财务报表造假识别" \
   --limit 50 \
   --top-spans-per-item 3 \
@@ -24,10 +24,10 @@ zotron rag hits --zotero \
 
 ```bash
 # Search across a collection
-zotron rag hits --zotero --collection "数字经济" --output jsonl "数字经济对劳动力市场的影响机制"
+zotron rag search --zotero --collection "数字经济" --output jsonl "数字经济对劳动力市场的影响机制"
 
 # Search specific items by key (from RAG hits or search results)
-zotron rpc rag.searchHits '{"query":"关键词","keys":["YR5BUGHG","BF4I9QX4"],"top_spans_per_item":10}'
+zotron rag search --zotero --key YR5BUGHG --key BF4I9QX4 --top-spans-per-item 10 --output jsonl "关键词"
 ```
 
 Returns one JSON hit per line with score, paper title, authors, section heading, `chunk_key`, `block_keys`, page/bbox provenance, and Zotero URI.
@@ -35,7 +35,7 @@ Returns one JSON hit per line with score, paper title, authors, section heading,
 ## Retrieval hits
 
 ```bash
-zotron rag hits --zotero \
+zotron rag search --zotero \
   --collection "中国工业经济" \
   --limit 50 \
   --top-spans-per-item 3 \
@@ -79,8 +79,8 @@ fixtures/academic_zh_hits.jsonl
 
 ```bash
 zotron rag status --collection "数字经济"
-zotron rag embedding-providers
-zotron rag embedding-json --provider custom --input /tmp/request.json --endpoint "$EMBEDDING_ENDPOINT" --model "$EMBEDDING_MODEL"
+zotron rag providers
+zotron rag embed --provider custom --input /tmp/request.json --endpoint "$EMBEDDING_ENDPOINT" --model "$EMBEDDING_MODEL"
 ```
 
 ## Why RAG saves tokens
@@ -93,6 +93,6 @@ With RAG: get 10 relevant paragraphs → ~5K tokens per query
 Default provider setup is managed from Zotron settings. Current Rust contracts expose GLM/Paddle/MinerU OCR provider helpers and Volcengine, Alibaba/DashScope, or custom OpenAI-compatible embedding helpers. API tokens are user-provided and should not be hardcoded in commands or skill docs.
 
 ```bash
-zotron ocr parse-pdf --provider mineru --parent ITEMKEY --attachment ATTACHKEY
-zotron rag hits --zotero --key ITEMKEY --output jsonl "研究问题"
+zotron ocr process --provider mineru --parent ITEMKEY --attachment ATTACHKEY
+zotron rag search --zotero --key ITEMKEY --output jsonl "研究问题"
 ```

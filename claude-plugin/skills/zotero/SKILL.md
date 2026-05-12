@@ -33,8 +33,8 @@ zotron <namespace> <verb> [args] [--flags]
 
 ```bash
 zotron ping                        # check connectivity
-zotron search quick "数字经济" --limit 10
-zotron search quick "数字经济" --collection "宏观因子" --limit 10
+zotron search "数字经济" --limit 10
+zotron search "数字经济" --collection "宏观因子" --limit 10
 zotron collections get-items "宏观因子" --limit 20
 zotron items get YR5BUGHG
 zotron items fulltext YR5BUGHG
@@ -43,34 +43,31 @@ zotron attachments list --parent YR5BUGHG
 zotron annotations list --parent YR5BUGHG
 zotron tags add YR5BUGHG --tag "已读"
 zotron collections tree
-zotron export bibtex 12345
+zotron export YR5BUGHG
 zotron settings list
+zotron system schema                   # item types, fields, creator types
+zotron system schema --type journalArticle  # fields for a specific type
 zotron system list-methods
 ```
 
-**Keys (primary):** All item-scoped commands accept an 8-char item key (`YR5BUGHG`) as the primary identifier; numeric IDs (`12345`) also work as fallback. RPC params use `key`/`parentKey`/`keys` — never `id`/`parentId`. Collections accept numeric ID, 8-char key, or name (`"数字经济"`).
+**Keys (primary):** All item-scoped commands accept an 8-char item key (`YR5BUGHG`) as the primary identifier. RPC params use `key`/`parentKey`/`keys` — never `id`/`parentId`. Collections accept 8-char key or name (`"数字经济"`).
 
 **Search vs collection browsing:**
-- `zotron search quick "关键词"` searches the whole library.
-- `zotron search quick "关键词" --collection "集合名"` searches only items in that collection.
+- `zotron search "关键词"` searches the whole library.
+- `zotron search "关键词" --collection "集合名"` searches only items in that collection.
+- `zotron search "关键词" --fulltext` searches inside PDF content, not just metadata.
 - `zotron collections get-items "集合名"` lists items in a collection; use this when the user asks "这个集合里有什么".
 - `zotron collections items "集合名"` is an alias for `get-items`.
 
 **Filtering output:** Rust `zotron` stays JSON-first and does not embed libjq. Pipe to external `jq`. Many list/search commands return an envelope such as `{"items":[...],"total":N}`, so filter through `.items[]`:
 
 ```bash
-zotron search quick "数字经济" | jq '.items[].title'
+zotron search "数字经济" | jq '.items[].title'
 zotron collections get-items "宏观因子" | jq '.items[].title'
 zotron collections tree | jq '.[] | {key, name}'
 ```
 
 Do not assume Python-only conveniences such as built-in `--jq` exist in the Rust CLI.
-
-**`rpc` escape hatch** for edge cases without a typed subcommand:
-
-```bash
-zotron rpc <method.name> '<json-params>'
-```
 
 **Discovery:**
 - `zotron --help` — list all namespaces
