@@ -3,7 +3,7 @@
   "name": "settings set all",
   "command": [
     "settings",
-    "set-all",
+    "set",
     "--file",
     "../../fixtures/settings-set-all-input.json"
   ],

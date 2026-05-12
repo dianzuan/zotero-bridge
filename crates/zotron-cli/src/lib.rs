@@ -772,20 +772,13 @@ enum SettingsCommand {
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
-    /// Set a single Zotero preference.
+    /// Set one or more Zotero preferences (key value pairs), or bulk-set from a JSON file.
     Set {
-        key: String,
-        value: String,
+        /// key value key value ... (pairs of positional args)
+        pairs: Vec<String>,
+        /// Bulk-set from a JSON file.
         #[arg(long)]
-        dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
-    /// Bulk-set Zotero preferences from a JSON file.
-    #[command(name = "set-all")]
-    SetAll {
-        #[arg(long)]
-        file: String,
+        file: Option<String>,
         #[arg(long)]
         dry_run: bool,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
@@ -1277,8 +1270,7 @@ fn command_url(command: &Command) -> String {
         Command::Settings { command } => match command {
             SettingsCommand::Get { url, .. }
             | SettingsCommand::List { url }
-            | SettingsCommand::Set { url, .. }
-            | SettingsCommand::SetAll { url, .. } => url.clone(),
+            | SettingsCommand::Set { url, .. } => url.clone(),
         },
         Command::Tags { command } => match command {
             TagsCommand::List { url, .. }
@@ -4005,41 +3997,70 @@ fn run_settings_command(
         ),
         SettingsCommand::List { .. } => (client.call("settings.getAll", None)?, JsonStyle::Pretty),
         SettingsCommand::Set {
-            key,
-            value,
+            pairs,
+            file,
             dry_run,
             ..
         } => {
-            let parsed_value =
-                serde_json::from_str::<Value>(&value).unwrap_or(Value::String(value));
-            let params = serde_json::json!({"key": key, "value": parsed_value});
-            if dry_run {
-                (
-                    dry_run_value("settings.set", params),
-                    JsonStyle::PythonCompact,
-                )
+            if let Some(file) = file {
+                // --file mode: read JSON and call settings.setAll
+                let raw = fs::read_to_string(&file)
+                    .map_err(|err| format!("INVALID_JSON: Could not read JSON: {err}"))?;
+                let settings: Value = serde_json::from_str(&raw)
+                    .map_err(|err| format!("INVALID_JSON: Could not parse JSON: {err}"))?;
+                if dry_run {
+                    (
+                        dry_run_value("settings.setAll", settings),
+                        JsonStyle::PythonCompact,
+                    )
+                } else {
+                    (
+                        client.call("settings.setAll", Some(settings))?,
+                        JsonStyle::PythonCompact,
+                    )
+                }
+            } else if pairs.len() == 2 {
+                // Single key=value: settings.set
+                let key = &pairs[0];
+                let value = &pairs[1];
+                let parsed_value = serde_json::from_str::<Value>(value)
+                    .unwrap_or(Value::String(value.clone()));
+                let params = serde_json::json!({"key": key, "value": parsed_value});
+                if dry_run {
+                    (
+                        dry_run_value("settings.set", params),
+                        JsonStyle::PythonCompact,
+                    )
+                } else {
+                    (
+                        client.call("settings.set", Some(params))?,
+                        JsonStyle::PythonCompact,
+                    )
+                }
+            } else if pairs.len() > 2 && pairs.len() % 2 == 0 {
+                // Multiple pairs: build a map and call settings.setAll
+                let mut map = serde_json::Map::new();
+                for chunk in pairs.chunks(2) {
+                    let parsed = serde_json::from_str::<Value>(&chunk[1])
+                        .unwrap_or(Value::String(chunk[1].clone()));
+                    map.insert(chunk[0].clone(), parsed);
+                }
+                let settings = Value::Object(map);
+                if dry_run {
+                    (
+                        dry_run_value("settings.setAll", settings),
+                        JsonStyle::PythonCompact,
+                    )
+                } else {
+                    (
+                        client.call("settings.setAll", Some(settings))?,
+                        JsonStyle::PythonCompact,
+                    )
+                }
             } else {
-                (
-                    client.call("settings.set", Some(params))?,
-                    JsonStyle::PythonCompact,
-                )
-            }
-        }
-        SettingsCommand::SetAll { file, dry_run, .. } => {
-            let raw = fs::read_to_string(&file)
-                .map_err(|err| format!("INVALID_JSON: Could not read JSON: {err}"))?;
-            let settings: Value = serde_json::from_str(&raw)
-                .map_err(|err| format!("INVALID_JSON: Could not parse JSON: {err}"))?;
-            if dry_run {
-                (
-                    dry_run_value("settings.setAll", settings),
-                    JsonStyle::PythonCompact,
-                )
-            } else {
-                (
-                    client.call("settings.setAll", Some(settings))?,
-                    JsonStyle::PythonCompact,
-                )
+                return Err(
+                    "INVALID_ARGS: provide key value pairs (even number of args) or --file".into(),
+                );
             }
         }
     };
