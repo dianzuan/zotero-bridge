@@ -965,32 +965,22 @@ enum AttachmentsCommand {
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
-    /// Attach a local file to an item.
+    /// Attach a local file or remote URL to an item.
     Add {
         #[arg(long)]
         parent: String,
+        /// Local file path to attach.
         #[arg(long)]
-        path: String,
+        path: Option<String>,
+        /// Remote URL to attach.
+        #[arg(long = "from-url")]
+        from_url: Option<String>,
         #[arg(long)]
         title: Option<String>,
+        #[arg(long)]
+        dry_run: bool,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Attach a remote file (by URL) to an item.
-    #[command(name = "add-by-url")]
-    AddByUrl {
-        #[arg(long)]
-        parent: String,
-        #[arg(long = "source-url", alias = "url")]
-        source_url: String,
-        #[arg(long)]
-        title: Option<String>,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        endpoint: String,
-        #[arg(long)]
-        dry_run: bool,
     },
     /// Delete an attachment.
     Delete {
@@ -1314,7 +1304,6 @@ fn command_url(command: &Command) -> String {
             | AttachmentsCommand::Add { url, .. }
             | AttachmentsCommand::Delete { url, .. }
             | AttachmentsCommand::FindPdf { url, .. } => url.clone(),
-            AttachmentsCommand::AddByUrl { endpoint, .. } => endpoint.clone(),
         },
         Command::Settings { command } => match command {
             SettingsCommand::Get { url, .. }
@@ -4358,42 +4347,47 @@ fn run_attachments_command(
         AttachmentsCommand::Add {
             parent,
             path,
+            from_url,
             title,
             dry_run,
             ..
         } => {
-            let mut params = serde_json::json!({"parentKey": parent, "path": zotero_path(&path)});
-            insert_optional_string(&mut params, "title", title);
-            if dry_run {
-                return Ok((
-                    dry_run_value("attachments.add", params),
-                    JsonStyle::PythonCompact,
-                ));
+            match (path, from_url) {
+                (Some(p), None) => {
+                    let mut params = serde_json::json!({"parentKey": parent, "path": zotero_path(&p)});
+                    insert_optional_string(&mut params, "title", title);
+                    if dry_run {
+                        return Ok((
+                            dry_run_value("attachments.add", params),
+                            JsonStyle::PythonCompact,
+                        ));
+                    }
+                    return Ok((
+                        client.call("attachments.add", Some(params))?,
+                        JsonStyle::PythonCompact,
+                    ));
+                }
+                (None, Some(u)) => {
+                    let mut params = serde_json::json!({"parentKey": parent, "url": u});
+                    insert_optional_string(&mut params, "title", title);
+                    if dry_run {
+                        return Ok((
+                            dry_run_value("attachments.addByURL", params),
+                            JsonStyle::PythonCompact,
+                        ));
+                    }
+                    return Ok((
+                        client.call("attachments.addByURL", Some(params))?,
+                        JsonStyle::PythonCompact,
+                    ));
+                }
+                (Some(_), Some(_)) => {
+                    return Err("INVALID_ARGS: --path and --from-url are mutually exclusive".to_string());
+                }
+                (None, None) => {
+                    return Err("INVALID_ARGS: either --path or --from-url is required".to_string());
+                }
             }
-            return Ok((
-                client.call("attachments.add", Some(params))?,
-                JsonStyle::PythonCompact,
-            ));
-        }
-        AttachmentsCommand::AddByUrl {
-            parent,
-            source_url,
-            title,
-            dry_run,
-            ..
-        } => {
-            let mut params = serde_json::json!({"parentKey": parent, "url": source_url});
-            insert_optional_string(&mut params, "title", title);
-            if dry_run {
-                return Ok((
-                    dry_run_value("attachments.addByURL", params),
-                    JsonStyle::PythonCompact,
-                ));
-            }
-            return Ok((
-                client.call("attachments.addByURL", Some(params))?,
-                JsonStyle::PythonCompact,
-            ));
         }
         AttachmentsCommand::Delete { key, dry_run, .. } => {
             let params = serde_json::json!({"key": key});

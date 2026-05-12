@@ -75,7 +75,7 @@ fn rpc_command_forwards_method_and_params_json() {
 }
 
 #[test]
-fn attachments_add_by_url_accepts_normalized_source_url() {
+fn attachments_add_from_url_attaches_remote_url() {
     let mut client = FakeClient::with_response(json!({
         "key": "ATT4",
         "title": "Remote PDF",
@@ -86,15 +86,15 @@ fn attachments_add_by_url_accepts_normalized_source_url() {
         [
             "zotron",
             "attachments",
-            "add-by-url",
+            "add",
             "--parent",
             "ITEM1",
-            "--source-url",
+            "--from-url",
             "https://example.com/paper.pdf",
         ],
         &mut client,
     )
-    .expect("normalized --source-url succeeds");
+    .expect("--from-url succeeds");
 
     assert_eq!(
         client.calls,
@@ -109,7 +109,7 @@ fn attachments_add_by_url_accepts_normalized_source_url() {
 }
 
 #[test]
-fn attachments_add_by_url_accepts_legacy_url_alias() {
+fn attachments_add_from_url_with_title() {
     let mut client = FakeClient::with_response(json!({
         "key": "ATT3",
         "title": "Remote PDF",
@@ -120,17 +120,17 @@ fn attachments_add_by_url_accepts_legacy_url_alias() {
         [
             "zotron",
             "attachments",
-            "add-by-url",
+            "add",
             "--parent",
             "ITEM1",
-            "--url",
+            "--from-url",
             "https://example.com/paper.pdf",
             "--title",
             "Remote PDF",
         ],
         &mut client,
     )
-    .expect("legacy --url alias succeeds");
+    .expect("--from-url with --title succeeds");
 
     assert_eq!(
         client.calls,

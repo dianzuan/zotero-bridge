@@ -1,22 +1,19 @@
 {
   "schemaVersion": 1,
-  "name": "attachments add by url",
+  "name": "attachments add --from-url",
   "command": [
     "attachments",
-    "add-by-url",
+    "add",
     "--parent",
     "ITEM1",
-    "--url",
-    "https://example.com/paper.pdf",
-    "--title",
-    "Remote PDF"
+    "--from-url",
+    "https://example.com/paper.pdf"
   ],
   "rpc": {
     "method": "attachments.addByURL",
     "params": {
       "parentKey": "ITEM1",
-      "url": "https://example.com/paper.pdf",
-      "title": "Remote PDF"
+      "url": "https://example.com/paper.pdf"
     },
     "result": {
       "key": "ATT3",
