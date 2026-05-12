@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "name": "export bibtex with --collection",
-  "command": ["export", "bibtex", "--collection", "数字经济"],
+  "command": ["export", "--format", "bibtex", "--collection", "数字经济"],
   "rpc": {
     "calls": [
       {

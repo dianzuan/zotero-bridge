@@ -369,10 +369,7 @@ enum Command {
         command: TagsCommand,
     },
     /// Export items as BibTeX, RIS, CSL-JSON, or formatted bibliography.
-    Export {
-        #[command(subcommand)]
-        command: ExportCommand,
-    },
+    Export(ExportArgs),
     /// List, create, and delete PDF annotations.
     Annotations {
         #[command(subcommand)]
@@ -844,52 +841,24 @@ enum TagsCommand {
     },
 }
 
-#[derive(Debug, Subcommand)]
-enum ExportCommand {
-    /// Print BibTeX for the given item keys.
-    Bibtex {
-        keys: Vec<String>,
-        /// Export all items from this collection (name or key).
-        #[arg(long)]
-        collection: Option<String>,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
-    /// Print RIS for the given item keys.
-    Ris {
-        keys: Vec<String>,
-        /// Export all items from this collection (name or key).
-        #[arg(long)]
-        collection: Option<String>,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
-    /// Print CSL-JSON for the given item keys.
-    #[command(name = "csl-json")]
-    CslJson {
-        keys: Vec<String>,
-        /// Export all items from this collection (name or key).
-        #[arg(long)]
-        collection: Option<String>,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
-    /// Print a formatted bibliography.
-    Bibliography {
-        keys: Vec<String>,
-        /// Export all items from this collection (name or key).
-        #[arg(long)]
-        collection: Option<String>,
-        #[arg(
-            long,
-            default_value = "http://www.zotero.org/styles/gb-t-7714-2015-numeric"
-        )]
-        style: String,
-        #[arg(long)]
-        html: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
+#[derive(Debug, clap::Args)]
+struct ExportArgs {
+    /// Item keys to export.
+    keys: Vec<String>,
+    /// Output format: bibtex, ris, csl-json, bibliography.
+    #[arg(long, default_value = "bibtex")]
+    format: String,
+    /// Export all items from this collection (name or key).
+    #[arg(long)]
+    collection: Option<String>,
+    /// Citation style URL (only for bibliography format).
+    #[arg(long, default_value = "http://www.zotero.org/styles/gb-t-7714-2015-numeric")]
+    style: String,
+    /// Output HTML instead of plain text (only for bibliography format).
+    #[arg(long)]
+    html: bool,
+    #[arg(long, default_value = DEFAULT_RPC_URL)]
+    url: String,
 }
 
 #[derive(Debug, Subcommand)]
@@ -1318,12 +1287,7 @@ fn command_url(command: &Command) -> String {
             | TagsCommand::Add { url, .. }
             | TagsCommand::Remove { url, .. } => url.clone(),
         },
-        Command::Export { command } => match command {
-            ExportCommand::Bibtex { url, .. }
-            | ExportCommand::Ris { url, .. }
-            | ExportCommand::CslJson { url, .. }
-            | ExportCommand::Bibliography { url, .. } => url.clone(),
-        },
+        Command::Export(ref args) => args.url.clone(),
         Command::Annotations { command } => match command {
             AnnotationsCommand::List { url, .. }
             | AnnotationsCommand::Create { url, .. }
@@ -2441,8 +2405,8 @@ fn search_collection_tree<'a>(nodes: &'a [Value], collection: &str) -> Option<&'
 }
 
 fn run_command(command: Command, client: &mut impl RpcCaller) -> Result<String, String> {
-    if let Command::Export { command } = command {
-        return run_export_command(command, client);
+    if let Command::Export(args) = command {
+        return run_export(args, client);
     }
 
     let (value, style) = match command {
@@ -2500,7 +2464,7 @@ fn run_command(command: Command, client: &mut impl RpcCaller) -> Result<String, 
         Command::Rag { command } => {
             return run_rag_command(command, client);
         }
-        Command::Export { .. } => unreachable!("export commands return raw output above"),
+        Command::Export(_) => unreachable!("export commands return raw output above"),
         Command::FindPdfs {
             collection, limit, ..
         } => run_find_pdfs_command(client, collection, limit)?,
@@ -4687,27 +4651,12 @@ fn resolve_export_keys(
     Ok(keys)
 }
 
-fn run_export_command(
-    command: ExportCommand,
-    client: &mut impl RpcCaller,
-) -> Result<String, String> {
-    match command {
-        ExportCommand::Bibtex {
-            keys, collection, ..
-        } => {
-            let keys = resolve_export_keys(client, keys, collection)?;
-            run_export_content_command(client, "export.bibtex", keys)
-        }
-        ExportCommand::Ris {
-            keys, collection, ..
-        } => {
-            let keys = resolve_export_keys(client, keys, collection)?;
-            run_export_content_command(client, "export.ris", keys)
-        }
-        ExportCommand::CslJson {
-            keys, collection, ..
-        } => {
-            let keys = resolve_export_keys(client, keys, collection)?;
+fn run_export(args: ExportArgs, client: &mut impl RpcCaller) -> Result<String, String> {
+    let keys = resolve_export_keys(client, args.keys, args.collection)?;
+    match args.format.as_str() {
+        "bibtex" => run_export_content_command(client, "export.bibtex", keys),
+        "ris" => run_export_content_command(client, "export.ris", keys),
+        "csl-json" => {
             let response =
                 client.call("export.cslJson", Some(serde_json::json!({"keys": keys})))?;
             if let Some(content) = response.get("content") {
@@ -4716,20 +4665,13 @@ fn run_export_command(
                 format_json(&response, JsonStyle::PythonCompact)
             }
         }
-        ExportCommand::Bibliography {
-            keys,
-            collection,
-            style,
-            html,
-            ..
-        } => {
-            let keys = resolve_export_keys(client, keys, collection)?;
+        "bibliography" => {
             let response = client.call(
                 "export.bibliography",
-                Some(serde_json::json!({"keys": keys, "style": style})),
+                Some(serde_json::json!({"keys": keys, "style": args.style})),
             )?;
             if let Some(object) = response.as_object() {
-                let field = if html { "html" } else { "text" };
+                let field = if args.html { "html" } else { "text" };
                 if object.contains_key("html") || object.contains_key("text") {
                     return raw_value_output(
                         object.get(field).unwrap_or(&Value::String(String::new())),
@@ -4738,6 +4680,9 @@ fn run_export_command(
             }
             format_json(&response, JsonStyle::PythonCompact)
         }
+        other => Err(format!(
+            "INVALID_ARGS: unknown format {other:?}, expected bibtex/ris/csl-json/bibliography"
+        )),
     }
 }
 

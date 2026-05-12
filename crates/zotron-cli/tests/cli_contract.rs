@@ -1619,8 +1619,11 @@ fn export_csl_json_prints_valid_json_content() {
         "count": 1
     }));
 
-    let out = run_with_client(["zotron", "export", "csl-json", "ITEM1"], &mut client)
-        .expect("csl-json export should succeed");
+    let out = run_with_client(
+        ["zotron", "export", "--format", "csl-json", "ITEM1"],
+        &mut client,
+    )
+    .expect("csl-json export should succeed");
     let payload: Value = serde_json::from_str(&out).expect("stdout must be valid JSON");
 
     assert_eq!(payload, json!([{"id": "ITEM1", "title": "Paper"}]));

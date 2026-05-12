@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "name": "export bibtex with positional keys and --collection combined",
-  "command": ["export", "bibtex", "ITEM1", "--collection", "数字经济"],
+  "command": ["export", "--format", "bibtex", "ITEM1", "--collection", "数字经济"],
   "rpc": {
     "calls": [
       {
