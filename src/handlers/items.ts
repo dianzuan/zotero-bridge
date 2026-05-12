@@ -341,9 +341,29 @@ export const itemsHandlers = {
     }
     const items = await resolveItems(params.keys);
     const master = items[0];
+
+    const mergeKeySet = new Set(items.map((i: any) => i.key));
+    const externalRelatedKeys = new Set<string>();
+    for (const item of items) {
+      for (const rk of (item.relatedItems || [])) {
+        if (!mergeKeySet.has(rk)) externalRelatedKeys.add(rk);
+      }
+    }
+
     for (let i = 1; i < items.length; i++) {
       await Zotero.Items.merge(master, [items[i]]);
     }
+
+    for (const rk of externalRelatedKeys) {
+      const related = await Zotero.Items.getByLibraryAndKeyAsync(master.libraryID, rk);
+      if (related) {
+        master.addRelatedItem(related);
+        related.addRelatedItem(master);
+        await related.saveTx();
+      }
+    }
+    if (externalRelatedKeys.size > 0) await master.saveTx();
+
     return serializeItem(master);
   },
 
