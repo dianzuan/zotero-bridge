@@ -822,34 +822,21 @@ enum TagsCommand {
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
-    /// Add one or more tags to an item.
+    /// Add tags to one or more items.
     Add {
-        key: String,
-        #[arg(long = "tag", required = true)]
-        tags: Vec<String>,
-        #[arg(long)]
-        dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
-    /// Remove one or more tags from an item.
-    Remove {
-        key: String,
-        #[arg(long = "tag", required = true)]
-        tags: Vec<String>,
-        #[arg(long)]
-        dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
-    /// Batch add/remove tags across multiple items.
-    #[command(name = "batch-update")]
-    BatchUpdate {
         keys: Vec<String>,
-        #[arg(long = "add")]
-        add_tags: Vec<String>,
-        #[arg(long = "remove")]
-        remove_tags: Vec<String>,
+        #[arg(long = "tag", required = true)]
+        tags: Vec<String>,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Remove tags from one or more items.
+    Remove {
+        keys: Vec<String>,
+        #[arg(long = "tag", required = true)]
+        tags: Vec<String>,
         #[arg(long)]
         dry_run: bool,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
@@ -1340,8 +1327,7 @@ fn command_url(command: &Command) -> String {
             | TagsCommand::Rename { url, .. }
             | TagsCommand::Delete { url, .. }
             | TagsCommand::Add { url, .. }
-            | TagsCommand::Remove { url, .. }
-            | TagsCommand::BatchUpdate { url, .. } => url.clone(),
+            | TagsCommand::Remove { url, .. } => url.clone(),
         },
         Command::Export { command } => match command {
             ExportCommand::Bibtex { url, .. }
@@ -4131,43 +4117,42 @@ fn run_tags_command(
             dry_run,
         )?,
         TagsCommand::Add {
-            key, tags, dry_run, ..
-        } => run_tag_mutation(
-            client,
-            "tags.add",
-            serde_json::json!({"key": key, "tags": tags}),
-            dry_run,
-        )?,
-        TagsCommand::Remove {
-            key, tags, dry_run, ..
-        } => run_tag_mutation(
-            client,
-            "tags.remove",
-            serde_json::json!({"key": key, "tags": tags}),
-            dry_run,
-        )?,
-        TagsCommand::BatchUpdate {
-            keys,
-            add_tags,
-            remove_tags,
-            dry_run,
-            ..
+            keys, tags, dry_run, ..
         } => {
-            if add_tags.is_empty() && remove_tags.is_empty() {
-                return Err(
-                    "INVALID_ARGS: at least one of --add or --remove is required".to_string(),
-                );
+            if keys.len() == 1 {
+                run_tag_mutation(
+                    client,
+                    "tags.add",
+                    serde_json::json!({"key": keys[0], "tags": tags}),
+                    dry_run,
+                )?
+            } else {
+                run_tag_mutation(
+                    client,
+                    "tags.batchUpdate",
+                    serde_json::json!({"keys": keys, "add": tags}),
+                    dry_run,
+                )?
             }
-            let mut params = serde_json::json!({"keys": keys});
-            if let Some(map) = params.as_object_mut() {
-                if !add_tags.is_empty() {
-                    map.insert("add".to_string(), serde_json::json!(add_tags));
-                }
-                if !remove_tags.is_empty() {
-                    map.insert("remove".to_string(), serde_json::json!(remove_tags));
-                }
+        }
+        TagsCommand::Remove {
+            keys, tags, dry_run, ..
+        } => {
+            if keys.len() == 1 {
+                run_tag_mutation(
+                    client,
+                    "tags.remove",
+                    serde_json::json!({"key": keys[0], "tags": tags}),
+                    dry_run,
+                )?
+            } else {
+                run_tag_mutation(
+                    client,
+                    "tags.batchUpdate",
+                    serde_json::json!({"keys": keys, "remove": tags}),
+                    dry_run,
+                )?
             }
-            run_tag_mutation(client, "tags.batchUpdate", params, dry_run)?
         }
     };
     Ok((value, style))
