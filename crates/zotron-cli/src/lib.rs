@@ -606,43 +606,18 @@ enum SearchManagementCommand {
 
 #[derive(Debug, Subcommand)]
 enum ItemsCommand {
-    /// Add a paper by DOI using Zotero's search translators.
-    #[command(name = "add-by-doi")]
-    AddByDoi {
-        doi: String,
+    /// Add an item by DOI, ISBN, URL, or local file.
+    Add {
         #[arg(long)]
-        collection: Option<String>,
+        doi: Option<String>,
         #[arg(long)]
-        dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
-    /// Add a book by ISBN.
-    #[command(name = "add-by-isbn")]
-    AddByIsbn {
-        isbn: String,
+        isbn: Option<String>,
+        /// Web page URL to add from.
+        #[arg(long = "from-url")]
+        from_url: Option<String>,
+        /// Local file path to add from.
         #[arg(long)]
-        collection: Option<String>,
-        #[arg(long)]
-        dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
-    /// Add a web resource via Zotero's web translator.
-    #[command(name = "add-by-url")]
-    AddByUrl {
-        page_url: String,
-        #[arg(long)]
-        collection: Option<String>,
-        #[arg(long)]
-        dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
-    /// Add an item from a local file.
-    #[command(name = "add-from-file")]
-    AddFromFile {
-        path: String,
+        file: Option<String>,
         #[arg(long)]
         collection: Option<String>,
         #[arg(long)]
@@ -1323,10 +1298,7 @@ fn command_url(command: &Command) -> String {
             None => args.url.clone(),
         },
         Command::Items { command } => match command {
-            ItemsCommand::AddByDoi { url, .. }
-            | ItemsCommand::AddByIsbn { url, .. }
-            | ItemsCommand::AddByUrl { url, .. }
-            | ItemsCommand::AddFromFile { url, .. }
+            ItemsCommand::Add { url, .. }
             | ItemsCommand::Create { url, .. }
             | ItemsCommand::Update { url, .. }
             | ItemsCommand::Delete { url, .. }
@@ -3840,47 +3812,28 @@ fn run_items_command(
     client: &mut impl RpcCaller,
 ) -> Result<(Value, JsonStyle), String> {
     let (value, style) = match command {
-        ItemsCommand::AddByDoi {
+        ItemsCommand::Add {
             doi,
-            collection,
-            dry_run,
-            ..
-        } => run_add_identifier_command(client, "items.addByDOI", "doi", doi, collection, dry_run)?,
-        ItemsCommand::AddByIsbn {
             isbn,
-            collection,
-            dry_run,
-            ..
-        } => run_add_identifier_command(
-            client,
-            "items.addByISBN",
-            "isbn",
-            isbn,
-            collection,
-            dry_run,
-        )?,
-        ItemsCommand::AddByUrl {
-            page_url,
-            collection,
-            dry_run,
-            ..
-        } => run_add_identifier_command(
-            client,
-            "items.addByURL",
-            "url",
-            page_url,
-            collection,
-            dry_run,
-        )?,
-        ItemsCommand::AddFromFile {
-            path,
+            from_url,
+            file,
             collection,
             dry_run,
             ..
         } => {
-            let mut params = serde_json::json!({"path": zotero_path(&path)});
-            maybe_insert_collection(client, &mut params, collection)?;
-            run_mutation_command(client, "items.addFromFile", params, dry_run)?
+            if let Some(doi) = doi {
+                run_add_identifier_command(client, "items.addByDOI", "doi", doi, collection, dry_run)?
+            } else if let Some(isbn) = isbn {
+                run_add_identifier_command(client, "items.addByISBN", "isbn", isbn, collection, dry_run)?
+            } else if let Some(from_url) = from_url {
+                run_add_identifier_command(client, "items.addByURL", "url", from_url, collection, dry_run)?
+            } else if let Some(file) = file {
+                let mut params = serde_json::json!({"path": zotero_path(&file)});
+                maybe_insert_collection(client, &mut params, collection)?;
+                run_mutation_command(client, "items.addFromFile", params, dry_run)?
+            } else {
+                return Err("INVALID_ARGS: provide one of --doi, --isbn, --from-url, or --file".into());
+            }
         }
         ItemsCommand::Create {
             item_type,

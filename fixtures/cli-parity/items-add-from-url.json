@@ -1,9 +1,10 @@
 {
   "schemaVersion": 1,
-  "name": "items add by url",
+  "name": "items add --from-url",
   "command": [
     "items",
-    "add-by-url",
+    "add",
+    "--from-url",
     "https://arxiv.org/abs/1706.03762"
   ],
   "rpc": {

@@ -1,9 +1,10 @@
 {
   "schemaVersion": 1,
-  "name": "items add by doi",
+  "name": "items add --doi",
   "command": [
     "items",
-    "add-by-doi",
+    "add",
+    "--doi",
     "10.1038/nature12373"
   ],
   "rpc": {
