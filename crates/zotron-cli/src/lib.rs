@@ -13,13 +13,16 @@ use clap::{error::ErrorKind, Parser, Subcommand};
 use serde_json::Value;
 use zotron_rpc::{StdProviderCommandRunner, UreqProviderHttpTransport, ZoteroRpc};
 use zotron_types::{
-    build_ocr_provider_request, builtin_ocr_provider_specs, execute_embedding_provider_request,
+    bm25_score_chunks, build_embedding_provider_request, build_ocr_provider_request,
+    builtin_ocr_provider_specs, cosine_similarity, execute_embedding_provider_request,
     is_zotron_evidence_artifact, machine_artifact_exists_for_item,
     machine_artifact_exists_in_sidecar, machine_artifact_store_root,
-    ocr_provider_spec as raw_ocr_provider_spec, parse_ocr_provider_response,
-    read_machine_artifact_sidecar, write_machine_artifact_sidecar, ArtifactStorePlatform,
-    EmbeddingRequestInput, MachineArtifactKind, OcrRequestInput, ProviderCommandRunner,
-    ProviderHttpInvocation, ProviderHttpTransport, DEFAULT_RPC_URL,
+    ocr_provider_spec as raw_ocr_provider_spec, parse_embedding_provider_response,
+    parse_ocr_provider_response, read_machine_artifact_sidecar, rrf_merge,
+    write_machine_artifact_sidecar, ArtifactStorePlatform, EmbeddingChunkInput,
+    EmbeddingRequestInput, EmbeddingVector, MachineArtifactKind, OcrRequestInput,
+    ProviderCommandRunner, ProviderHttpInvocation, ProviderHttpTransport, StructureChunk,
+    DEFAULT_RPC_URL,
 };
 
 pub trait RpcCaller {
@@ -2582,21 +2585,189 @@ fn read_json_input<T: serde::de::DeserializeOwned>(path: &str) -> Result<T, Stri
         .map_err(|err| format!("INVALID_JSON: Could not parse JSON: {err}"))
 }
 
-fn run_rag_search_command(
+fn fetch_embedding_settings(
     client: &mut impl RpcCaller,
-    options: RagSearchOptions,
+) -> Result<(String, String, String, String), String> {
+    let settings = client.call("settings.getAll", None)?;
+    let provider = settings
+        .get("embedding.provider")
+        .and_then(Value::as_str)
+        .unwrap_or("ollama")
+        .to_string();
+    let model = settings
+        .get("embedding.model")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let api_url = settings
+        .get("embedding.apiUrl")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let api_key = settings
+        .get("embedding.apiKey")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    Ok((provider, model, api_url, api_key))
+}
+
+fn fetch_retrieval_mode(client: &mut impl RpcCaller) -> String {
+    client
+        .call(
+            "settings.get",
+            Some(serde_json::json!({"key": "rag.retrievalMode"})),
+        )
+        .ok()
+        .and_then(|v| {
+            v.get("rag.retrievalMode")
+                .and_then(Value::as_str)
+                .map(String::from)
+        })
+        .unwrap_or_else(|| "hybrid".to_string())
+}
+
+fn resolve_sidecar_paths(
+    client: &mut impl RpcCaller,
+    collection: Option<&str>,
+    keys: &[String],
+) -> Result<Vec<(String, String, PathBuf)>, String> {
+    let items = if !keys.is_empty() {
+        let mut items = Vec::new();
+        for key in keys {
+            let item = client.call("items.get", Some(serde_json::json!({"key": key})))?;
+            items.push(item);
+        }
+        items
+    } else if let Some(col) = collection {
+        let col_key = resolve_collection(client, col)?;
+        let response = client.call(
+            "collections.getItems",
+            Some(serde_json::json!({"key": col_key})),
+        )?;
+        collection_items(&response)
+    } else {
+        return Err("INVALID_ARGS: --collection or --key required".into());
+    };
+
+    let mut results = Vec::new();
+    for item in &items {
+        let item_key = item.get("key").and_then(Value::as_str).unwrap_or_default();
+        let attachments = client.call(
+            "attachments.list",
+            Some(serde_json::json!({"parentKey": item_key})),
+        )?;
+        let att_list = attachments
+            .get("items")
+            .and_then(Value::as_array)
+            .or_else(|| attachments.as_array())
+            .cloned()
+            .unwrap_or_default();
+        for att in &att_list {
+            let content_type = att
+                .get("contentType")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            if content_type != "application/pdf" {
+                continue;
+            }
+            let att_key = att.get("key").and_then(Value::as_str).unwrap_or_default();
+            let path = att.get("path").and_then(Value::as_str).unwrap_or_default();
+            if path.is_empty() {
+                continue;
+            }
+            let local_path = local_path_from_zotero_path(path);
+            let pdf_path = PathBuf::from(&local_path);
+            if let Some(parent) = pdf_path.parent() {
+                let sidecar_root = parent.join(".zotron");
+                if sidecar_root.exists() {
+                    results.push((item_key.to_string(), att_key.to_string(), sidecar_root));
+                }
+            }
+        }
+    }
+    Ok(results)
+}
+
+fn load_sidecar_chunks(sidecar_root: &Path) -> Vec<StructureChunk> {
+    let chunks_path = sidecar_root.join("chunks").join("chunks.v1.jsonl");
+    let Ok(content) = fs::read_to_string(&chunks_path) else {
+        return Vec::new();
+    };
+    content
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .filter_map(|line| serde_json::from_str::<StructureChunk>(line).ok())
+        .collect()
+}
+
+fn load_sidecar_vectors(sidecar_root: &Path) -> Vec<EmbeddingVector> {
+    let vectors_path = sidecar_root.join("embeddings").join("vectors.v1.jsonl");
+    let Ok(content) = fs::read_to_string(&vectors_path) else {
+        return Vec::new();
+    };
+    content
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .filter_map(|line| serde_json::from_str::<EmbeddingVector>(line).ok())
+        .collect()
+}
+
+fn embed_query_text(
+    query: &str,
+    provider: &str,
+    model: &str,
+    api_url: &str,
+    api_key: &str,
+) -> Result<Vec<f64>, String> {
+    let input = EmbeddingRequestInput {
+        item_key: "query".to_string(),
+        chunks: vec![EmbeddingChunkInput {
+            chunk_key: "q0".to_string(),
+            text: query.to_string(),
+        }],
+        model: if model.is_empty() {
+            None
+        } else {
+            Some(model.to_string())
+        },
+        url: if api_url.is_empty() {
+            None
+        } else {
+            Some(api_url.to_string())
+        },
+        input_type: Some("query".to_string()),
+    };
+    let request = build_embedding_provider_request(provider, &input)?;
+    let url = request
+        .url
+        .as_deref()
+        .ok_or("no embedding URL configured")?;
+    let mut http = ureq::post(url).set("Content-Type", "application/json");
+    if let Some(auth) = request.auth_header {
+        if !api_key.is_empty() {
+            http = http.set(auth, &format!("Bearer {api_key}"));
+        }
+    }
+    let resp = http
+        .send_json(&request.body)
+        .map_err(|e| format!("embedding request failed: {e}"))?;
+    let payload: Value = resp
+        .into_json()
+        .map_err(|e| format!("embedding response parse: {e}"))?;
+    let vectors =
+        parse_embedding_provider_response(provider, &payload, "query", &input.chunks)?;
+    vectors
+        .into_iter()
+        .next()
+        .map(|v| v.vector)
+        .ok_or_else(|| "no embedding vector returned".to_string())
+}
+
+fn run_rag_search_xpi_fallback(
+    client: &mut impl RpcCaller,
+    options: &RagSearchOptions,
 ) -> Result<String, String> {
-    if !options.zotero {
-        return Err(
-            "zotron rag hits currently supports only the fixture-covered --zotero backend in Rust"
-                .to_string(),
-        );
-    }
-    if options.collection.is_none() && options.keys.is_empty() {
-        return Err(
-            "INVALID_ARGS: --collection or --key is required when --zotero is used".to_string(),
-        );
-    }
     let mut params = serde_json::json!({
         "query": options.query,
         "limit": options.top_k,
@@ -2604,13 +2775,13 @@ fn run_rag_search_command(
         "include_fulltext_spans": options.include_fulltext_spans,
     });
     if let Some(map) = params.as_object_mut() {
-        if let Some(collection) = options.collection {
-            map.insert("collection".to_string(), Value::String(collection));
+        if let Some(col) = &options.collection {
+            map.insert("collection".into(), Value::String(col.clone()));
         }
         if !options.keys.is_empty() {
             map.insert(
-                "keys".to_string(),
-                Value::Array(options.keys.into_iter().map(Value::String).collect()),
+                "keys".into(),
+                Value::Array(options.keys.iter().map(|k| Value::String(k.clone())).collect()),
             );
         }
     }
@@ -2623,19 +2794,218 @@ fn run_rag_search_command(
     if options.output == "jsonl" {
         let mut out = String::new();
         for hit in &hits {
-            out.push_str(&serde_json::to_string(hit).map_err(|err| err.to_string())?);
+            out.push_str(&serde_json::to_string(hit).map_err(|e| e.to_string())?);
             out.push('\n');
         }
         Ok(out)
     } else {
         let total = hits.len() as u64;
-        let value = normalize_list_envelope(
-            serde_json::json!({"items": hits, "total": total}),
-            "items",
-            Some(options.top_k),
-            0,
-        );
-        format_json(&value, JsonStyle::Pretty)
+        format_json(
+            &normalize_list_envelope(
+                serde_json::json!({"items": hits, "total": total}),
+                "items",
+                Some(options.top_k),
+                0,
+            ),
+            JsonStyle::Pretty,
+        )
+    }
+}
+
+fn run_rag_search_command(
+    client: &mut impl RpcCaller,
+    options: RagSearchOptions,
+) -> Result<String, String> {
+    // When --zotero is explicitly passed, use XPI fallback directly (backward compat).
+    if options.zotero {
+        if options.collection.is_none() && options.keys.is_empty() {
+            return Err(
+                "INVALID_ARGS: --collection or --key is required".to_string(),
+            );
+        }
+        return run_rag_search_xpi_fallback(client, &options);
+    }
+
+    // Hybrid path: require scope.
+    if options.collection.is_none() && options.keys.is_empty() {
+        return Err("INVALID_ARGS: --collection or --key required".to_string());
+    }
+
+    // Step 1: resolve sidecar paths from collection/keys.
+    let sidecars = resolve_sidecar_paths(
+        client,
+        options.collection.as_deref(),
+        &options.keys,
+    );
+
+    // If sidecar resolution fails or returns empty, fall back to XPI.
+    let sidecars = match sidecars {
+        Ok(ref s) if !s.is_empty() => s,
+        _ => return run_rag_search_xpi_fallback(client, &options),
+    };
+
+    // Step 2: load all chunks and vectors from sidecars.
+    let mut all_chunks: Vec<StructureChunk> = Vec::new();
+    let mut all_vectors: Vec<EmbeddingVector> = Vec::new();
+    for (_item_key, _att_key, sidecar_root) in sidecars {
+        all_chunks.extend(load_sidecar_chunks(sidecar_root));
+        all_vectors.extend(load_sidecar_vectors(sidecar_root));
+    }
+
+    if all_chunks.is_empty() {
+        return run_rag_search_xpi_fallback(client, &options);
+    }
+
+    // Step 3: determine retrieval mode.
+    let mode = fetch_retrieval_mode(client);
+
+    // Step 4: BM25 scoring (unless mode is "dense").
+    let bm25_ranked = if mode != "dense" {
+        bm25_score_chunks(&all_chunks, &options.query, 1.2, 0.75)
+    } else {
+        Vec::new()
+    };
+
+    // Step 5: dense vector scoring (unless mode is "lexical" or no vectors).
+    let dense_ranked = if mode != "lexical" && !all_vectors.is_empty() {
+        match fetch_embedding_settings(client) {
+            Ok((provider, model, api_url, api_key)) => {
+                match embed_query_text(&options.query, &provider, &model, &api_url, &api_key) {
+                    Ok(query_vec) => {
+                        // Build chunk_key → vector lookup.
+                        let vec_map: std::collections::HashMap<&str, &[f64]> = all_vectors
+                            .iter()
+                            .map(|v| (v.chunk_key.as_str(), v.vector.as_slice()))
+                            .collect();
+                        let mut scores: Vec<(usize, f64)> = all_chunks
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(i, chunk)| {
+                                vec_map.get(chunk.chunk_key.as_str()).map(|stored| {
+                                    (i, cosine_similarity(&query_vec, stored))
+                                })
+                            })
+                            .filter(|(_, s)| *s > 0.0)
+                            .collect();
+                        scores.sort_by(|a, b| {
+                            b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+                        });
+                        scores
+                    }
+                    Err(_) => Vec::new(),
+                }
+            }
+            Err(_) => Vec::new(),
+        }
+    } else {
+        Vec::new()
+    };
+
+    // Step 6: merge results.
+    let limit = options.top_k as usize;
+    let ranked = if !bm25_ranked.is_empty() && !dense_ranked.is_empty() {
+        rrf_merge(&bm25_ranked, &dense_ranked, 60.0, limit)
+    } else if !bm25_ranked.is_empty() {
+        bm25_ranked.into_iter().take(limit).collect()
+    } else {
+        dense_ranked.into_iter().take(limit).collect()
+    };
+
+    // Step 7: apply per-item span limit.
+    let mut per_item_count: std::collections::HashMap<&str, u64> =
+        std::collections::HashMap::new();
+    let mut selected: Vec<(usize, f64)> = Vec::new();
+    for (idx, score) in &ranked {
+        let item_key = all_chunks[*idx].item_key.as_str();
+        let count = per_item_count.entry(item_key).or_insert(0);
+        if *count < options.top_spans_per_item {
+            *count += 1;
+            selected.push((*idx, *score));
+        }
+    }
+
+    // Step 8: enrich hits with item metadata.
+    let mut meta_cache: std::collections::HashMap<String, Value> =
+        std::collections::HashMap::new();
+    let mut hits: Vec<Value> = Vec::new();
+    for (idx, score) in &selected {
+        let chunk = &all_chunks[*idx];
+        let meta = if let Some(cached) = meta_cache.get(&chunk.item_key) {
+            cached.clone()
+        } else {
+            let fetched = client
+                .call(
+                    "items.get",
+                    Some(serde_json::json!({"key": chunk.item_key})),
+                )
+                .unwrap_or(Value::Null);
+            meta_cache.insert(chunk.item_key.clone(), fetched.clone());
+            fetched
+        };
+        let title = meta
+            .get("title")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let authors = meta
+            .get("creators")
+            .and_then(Value::as_array)
+            .map(|creators| {
+                creators
+                    .iter()
+                    .filter_map(|c| {
+                        let last = c.get("lastName").and_then(Value::as_str).unwrap_or("");
+                        let first = c.get("firstName").and_then(Value::as_str).unwrap_or("");
+                        if last.is_empty() && first.is_empty() {
+                            None
+                        } else {
+                            Some(format!("{last}{first}"))
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+            .unwrap_or_default();
+        let year = meta.get("date").and_then(Value::as_str).unwrap_or("");
+        let mut hit = serde_json::json!({
+            "item_key": chunk.item_key,
+            "chunk_key": chunk.chunk_key,
+            "title": title,
+            "authors": authors,
+            "year": year,
+            "text": chunk.text,
+            "page_range": chunk.page_range,
+            "section_path": chunk.section_path,
+            "score": score,
+        });
+        if options.include_fulltext_spans {
+            hit.as_object_mut().unwrap().insert(
+                "attachment_key".to_string(),
+                Value::String(chunk.attachment_key.clone()),
+            );
+        }
+        hits.push(hit);
+    }
+
+    // Step 9: format output.
+    if options.output == "jsonl" {
+        let mut out = String::new();
+        for hit in &hits {
+            out.push_str(&serde_json::to_string(hit).map_err(|e| e.to_string())?);
+            out.push('\n');
+        }
+        Ok(out)
+    } else {
+        let total = hits.len() as u64;
+        format_json(
+            &normalize_list_envelope(
+                serde_json::json!({"items": hits, "total": total}),
+                "items",
+                Some(options.top_k),
+                0,
+            ),
+            JsonStyle::Pretty,
+        )
     }
 }
 

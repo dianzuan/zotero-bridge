@@ -1552,7 +1552,7 @@ fn rag_hits_missing_collection_returns_coded_error_instead_of_raw_json() {
 
     assert_eq!(
         err,
-        "INVALID_ARGS: --collection or --key is required when --zotero is used"
+        "INVALID_ARGS: --collection or --key is required"
     );
     assert!(
         !err.trim_start().starts_with('{'),
