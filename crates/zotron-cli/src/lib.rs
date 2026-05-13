@@ -401,8 +401,25 @@ enum Command {
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
+    /// Discover and manage source plugins.
+    Sources {
+        #[command(subcommand)]
+        command: SourcesCommand,
+    },
     #[command(external_subcommand)]
     External(Vec<OsString>),
+}
+
+#[derive(Debug, Subcommand)]
+enum SourcesCommand {
+    /// List all discovered source plugins on PATH.
+    List,
+    /// Sync plugin skills into the Claude Code plugin directory.
+    Sync {
+        /// Path to zotron's claude-plugin/skills/ directory.
+        #[arg(long, default_value = "")]
+        skills_dir: String,
+    },
 }
 
 struct RagSearchOptions {
@@ -1276,6 +1293,7 @@ fn command_url(command: &Command) -> String {
             | AnnotationsCommand::Create { url, .. }
             | AnnotationsCommand::Delete { url, .. } => url.clone(),
         },
+        Command::Sources { .. } => DEFAULT_RPC_URL.to_string(),
         Command::External(_) => DEFAULT_RPC_URL.to_string(),
     }
 }
@@ -1326,6 +1344,237 @@ fn which(binary_name: &str) -> Option<PathBuf> {
             }
         })
     })
+}
+
+fn discover_plugins() -> Vec<Value> {
+    let paths = match env::var_os("PATH") {
+        Some(p) => p,
+        None => return vec![],
+    };
+
+    // Collect unique zotron-* binaries from PATH.
+    let mut seen = std::collections::HashSet::new();
+    let mut binaries: Vec<(String, PathBuf)> = Vec::new();
+
+    for dir in env::split_paths(&paths) {
+        let entries = match fs::read_dir(&dir) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name_str = match name.to_str() {
+                Some(s) => s.to_string(),
+                None => continue,
+            };
+            if name_str.starts_with("zotron-") && !seen.contains(&name_str) {
+                let path = entry.path();
+                if path.is_file() {
+                    seen.insert(name_str.clone());
+                    binaries.push((name_str, path));
+                }
+            }
+        }
+    }
+
+    binaries
+        .into_iter()
+        .map(|(name, path)| {
+            let plugin_name = name.strip_prefix("zotron-").unwrap_or(&name);
+
+            // Call `zotron-<name> manifest` with a 5-second timeout.
+            let result = thread::scope(|s| {
+                let handle = s.spawn(|| {
+                    ProcessCommand::new(&path)
+                        .arg("manifest")
+                        .stdout(std::process::Stdio::piped())
+                        .stderr(std::process::Stdio::piped())
+                        .output()
+                });
+                // Wait up to 5 seconds.
+                let start = Instant::now();
+                loop {
+                    if handle.is_finished() {
+                        return handle.join().ok().and_then(|r| r.ok());
+                    }
+                    if start.elapsed() > Duration::from_secs(5) {
+                        return None;
+                    }
+                    thread::sleep(Duration::from_millis(50));
+                }
+            });
+
+            match result {
+                Some(output) if output.status.success() => {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    match serde_json::from_str::<Value>(stdout.trim()) {
+                        Ok(mut manifest) => {
+                            // Ensure binary path is included.
+                            if let Some(obj) = manifest.as_object_mut() {
+                                obj.entry("binary".to_string())
+                                    .or_insert_with(|| Value::String(path.display().to_string()));
+                                obj.entry("name".to_string())
+                                    .or_insert_with(|| Value::String(plugin_name.to_string()));
+                            }
+                            manifest
+                        }
+                        Err(err) => serde_json::json!({
+                            "name": plugin_name,
+                            "binary": path.display().to_string(),
+                            "error": format!("invalid manifest JSON: {err}"),
+                        }),
+                    }
+                }
+                Some(output) => {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    serde_json::json!({
+                        "name": plugin_name,
+                        "binary": path.display().to_string(),
+                        "error": format!("manifest command failed: {}", stderr.trim()),
+                    })
+                }
+                None => serde_json::json!({
+                    "name": plugin_name,
+                    "binary": path.display().to_string(),
+                    "error": "manifest command timed out (5s)",
+                }),
+            }
+        })
+        .collect()
+}
+
+fn auto_discover_skills_dir() -> Option<PathBuf> {
+    // Walk up from the current executable to find claude-plugin/skills/.
+    let exe = env::current_exe().ok()?;
+    let mut dir = exe.parent()?;
+    for _ in 0..10 {
+        let candidate = dir.join("claude-plugin").join("skills");
+        if candidate.is_dir() {
+            return Some(candidate);
+        }
+        dir = dir.parent()?;
+    }
+    None
+}
+
+fn run_sources_sync(skills_dir_arg: &str) -> Result<String, String> {
+    let skills_dir = if skills_dir_arg.is_empty() {
+        auto_discover_skills_dir().ok_or_else(|| {
+            "could not auto-discover claude-plugin/skills/ directory. \
+             Pass --skills-dir explicitly."
+                .to_string()
+        })?
+    } else {
+        PathBuf::from(skills_dir_arg)
+    };
+
+    if !skills_dir.is_dir() {
+        return Err(format!(
+            "skills directory does not exist: {}",
+            skills_dir.display()
+        ));
+    }
+
+    let plugins = discover_plugins();
+    let mut linked = 0u64;
+    let mut cleaned = 0u64;
+
+    // Link each plugin's skill_dir into skills_dir.
+    let mut active_link_names = std::collections::HashSet::new();
+    for plugin in &plugins {
+        let name = plugin["name"].as_str().unwrap_or_default();
+        let skill_dir_str = plugin["skill_dir"].as_str().unwrap_or_default();
+        if name.is_empty() || skill_dir_str.is_empty() {
+            continue;
+        }
+        let skill_dir = PathBuf::from(skill_dir_str);
+        if !skill_dir.is_dir() {
+            continue;
+        }
+
+        let link_path = skills_dir.join(name);
+        active_link_names.insert(name.to_string());
+
+        // Remove existing symlink if it points elsewhere.
+        if link_path.symlink_metadata().is_ok() {
+            if let Ok(target) = fs::read_link(&link_path) {
+                if target == skill_dir {
+                    // Already correct.
+                    linked += 1;
+                    continue;
+                }
+            }
+            fs::remove_file(&link_path).map_err(|e| {
+                format!(
+                    "failed to remove existing entry at {}: {e}",
+                    link_path.display()
+                )
+            })?;
+        }
+
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&skill_dir, &link_path).map_err(|e| {
+                format!(
+                    "failed to symlink {} -> {}: {e}",
+                    link_path.display(),
+                    skill_dir.display()
+                )
+            })?;
+            linked += 1;
+        }
+
+        #[cfg(not(unix))]
+        {
+            return Err("sources sync is only supported on Unix systems".to_string());
+        }
+    }
+
+    // Clean up stale symlinks: symlinks in skills_dir that point outside it
+    // and don't match any active plugin.
+    if let Ok(entries) = fs::read_dir(&skills_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            // Only consider symlinks.
+            let meta = match fs::symlink_metadata(&path) {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            if !meta.file_type().is_symlink() {
+                continue;
+            }
+            let entry_name = entry.file_name();
+            let entry_name_str = match entry_name.to_str() {
+                Some(s) => s,
+                None => continue,
+            };
+            // Skip if it's an active plugin link.
+            if active_link_names.contains(entry_name_str) {
+                continue;
+            }
+            // Only remove if it points outside the skills dir (i.e., it's a plugin link).
+            if let Ok(target) = fs::read_link(&path) {
+                let target_abs = if target.is_absolute() {
+                    target
+                } else {
+                    skills_dir.join(&target)
+                };
+                if !target_abs.starts_with(&skills_dir) {
+                    let _ = fs::remove_file(&path);
+                    cleaned += 1;
+                }
+            }
+        }
+    }
+
+    format_json(
+        &serde_json::json!({
+            "ok": true,
+            "linked": linked,
+            "cleaned": cleaned,
+        }),
+        JsonStyle::Pretty,
+    )
 }
 
 fn run_ocr_command(command: OcrCommand, client: &mut impl RpcCaller) -> Result<String, String> {
@@ -2664,6 +2913,18 @@ fn run_command(command: Command, client: &mut impl RpcCaller) -> Result<String, 
         Command::FindPdfs {
             collection, limit, ..
         } => run_find_pdfs_command(client, collection, limit)?,
+        Command::Sources { command } => match command {
+            SourcesCommand::List => {
+                let plugins = discover_plugins();
+                return format_json(
+                    &serde_json::json!({"sources": plugins}),
+                    JsonStyle::Pretty,
+                );
+            }
+            SourcesCommand::Sync { skills_dir } => {
+                return run_sources_sync(&skills_dir);
+            }
+        },
         Command::External(args) => return run_external_command(args),
     };
 
