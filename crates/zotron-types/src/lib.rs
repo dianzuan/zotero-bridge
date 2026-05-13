@@ -204,12 +204,16 @@ pub trait ProviderCommandRunner {
 pub enum EmbeddingRequestStyle {
     OpenAiCompatible,
     Dashscope,
+    Cohere,
+    OllamaLocal,
     Custom,
 }
 
 impl PartialEq<&str> for EmbeddingRequestStyle {
     fn eq(&self, other: &&str) -> bool {
-        self.as_str() == *other || (*self == Self::OpenAiCompatible && *other == "dashscope")
+        self.as_str() == *other
+            || (*self == Self::OpenAiCompatible && *other == "dashscope")
+            || (*self == Self::OllamaLocal && *other == "openai-compatible")
     }
 }
 
@@ -218,6 +222,8 @@ impl EmbeddingRequestStyle {
         match self {
             Self::OpenAiCompatible => "openai-compatible",
             Self::Dashscope => "dashscope",
+            Self::Cohere => "cohere",
+            Self::OllamaLocal => "ollama-local",
             Self::Custom => "custom",
         }
     }
@@ -550,6 +556,90 @@ pub fn builtin_embedding_provider_specs() -> Vec<EmbeddingProviderSpec> {
             document_task: Some("document"),
         },
         EmbeddingProviderSpec {
+            id: "ollama",
+            provider_key: "ollama",
+            request_style: EmbeddingRequestStyle::OllamaLocal,
+            default_url: Some("http://localhost:11434/v1/embeddings"),
+            base_url: Some("http://localhost:11434/v1/embeddings"),
+            default_model: "nomic-embed-text",
+            auth: "none",
+            key_field: "item_key",
+            query_task: None,
+            document_task: None,
+        },
+        EmbeddingProviderSpec {
+            id: "openai",
+            provider_key: "openai",
+            request_style: EmbeddingRequestStyle::OpenAiCompatible,
+            default_url: Some("https://api.openai.com/v1/embeddings"),
+            base_url: Some("https://api.openai.com/v1/embeddings"),
+            default_model: "text-embedding-3-small",
+            auth: "bearer",
+            key_field: "item_key",
+            query_task: None,
+            document_task: None,
+        },
+        EmbeddingProviderSpec {
+            id: "zhipu",
+            provider_key: "zhipu",
+            request_style: EmbeddingRequestStyle::OpenAiCompatible,
+            default_url: Some("https://open.bigmodel.cn/api/paas/v4/embeddings"),
+            base_url: Some("https://open.bigmodel.cn/api/paas/v4/embeddings"),
+            default_model: "embedding-3",
+            auth: "bearer",
+            key_field: "item_key",
+            query_task: None,
+            document_task: None,
+        },
+        EmbeddingProviderSpec {
+            id: "jina",
+            provider_key: "jina",
+            request_style: EmbeddingRequestStyle::OpenAiCompatible,
+            default_url: Some("https://api.jina.ai/v1/embeddings"),
+            base_url: Some("https://api.jina.ai/v1/embeddings"),
+            default_model: "jina-embeddings-v3",
+            auth: "bearer",
+            key_field: "item_key",
+            query_task: Some("retrieval.query"),
+            document_task: Some("retrieval.passage"),
+        },
+        EmbeddingProviderSpec {
+            id: "siliconflow",
+            provider_key: "siliconflow",
+            request_style: EmbeddingRequestStyle::OpenAiCompatible,
+            default_url: Some("https://api.siliconflow.cn/v1/embeddings"),
+            base_url: Some("https://api.siliconflow.cn/v1/embeddings"),
+            default_model: "BAAI/bge-m3",
+            auth: "bearer",
+            key_field: "item_key",
+            query_task: None,
+            document_task: None,
+        },
+        EmbeddingProviderSpec {
+            id: "voyage",
+            provider_key: "voyage",
+            request_style: EmbeddingRequestStyle::OpenAiCompatible,
+            default_url: Some("https://api.voyageai.com/v1/embeddings"),
+            base_url: Some("https://api.voyageai.com/v1/embeddings"),
+            default_model: "voyage-4",
+            auth: "bearer",
+            key_field: "item_key",
+            query_task: Some("query"),
+            document_task: Some("document"),
+        },
+        EmbeddingProviderSpec {
+            id: "cohere",
+            provider_key: "cohere",
+            request_style: EmbeddingRequestStyle::Cohere,
+            default_url: Some("https://api.cohere.com/v2/embed"),
+            base_url: Some("https://api.cohere.com/v2/embed"),
+            default_model: "embed-multilingual-v3.0",
+            auth: "bearer",
+            key_field: "item_key",
+            query_task: Some("search_query"),
+            document_task: Some("search_document"),
+        },
+        EmbeddingProviderSpec {
             id: "custom",
             provider_key: "custom",
             request_style: EmbeddingRequestStyle::Custom,
@@ -633,9 +723,37 @@ pub fn build_embedding_provider_request(
             Value::String(input_type.to_string()),
         );
     }
+    if spec.provider_key == "cohere" {
+        let input_type = input
+            .input_type
+            .as_deref()
+            .filter(|v| !v.trim().is_empty())
+            .unwrap_or("search_document");
+        body.insert(
+            "input_type".to_string(),
+            Value::String(input_type.to_string()),
+        );
+        body.insert(
+            "embedding_types".to_string(),
+            serde_json::json!(["float"]),
+        );
+    }
+    if spec.provider_key == "jina" || spec.provider_key == "voyage" {
+        if let Some(task) = input
+            .input_type
+            .as_deref()
+            .filter(|v| !v.trim().is_empty())
+        {
+            body.insert(
+                "input_type".to_string(),
+                Value::String(task.to_string()),
+            );
+        }
+    }
 
     let style = match spec.provider_key {
         "alibaba" => EmbeddingRequestStyle::Dashscope.as_str(),
+        "cohere" => EmbeddingRequestStyle::Cohere.as_str(),
         "custom" => EmbeddingRequestStyle::OpenAiCompatible.as_str(),
         _ => spec.request_style.as_str(),
     };
@@ -646,7 +764,7 @@ pub fn build_embedding_provider_request(
         key_field: spec.key_field,
         method: Some("POST"),
         url: Some(url),
-        auth_header: Some("Authorization"),
+        auth_header: if spec.auth == "none" { None } else { Some("Authorization") },
         body: Value::Object(body),
     })
 }
@@ -691,6 +809,20 @@ pub fn parse_embedding_provider_response(
                     .get("embedding")
                     .and_then(Value::as_array)
                     .ok_or_else(|| "dashscope embedding item missing embedding".to_string())?;
+                Ok((index, vector_to_f64(vector)?))
+            })
+            .collect::<Result<Vec<_>, String>>()?
+    } else if let Some(float_list) = payload
+        .pointer("/embeddings/float")
+        .and_then(Value::as_array)
+    {
+        float_list
+            .iter()
+            .enumerate()
+            .map(|(index, vec_val)| {
+                let vector = vec_val
+                    .as_array()
+                    .ok_or_else(|| "cohere embedding item not an array".to_string())?;
                 Ok((index, vector_to_f64(vector)?))
             })
             .collect::<Result<Vec<_>, String>>()?
