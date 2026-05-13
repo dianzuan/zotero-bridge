@@ -50,9 +50,9 @@ arXiv
 Data flow for import:
 
 ```text
-zotron-scholar fetch --doi 10.1038/xxx   (stdout: Paper JSON)
+zotron scholar fetch --doi 10.1038/xxx   (stdout: Paper JSON)
   | pipe
-zotron push --collection "My Papers"     (writes to Zotero via RPC)
+zotron push --collection "My Papers"    (writes to Zotero via RPC)
 ```
 
 ## Plugin Protocol
@@ -85,15 +85,19 @@ Fields:
 - `description` — human-readable, shown in `zotron sources`
 - `capabilities` — suggested values: `search`, `fetch`, `pdf`, `export`
 - `skill_dir` — absolute path to the directory containing this plugin's
-  SKILL.md for AI agents
+  SKILL.md for AI agents. For Rust plugins: use `include_str!` to embed
+  the SKILL.md content, then write it to `~/.local/share/zotron-<name>/skills/`
+  on first `manifest` call. For Python plugins: use package data
+  (`importlib.resources`) to locate the bundled skill files.
 
 ### I/O Convention
 
 - All output to stdout, must be valid JSON
 - All errors to stderr
 - Exit code 0 = success, non-zero = failure
-- No mandatory JSON schema for command output — each plugin defines its own
-  commands and response fields
+- `search` output is free-form (each plugin defines its own response fields)
+- `fetch` output **must** be Zotero-compatible item JSON (see "Writing to
+  Zotero" below) so it can pipe to `zotron push`
 - Plugins should follow zotron style where possible: key-first, compact JSON
 
 ### Writing to Zotero
@@ -101,11 +105,14 @@ Fields:
 Plugins do **not** call Zotero RPC directly. The standard path is:
 
 ```bash
-zotron-<name> fetch <identifier> | zotron push [--collection NAME] [--on-duplicate skip|update|create]
+zotron <name> fetch <identifier> | zotron push [--collection NAME] [--on-duplicate skip|update|create]
 ```
 
-`zotron push` already exists and accepts Zotero-format JSON from stdin.
-Plugins output Zotero-compatible item JSON with an optional `_pdf` field
+`zotron push` already exists and accepts Zotero-format JSON from stdin
+with a `--pdf` CLI flag. **New work required**: enhance `push` to also
+read a `_pdf` field from the input JSON itself, so plugins can embed the
+PDF path in their output without the caller needing `--pdf`. Plugins
+output Zotero-compatible item JSON with an optional `_pdf` field
 containing the local path to a downloaded PDF:
 
 ```json
@@ -132,7 +139,9 @@ is stripped before sending to Zotero RPC.
 ### `zotron sources`
 
 Scans `$PATH` for all `zotron-*` executables, calls each one's `manifest`
-subcommand, aggregates results:
+subcommand (with a 5-second timeout per plugin), aggregates results.
+Plugins that fail or timeout are listed with an error status instead of
+being silently skipped:
 
 ```json
 {
@@ -158,12 +167,19 @@ Links plugin skills into zotron's Claude Code plugin:
 
 ### Transparent Proxy in `zotron` CLI
 
+Implemented via clap's `#[command(allow_external_subcommands = true)]` with
+an `External(Vec<OsString>)` variant on the `Command` enum. **Tradeoff**:
+this disables clap's built-in fuzzy "did you mean?" suggestions for typos
+of built-in commands. An unknown name always triggers the plugin lookup
+path instead.
+
 When `zotron <name> [args]` is invoked and `<name>` is not a built-in
 subcommand:
 
 1. Search PATH for `zotron-<name>`
 2. If not found: error "unknown command '<name>'. No plugin 'zotron-<name>'
-   found on PATH."
+   found on PATH. Did you mean: <list of close built-in commands>."
+   (custom fuzzy matching replaces clap's built-in)
 3. If found: exec `zotron-<name> [args]`, transparent passthrough of
    stdin/stdout/stderr and exit code
 
@@ -207,11 +223,15 @@ OpenAlex/CrossRef/Unpaywall.
 Migration checklist:
 1. `pyproject.toml`: rename script entry from `cnki` to `zotron-cnki`
 2. Add `manifest` subcommand returning standard JSON
-3. Add `emit-skill` subcommand (or bundle skills with package data)
+3. Bundle skills via package data (`importlib.resources`)
 4. Change `export` output to Zotero-compatible JSON on stdout instead of
    calling RPC directly
 5. Remove `.claude-plugin/` directory (skills aggregated by zotron)
-6. Remove dependency on `zotron` Python package (no more direct ZoteroRPC)
+6. Audit all `ZoteroRPC` usage — `export` calls `items.push` and
+   `collections.list`. Replace `items.push` with stdout JSON (piped to
+   `zotron push`). Replace `collections.list` with
+   `zotron collections list` subprocess call if still needed for
+   collection resolution. Then remove `zotron` Python package dependency.
 
 ## Skill Structure (after sync)
 
@@ -277,3 +297,11 @@ Estimated: ~150-250 lines of new Rust code in the CLI crate.
 - Cross-source deduplication or unified search
 - MCP server for plugins
 - GUI for source management
+- Batch/array input for `push` (currently single-item only; batch import
+  is future work)
+
+## Documentation Convention
+
+All examples in user-facing docs and skills use the proxied form
+`zotron <name> <subcommand>` (not the direct `zotron-<name> <subcommand>`).
+The direct form works but is not the canonical style.
