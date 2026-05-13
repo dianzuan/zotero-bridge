@@ -1,7 +1,9 @@
 //! Minimal typed CLI surface for the Rust migration scaffold.
 
 use std::{
-    env, fs,
+    env,
+    ffi::OsString,
+    fs,
     io::{self, Read},
     path::{Path, PathBuf},
     process::Command as ProcessCommand,
@@ -297,6 +299,7 @@ enum OcrCommand {
 }
 
 #[derive(Debug, Subcommand)]
+#[command(allow_external_subcommands = true)]
 enum Command {
     /// Check that Zotero is running with the Zotron XPI enabled.
     Ping {
@@ -398,6 +401,8 @@ enum Command {
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
+    #[command(external_subcommand)]
+    External(Vec<OsString>),
 }
 
 struct RagSearchOptions {
@@ -1271,7 +1276,56 @@ fn command_url(command: &Command) -> String {
             | AnnotationsCommand::Create { url, .. }
             | AnnotationsCommand::Delete { url, .. } => url.clone(),
         },
+        Command::External(_) => DEFAULT_RPC_URL.to_string(),
     }
+}
+
+fn run_external_command(args: Vec<OsString>) -> Result<String, String> {
+    let name = args
+        .first()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| "INVALID_ARGS: missing plugin name".to_string())?;
+
+    let binary_name = format!("zotron-{name}");
+
+    let binary_path = which(&binary_name).ok_or_else(|| {
+        format!(
+            "UNKNOWN_COMMAND: unknown command '{name}'. \
+             No plugin '{binary_name}' found on PATH."
+        )
+    })?;
+
+    let status = ProcessCommand::new(&binary_path)
+        .args(&args[1..])
+        .stdin(std::process::Stdio::inherit())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .status()
+        .map_err(|err| format!("failed to execute {binary_name}: {err}"))?;
+
+    if status.success() {
+        Ok(String::new())
+    } else {
+        Err(format!(
+            "PLUGIN_ERROR: {binary_name} exited with {}",
+            status
+                .code()
+                .map_or("signal".to_string(), |c| c.to_string())
+        ))
+    }
+}
+
+fn which(binary_name: &str) -> Option<PathBuf> {
+    env::var_os("PATH").and_then(|paths| {
+        env::split_paths(&paths).find_map(|dir| {
+            let full_path = dir.join(binary_name);
+            if full_path.is_file() {
+                Some(full_path)
+            } else {
+                None
+            }
+        })
+    })
 }
 
 fn run_ocr_command(command: OcrCommand, client: &mut impl RpcCaller) -> Result<String, String> {
@@ -2610,6 +2664,7 @@ fn run_command(command: Command, client: &mut impl RpcCaller) -> Result<String, 
         Command::FindPdfs {
             collection, limit, ..
         } => run_find_pdfs_command(client, collection, limit)?,
+        Command::External(args) => return run_external_command(args),
     };
 
     format_json(&value, style)
