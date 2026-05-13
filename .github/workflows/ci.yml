@@ -30,33 +30,22 @@ jobs:
       - name: Build XPI
         run: npm run build
 
-  python:
-    name: Python (CLI + SDK)
+  rust:
+    name: Rust (CLI + Types)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: astral-sh/setup-uv@v4
-        with:
-          enable-cache: true
-          cache-dependency-glob: "claude-plugin/python/pyproject.toml"
+      - uses: dtolnay/rust-toolchain@stable
 
-      - name: Set up Python
-        run: uv python install 3.11
+      - uses: Swatinem/rust-cache@v2
 
-      - name: Install dependencies
-        working-directory: claude-plugin/python
-        run: uv sync --extra dev
+      - name: Check
+        run: cargo check --workspace
 
-      - name: Lint (ruff)
-        working-directory: claude-plugin/python
-        run: uv run ruff check zotron tests
+      - name: Test
+        run: cargo test --workspace
 
-      - name: Type check (mypy)
-        working-directory: claude-plugin/python
-        run: uv run mypy zotron --ignore-missing-imports
-        continue-on-error: true  # mypy strictness phased in; not gate-blocking yet
-
-      - name: Run pytest
-        working-directory: claude-plugin/python
-        run: uv run pytest -q
+      - name: Clippy
+        run: cargo clippy --workspace -- -D warnings
+        continue-on-error: true
