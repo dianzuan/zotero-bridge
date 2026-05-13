@@ -1548,19 +1548,20 @@ fn run_ocr_process_sync(
     let blocks = parse_ocr_provider_response(provider, &payload, &options.parent, attachment_key)?;
     let chunks = zotron_types::chunks_from_blocks(&blocks, options.chunk_chars);
 
-    let mut artifacts = Vec::new();
-    artifacts.push(write_sidecar_json(
-        storage_dir, &options.parent, attachment_key,
-        MachineArtifactKind::OcrRaw, &payload,
-    )?);
-    artifacts.push(write_sidecar_jsonl(
-        storage_dir, &options.parent, attachment_key,
-        MachineArtifactKind::Blocks, &blocks,
-    )?);
-    artifacts.push(write_sidecar_jsonl(
-        storage_dir, &options.parent, attachment_key,
-        MachineArtifactKind::Chunks, &chunks,
-    )?);
+    let artifacts = vec![
+        write_sidecar_json(
+            storage_dir, &options.parent, attachment_key,
+            MachineArtifactKind::OcrRaw, &payload,
+        )?,
+        write_sidecar_jsonl(
+            storage_dir, &options.parent, attachment_key,
+            MachineArtifactKind::Blocks, &blocks,
+        )?,
+        write_sidecar_jsonl(
+            storage_dir, &options.parent, attachment_key,
+            MachineArtifactKind::Chunks, &chunks,
+        )?,
+    ];
 
     let embedding_count = embed_sidecar_chunks(client, storage_dir, &options.parent, attachment_key, &chunks);
 
@@ -1582,7 +1583,7 @@ fn embed_sidecar_chunks(
     client: &mut impl RpcCaller,
     storage_dir: &Path,
     item_key: &str,
-    attachment_key: &str,
+    _attachment_key: &str,
     chunks: &[zotron_types::StructureChunk],
 ) -> usize {
     let Ok((provider, model, api_url, api_key)) = fetch_embedding_settings(client) else {
@@ -3445,6 +3446,12 @@ fn run_push_command(
     };
     let item_json = serde_json::from_str::<Value>(&payload)
         .map_err(|err| format!("INVALID_JSON: Could not parse JSON: {err}"))?;
+
+    // Validate required fields
+    match item_json.get("itemType").and_then(Value::as_str) {
+        Some(s) if !s.is_empty() => {}
+        _ => return Err("INVALID_ARGS: input JSON must include a non-empty \"itemType\" field".to_string()),
+    }
 
     if dry_run {
         let collection_key = collection
