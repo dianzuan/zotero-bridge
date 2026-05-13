@@ -6,7 +6,7 @@
 > Python/Bash-only names are reference material, not the target product surface.
 
 > Phase 1：基础能力，追平 cli-anything-zotero (~55 命令级别)
-> Phase 2（后续）：OCR 集成、CNKI 元数据自主抓取、语义搜索、引用图谱
+> Phase 2（后续）：OCR 集成、外部数据源对接、语义搜索、引用图谱
 
 ## 目标
 
@@ -311,7 +311,7 @@ zotron/
 ## Phase 2 范围（后续）
 
 - OCR 云端 API → Zotero Note
-- CNKI 元数据自主抓取（对标茉莉花质量）
+- 外部学术数据源对接（source plugin 体系）
 - 语义搜索（SPECTRE2 学术嵌入）
 - RAG 段落级检索
 - 引用关系图谱

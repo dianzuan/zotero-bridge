@@ -2177,4 +2177,4 @@ git commit -m "feat(zotron): Phase 1 complete - 60 JSON-RPC methods + CLI + Clau
 - [x] **Type consistency**: `serializeItem`/`serializeCollection` used consistently, `registerHandlers` pattern identical across all files
 - [x] **CLI**: Single bash script, tested with curl fallback
 - [x] **Chinese names**: Unit tested with mocha/chai
-- [x] **Plugin structure**: Matches CNKI plugin pattern (plugin.json, bin/, skills/, agents/, hooks/)
+- [x] **Plugin structure**: Standard plugin pattern (plugin.json, bin/, skills/)

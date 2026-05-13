@@ -171,8 +171,8 @@
 
 | # | 功能 | 说明 |
 |---|------|------|
-| 95 | 触发茉莉花元数据抓取 | CNKI PDF 自动补全 |
-| 96 | 触发 CNKI translator | 从 URL 抓取元数据 |
+| 95 | 触发茉莉花元数据抓取 | PDF 自动补全 |
+| 96 | 触发 translator | 从 URL 抓取元数据 |
 | 97 | OCR MD→HTML Note | MinerU/GLM-OCR 结果写入 |
 | 98 | 执行任意 JS | Zotero 内部 JS console |
 | 99 | 应用状态/版本检查 | ping/status/version |
@@ -186,7 +186,7 @@
 |------|------|------|
 | 多模态 Embedding | cookjohn #58 | 图表也能被语义搜索 |
 | SPECTRE2 学术嵌入 | 54yyyu #171 | 学术专用向量模型 |
-| 海外知网支持 | jasminum #234 #231 | 海外 CNKI 域名元数据 |
+| 海外中文数据库支持 | jasminum #234 #231 | 海外域名元数据 |
 | SQLite 搜索后端 | 54yyyu #167 | 大库性能优化 |
 | 突破 500 条上限 | 54yyyu #151 | 分页/大结果集 |
 

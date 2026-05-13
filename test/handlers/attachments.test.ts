@@ -181,7 +181,7 @@ describe("attachments handler", () => {
     function setup({
       renameBase,
       renameResult = true,
-      sourceLeafName = "cnki-export-bnhuaoo2.pdf",
+      sourceLeafName = "export-bnhuaoo2.pdf",
     }: {
       renameBase: string;
       renameResult?: boolean | -1 | -2;

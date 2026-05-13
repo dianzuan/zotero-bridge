@@ -9,7 +9,7 @@ Choose the command based on what the user provides:
 | User gives you | Command | Example |
 |---------------|---------|---------|
 | DOI | `zotron items add --doi` | `zotron items add --doi 10.1016/j.jfineco.2024.01.001` |
-| URL (CNKI, journal site) | `zotron items add --from-url` | `zotron items add --from-url "https://..."` |
+| URL (journal site) | `zotron items add --from-url` | `zotron items add --from-url "https://..."` |
 | ISBN | `zotron items add --isbn` | `zotron items add --isbn 978-7-...` |
 | Local PDF file | `zotron items add --file` | `zotron items add --file /path/to/paper.pdf` |
 | Manual entry | `zotron items create` | See below |
@@ -25,7 +25,7 @@ zotron items add --doi 10.1016/j.jfineco.2024.01.001 --collection "数字经济"
 zotron items add --file /path/to/paper.pdf --collection "数字经济"
 
 # By URL
-zotron items add --from-url "https://kns.cnki.net/..." --collection "数字经济"
+zotron items add --from-url "https://doi.org/10.1234/example" --collection "My Papers"
 
 # By ISBN
 zotron items add --isbn 978-7-111-55555-5

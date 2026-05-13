@@ -6,7 +6,7 @@ const ILLEGAL_WIN_CHARS = /[""«»]/g;
 /**
  * Sanitize a file path before passing to Zotero.File.pathToFile().
  *
- * Strips NTFS-illegal characters (smart quotes, etc.) that CNKI filenames
+ * Strips NTFS-illegal characters (smart quotes, etc.) that external filenames
  * sometimes contain. Does NOT do WSL path translation — that is the
  * client's responsibility (see zotron.paths.zotero_path in Python).
  */

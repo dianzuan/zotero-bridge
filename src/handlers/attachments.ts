@@ -87,7 +87,7 @@ export const attachmentsHandlers = {
 
     // Honor Zotero's "Rename Files from Parent Metadata" template
     // (attachmentRenameFormatString pref) so attachments don't end up with
-    // upstream-source names like cnki-export-bnhuaoo2.pdf in the user's
+    // upstream-source names like export-bnhuaoo2.pdf in the user's
     // storage/. Keep params.title untouched — that's the UI label, separate
     // from the on-disk filename.
     if (params.renameFromParent !== false) {

@@ -169,7 +169,7 @@ export const itemsHandlers = {
       // Full replace semantics — drop existing tags, apply new set. Matches
       // user intent for `on_duplicate=update` (refresh metadata to latest).
       // Empty array is treated as "don't touch tags" to avoid clobbering
-      // user-added tags when a CNKI parse returns no keywords.
+      // user-added tags when an external parse returns no keywords.
       for (const existing of item.getTags()) {
         item.removeTag(existing.tag);
       }

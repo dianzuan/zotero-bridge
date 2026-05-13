@@ -17,6 +17,6 @@ fn academic_zh_jsonl_fixture_deserializes_into_typed_hits() {
     assert_eq!(hits[0].block_keys[0], "NBUVZGWJ:p0:b8");
     assert_eq!(
         hits[1].doi.as_deref(),
-        Some("10.19641/j.cnki.42-1290/f.2021.03.013")
+        Some("10.13334/j.0258-8013.pcsee.2021.03.013")
     );
 }
