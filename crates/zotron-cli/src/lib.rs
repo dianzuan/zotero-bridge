@@ -1420,22 +1420,6 @@ fn run_ocr_process_command(
     mut options: OcrProcessOptions,
 ) -> Result<Value, String> {
     let spec = raw_ocr_provider_spec(&options.provider)?;
-    if spec.provider_key != "mineru" {
-        return Err(
-            "INVALID_ARGS: ocr parse-pdf currently supports only --provider mineru".to_string(),
-        );
-    }
-    if options.result_dir.is_some() && options.result_zip.is_some() {
-        return Err("INVALID_ARGS: use either --result-dir or --result-zip, not both".to_string());
-    }
-    if options.source_url.is_some()
-        && (options.result_dir.is_some() || options.result_zip.is_some())
-    {
-        return Err(
-            "INVALID_ARGS: --source-url cannot be combined with --result-dir/--result-zip"
-                .to_string(),
-        );
-    }
 
     let attachment = match options.attachment.take() {
         Some(key) => key,
@@ -1453,34 +1437,137 @@ fn run_ocr_process_command(
             )
         })?
         .to_path_buf();
-    let file_name = attachment_path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("document.pdf")
-        .to_string();
 
-    let source = load_mineru_result_source(&options, &attachment_path, &file_name)?;
-    let artifacts = persist_mineru_result_sidecars(
-        &storage_dir,
-        &options.parent,
-        &attachment,
-        &options.provider,
-        &source,
-        options.chunk_chars,
-    )?;
+    match spec.provider_key {
+        "mineru" | "mineru-cli" => {
+            if options.result_dir.is_some() && options.result_zip.is_some() {
+                return Err("INVALID_ARGS: use either --result-dir or --result-zip, not both".to_string());
+            }
+            if options.source_url.is_some()
+                && (options.result_dir.is_some() || options.result_zip.is_some())
+            {
+                return Err(
+                    "INVALID_ARGS: --source-url cannot be combined with --result-dir/--result-zip"
+                        .to_string(),
+                );
+            }
+            let file_name = attachment_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("document.pdf")
+                .to_string();
+            let source = load_mineru_result_source(&options, &attachment_path, &file_name)?;
+            let artifacts = persist_mineru_result_sidecars(
+                &storage_dir, &options.parent, &attachment,
+                &options.provider, &source, options.chunk_chars,
+            )?;
+            Ok(serde_json::json!({
+                "provider": spec.provider_key,
+                "status": "indexed",
+                "item_key": options.parent,
+                "attachment_key": attachment,
+                "attachment_path": attachment_path,
+                "storage_dir": storage_dir,
+                "task_id": source.task_id,
+                "state": source.state,
+                "blocks": artifacts.block_count,
+                "chunks": artifacts.chunk_count,
+                "artifacts": artifacts.artifacts,
+            }))
+        }
+        _ => {
+            run_ocr_process_sync(
+                client, &options, spec.provider_key,
+                &attachment, &attachment_path, &storage_dir,
+            )
+        }
+    }
+}
+
+fn run_ocr_process_sync(
+    client: &mut impl RpcCaller,
+    options: &OcrProcessOptions,
+    provider: &str,
+    attachment_key: &str,
+    attachment_path: &Path,
+    storage_dir: &Path,
+) -> Result<Value, String> {
+    let api_url = if let Some(endpoint) = &options.provider_endpoint {
+        endpoint.clone()
+    } else {
+        let settings = client.call("settings.getAll", None)?;
+        settings.get("ocr.apiUrl")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string()
+    };
+    if api_url.is_empty() {
+        return Err(format!("MISSING_CONFIG: ocr.apiUrl not configured for provider {provider}"));
+    }
+
+    let api_key = if !options.api_key_env.is_empty() {
+        env::var(&options.api_key_env).unwrap_or_default()
+    } else {
+        let settings = client.call("settings.getAll", None)?;
+        settings.get("ocr.apiKey")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string()
+    };
+
+    let pdf_bytes = fs::read(attachment_path)
+        .map_err(|e| format!("READ_PDF_FAILED: {}: {e}", attachment_path.display()))?;
+    let base64_pdf = base64_encode(&pdf_bytes);
+
+    let model = {
+        let settings = client.call("settings.getAll", None)?;
+        settings.get("ocr.model")
+            .and_then(Value::as_str)
+            .unwrap_or("glm-ocr")
+            .to_string()
+    };
+
+    let body = serde_json::json!({
+        "model": model,
+        "file": base64_pdf,
+    });
+
+    let mut req = ureq::post(&api_url).set("Content-Type", "application/json");
+    if !api_key.is_empty() {
+        req = req.set("Authorization", &format!("Bearer {api_key}"));
+    }
+    let response = req.send_json(&body)
+        .map_err(|e| format!("OCR_REQUEST_FAILED: {provider}: {e}"))?;
+    let payload: Value = response.into_json()
+        .map_err(|e| format!("OCR_RESPONSE_PARSE_FAILED: {e}"))?;
+
+    let blocks = parse_ocr_provider_response(provider, &payload, &options.parent, attachment_key)?;
+    let chunks = zotron_types::chunks_from_blocks(&blocks, options.chunk_chars);
+
+    let mut artifacts = Vec::new();
+    artifacts.push(write_sidecar_json(
+        storage_dir, &options.parent, attachment_key,
+        MachineArtifactKind::OcrRaw, &payload,
+    )?);
+    artifacts.push(write_sidecar_jsonl(
+        storage_dir, &options.parent, attachment_key,
+        MachineArtifactKind::Blocks, &blocks,
+    )?);
+    artifacts.push(write_sidecar_jsonl(
+        storage_dir, &options.parent, attachment_key,
+        MachineArtifactKind::Chunks, &chunks,
+    )?);
 
     Ok(serde_json::json!({
-        "provider": "mineru",
+        "provider": provider,
         "status": "indexed",
         "item_key": options.parent,
-        "attachment_key": attachment,
+        "attachment_key": attachment_key,
         "attachment_path": attachment_path,
         "storage_dir": storage_dir,
-        "task_id": source.task_id,
-        "state": source.state,
-        "blocks": artifacts.block_count,
-        "chunks": artifacts.chunk_count,
-        "artifacts": artifacts.artifacts,
+        "blocks": blocks.len(),
+        "chunks": chunks.len(),
+        "artifacts": artifacts,
     }))
 }
 
