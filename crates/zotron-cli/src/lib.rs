@@ -397,7 +397,7 @@ enum Command {
     },
 }
 
-struct RagHitsOptions {
+struct RagSearchOptions {
     query: String,
     collection: Option<String>,
     keys: Vec<String>,
@@ -1285,7 +1285,7 @@ fn run_ocr_command(command: OcrCommand, client: &mut impl RpcCaller) -> Result<S
             mime_type,
             endpoint,
             api_key_env,
-        } => run_ocr_provider_json_command(OcrProviderJsonOptions {
+        } => run_ocr_run_command(OcrRunOptions {
             provider,
             input,
             file,
@@ -1309,9 +1309,9 @@ fn run_ocr_command(command: OcrCommand, client: &mut impl RpcCaller) -> Result<S
             timeout_seconds,
             chunk_chars,
             ..
-        } => run_ocr_parse_pdf_command(
+        } => run_ocr_process_command(
             client,
-            OcrParsePdfOptions {
+            OcrProcessOptions {
                 provider,
                 parent,
                 attachment,
@@ -1329,7 +1329,7 @@ fn run_ocr_command(command: OcrCommand, client: &mut impl RpcCaller) -> Result<S
     format_json(&value, JsonStyle::PythonCompact)
 }
 
-struct OcrParsePdfOptions {
+struct OcrProcessOptions {
     provider: String,
     parent: String,
     attachment: Option<String>,
@@ -1343,7 +1343,7 @@ struct OcrParsePdfOptions {
     chunk_chars: usize,
 }
 
-struct OcrProviderJsonOptions {
+struct OcrRunOptions {
     provider: String,
     input: Option<String>,
     file: Option<String>,
@@ -1354,7 +1354,7 @@ struct OcrProviderJsonOptions {
     api_key_env: Option<String>,
 }
 
-fn run_ocr_provider_json_command(options: OcrProviderJsonOptions) -> Result<Value, String> {
+fn run_ocr_run_command(options: OcrRunOptions) -> Result<Value, String> {
     let input: OcrRequestInput = match (options.input, options.file) {
         (Some(input), None) => read_json_input(&input)?,
         (None, Some(file)) => ocr_input_from_file(
@@ -1412,9 +1412,9 @@ fn run_ocr_provider_json_command(options: OcrProviderJsonOptions) -> Result<Valu
     }))
 }
 
-fn run_ocr_parse_pdf_command(
+fn run_ocr_process_command(
     client: &mut impl RpcCaller,
-    mut options: OcrParsePdfOptions,
+    mut options: OcrProcessOptions,
 ) -> Result<Value, String> {
     let spec = raw_ocr_provider_spec(&options.provider)?;
     if spec.provider_key != "mineru" {
@@ -1546,7 +1546,7 @@ fn resolve_first_pdf_attachment_key(
 }
 
 fn load_mineru_result_source(
-    options: &OcrParsePdfOptions,
+    options: &OcrProcessOptions,
     attachment_path: &Path,
     file_name: &str,
 ) -> Result<MineruResultSource, String> {
@@ -1609,7 +1609,7 @@ fn load_mineru_result_source(
 }
 
 fn submit_mineru_local_file(
-    options: &OcrParsePdfOptions,
+    options: &OcrProcessOptions,
     attachment_path: &Path,
     file_name: &str,
 ) -> Result<MineruResultSource, String> {
@@ -2492,9 +2492,9 @@ fn run_rag_command(command: RagCommand, client: &mut impl RpcCaller) -> Result<S
             top_k,
             output,
             ..
-        } => run_rag_hits_command(
+        } => run_rag_search_command(
             client,
-            RagHitsOptions {
+            RagSearchOptions {
                 query,
                 collection,
                 keys,
@@ -2582,9 +2582,9 @@ fn read_json_input<T: serde::de::DeserializeOwned>(path: &str) -> Result<T, Stri
         .map_err(|err| format!("INVALID_JSON: Could not parse JSON: {err}"))
 }
 
-fn run_rag_hits_command(
+fn run_rag_search_command(
     client: &mut impl RpcCaller,
-    options: RagHitsOptions,
+    options: RagSearchOptions,
 ) -> Result<String, String> {
     if !options.zotero {
         return Err(
