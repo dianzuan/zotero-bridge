@@ -1562,17 +1562,90 @@ fn run_ocr_process_sync(
         MachineArtifactKind::Chunks, &chunks,
     )?);
 
+    let embedding_count = embed_sidecar_chunks(client, storage_dir, &options.parent, attachment_key, &chunks);
+
     Ok(serde_json::json!({
         "provider": provider,
         "status": "indexed",
         "item_key": options.parent,
         "attachment_key": attachment_key,
+        "embeddings": embedding_count,
         "attachment_path": attachment_path,
         "storage_dir": storage_dir,
         "blocks": blocks.len(),
         "chunks": chunks.len(),
         "artifacts": artifacts,
     }))
+}
+
+fn embed_sidecar_chunks(
+    client: &mut impl RpcCaller,
+    storage_dir: &Path,
+    item_key: &str,
+    attachment_key: &str,
+    chunks: &[zotron_types::StructureChunk],
+) -> usize {
+    let Ok((provider, model, api_url, api_key)) = fetch_embedding_settings(client) else {
+        return 0;
+    };
+    if provider.is_empty() || (api_key.is_empty() && provider != "ollama") {
+        return 0;
+    }
+    let emb_chunks: Vec<EmbeddingChunkInput> = chunks
+        .iter()
+        .map(|c| EmbeddingChunkInput {
+            chunk_key: c.chunk_key.clone(),
+            text: c.text.clone(),
+        })
+        .collect();
+    if emb_chunks.is_empty() {
+        return 0;
+    }
+    // Batch in groups of 20 to avoid API limits
+    let batch_size = 20;
+    let mut all_vectors: Vec<EmbeddingVector> = Vec::new();
+    for batch in emb_chunks.chunks(batch_size) {
+        let input = EmbeddingRequestInput {
+            item_key: item_key.to_string(),
+            chunks: batch.to_vec(),
+            model: if model.is_empty() { None } else { Some(model.clone()) },
+            url: if api_url.is_empty() { None } else { Some(api_url.clone()) },
+            input_type: Some("document".to_string()),
+        };
+        let Ok(request) = build_embedding_provider_request(&provider, &input) else {
+            break;
+        };
+        let Some(url) = request.url.as_deref() else { break };
+        let mut http = ureq::post(url).set("Content-Type", "application/json");
+        if let Some(auth) = request.auth_header {
+            if !api_key.is_empty() {
+                http = http.set(auth, &format!("Bearer {api_key}"));
+            }
+        }
+        let Ok(resp) = http.send_json(&request.body) else { break };
+        let Ok(payload): Result<Value, _> = resp.into_json() else { break };
+        let Ok(vectors) = parse_embedding_provider_response(&provider, &payload, item_key, batch)
+        else {
+            break;
+        };
+        all_vectors.extend(vectors);
+    }
+    let count = all_vectors.len();
+    if count > 0 {
+        let filename = embedding_vector_filename(&provider, &model);
+        let vectors_dir = storage_dir.join(".zotron").join("embeddings");
+        let _ = fs::create_dir_all(&vectors_dir);
+        let vectors_path = vectors_dir.join(&filename);
+        let mut out = String::new();
+        for v in &all_vectors {
+            if let Ok(line) = serde_json::to_string(v) {
+                out.push_str(&line);
+                out.push('\n');
+            }
+        }
+        let _ = fs::write(&vectors_path, &out);
+    }
+    count
 }
 
 struct MineruResultSource {
