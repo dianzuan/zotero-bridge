@@ -833,7 +833,7 @@ struct ExportArgs {
     #[arg(long)]
     collection: Option<String>,
     /// Citation style URL (only for bibliography format).
-    #[arg(long, default_value = "http://www.zotero.org/styles/gb-t-7714-2015-numeric")]
+    #[arg(long, default_value = "http://www.zotero.org/styles/apa")]
     style: String,
     /// Output HTML instead of plain text (only for bibliography format).
     #[arg(long)]
@@ -1275,10 +1275,14 @@ fn command_url(command: &Command) -> String {
 }
 
 fn run_ocr_command(command: OcrCommand, client: &mut impl RpcCaller) -> Result<String, String> {
+    if let OcrCommand::Providers = &command {
+        return format_json(
+            &serde_json::json!({ "providers": ocr_provider_specs() }),
+            JsonStyle::Pretty,
+        );
+    }
     let value = match command {
-        OcrCommand::Providers => serde_json::json!({
-            "providers": ocr_provider_specs(),
-        }),
+        OcrCommand::Providers => unreachable!(),
         OcrCommand::Run {
             provider,
             input,
@@ -3034,8 +3038,10 @@ fn run_rag_search_command(
     );
 
     // If sidecar resolution fails or returns empty, fall back to XPI.
+    // But propagate COLLECTION_NOT_FOUND errors directly instead of masking them.
     let sidecars = match sidecars {
         Ok(ref s) if !s.is_empty() => s,
+        Err(ref e) if e.contains("COLLECTION_NOT_FOUND") => return Err(e.clone()),
         _ => return run_rag_search_xpi_fallback(client, &options),
     };
 
@@ -4728,7 +4734,11 @@ fn run_annotations_command(
                 "annotations.list",
                 Some(serde_json::json!({"parentKey": parent})),
             )?;
-            (normalize_list_envelope(value, "items", None, 0), JsonStyle::Pretty)
+            let total = value
+                .get("items")
+                .and_then(Value::as_array)
+                .map_or(0, |a| a.len()) as u64;
+            (normalize_list_envelope(value, "items", Some(total), 0), JsonStyle::Pretty)
         }
         AnnotationsCommand::Create {
             parent,
