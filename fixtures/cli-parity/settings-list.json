@@ -8,12 +8,12 @@
   "rpc": {
     "method": "settings.getAll",
     "result": {
-      "extensions.zotero.openURL.resolver": "https://libgen.rs",
+      "extensions.zotero.openURL.resolver": "https://www.worldcat.org/search",
       "extensions.zotero.debug.log": false
     }
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\n  \"extensions.zotero.openURL.resolver\": \"https://libgen.rs\",\n  \"extensions.zotero.debug.log\": false\n}\n"
+    "stdout": "{\n  \"extensions.zotero.openURL.resolver\": \"https://www.worldcat.org/search\",\n  \"extensions.zotero.debug.log\": false\n}\n"
   }
 }
