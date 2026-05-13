@@ -1545,6 +1545,73 @@ fn rag_status_sidecar_accepts_collection_key() {
 }
 
 #[test]
+fn rag_search_falls_back_to_xpi_when_no_sidecars_on_disk() {
+    let mut client = FakeClient::with_responses(vec![
+        // 1. collections.list (for resolve_collection)
+        json!([{"key": "COL1", "name": "Macro", "parentKey": null}]),
+        // 2. collections.getItems
+        json!({
+            "items": [{"key": "ITEM1", "title": "Paper One", "itemType": "journalArticle"}],
+            "total": 1
+        }),
+        // 3. attachments.list for ITEM1
+        json!({
+            "items": [{"key": "ATT1", "contentType": "application/pdf", "path": "/nonexistent/path/paper.pdf"}],
+            "total": 1
+        }),
+        // 4. rag.searchHits fallback
+        json!({
+            "hits": [{"item_key": "ITEM1", "title": "Paper One", "text": "some text", "score": 1.0, "chunk_key": "c1", "query": "test"}],
+            "total": 1,
+            "retrieval": {"mode": "lexical", "semantic_available": false, "semantic_used": false, "embedding_artifacts": 0}
+        }),
+    ]);
+
+    let out = run_with_client(
+        ["zotron", "rag", "search", "test query", "--collection", "Macro"],
+        &mut client,
+    ).expect("rag search with fallback succeeds");
+
+    let payload: Value = serde_json::from_str(&out).expect("output is JSON");
+    assert!(payload["items"].as_array().is_some());
+    // Should have called rag.searchHits as fallback
+    assert!(client.calls.iter().any(|(method, _)| method == "rag.searchHits"));
+}
+
+#[test]
+fn rag_search_with_zotero_flag_uses_xpi_directly() {
+    let mut client = FakeClient::with_responses(vec![
+        json!({
+            "hits": [{"item_key": "ITEM1", "title": "Paper", "text": "content", "score": 2.0, "chunk_key": "c1", "query": "q"}],
+            "total": 1,
+            "retrieval": {"mode": "lexical", "semantic_available": false, "semantic_used": false, "embedding_artifacts": 0}
+        }),
+    ]);
+
+    let out = run_with_client(
+        ["zotron", "rag", "search", "--zotero", "test", "--collection", "X"],
+        &mut client,
+    ).expect("--zotero flag works");
+
+    // With --zotero, should go directly to rag.searchHits (first and only RPC call)
+    assert_eq!(client.calls[0].0, "rag.searchHits");
+    let payload: Value = serde_json::from_str(&out).expect("output is JSON");
+    assert!(payload["items"].as_array().unwrap().len() > 0);
+}
+
+#[test]
+fn rag_search_requires_collection_or_key() {
+    let mut client = FakeClient::default();
+    let result = run_with_client(
+        ["zotron", "rag", "search", "some query"],
+        &mut client,
+    );
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(err.contains("--collection") || err.contains("--key"), "error should mention --collection or --key: {err}");
+}
+
+#[test]
 fn rag_hits_missing_collection_returns_coded_error_instead_of_raw_json() {
     let mut client = FakeClient::default();
     let err = run_with_client(["zotron", "rag", "search", "query", "--zotero"], &mut client)
