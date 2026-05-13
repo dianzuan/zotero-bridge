@@ -17,6 +17,7 @@ const SETTINGS_KEYS = [
   "rag.chunkSize",
   "rag.chunkOverlap",
   "rag.topK",
+  "rag.retrievalMode",
 ];
 
 // ReadonlySet derived from SETTINGS_KEYS — shared by set (includes-check) and

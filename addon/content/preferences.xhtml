@@ -54,13 +54,20 @@
     <label id="zotron-emb-provider-label" value="Provider:" style="width: 120px;" />
     <menulist id="zotron-emb-provider">
       <menupopup>
+        <menuitem label="Ollama (本地)" value="ollama" />
+        <menuitem label="OpenAI" value="openai" />
         <menuitem label="Volcengine" value="volcengine" />
         <menuitem label="DashScope" value="dashscope" />
+        <menuitem label="Zhipu" value="zhipu" />
+        <menuitem label="Jina" value="jina" />
+        <menuitem label="SiliconFlow" value="siliconflow" />
+        <menuitem label="Voyage" value="voyage" />
+        <menuitem label="Cohere" value="cohere" />
         <menuitem label="Custom" value="custom" />
       </menupopup>
     </menulist>
   </hbox>
-  <hbox align="center">
+  <hbox id="zotron-emb-key-row" align="center">
     <label id="zotron-emb-key-label" value="API Key:" style="width: 120px;" />
     <html:input id="zotron-emb-apikey" type="password"
                 placeholder="Leave empty until you configure a provider token"
@@ -80,6 +87,38 @@
                 readonly="readonly"
                 style="flex: 1; color: #888;"></html:input>
   </hbox>
+</groupbox>
+
+<groupbox>
+  <hbox align="center" style="cursor: pointer;" id="zotron-rag-toggle">
+    <label id="zotron-rag-toggle-label" value="▶ Advanced RAG Settings" style="cursor: pointer;" />
+  </hbox>
+  <vbox id="zotron-rag-panel" style="display: none; margin-left: 16px; border-left: 2px solid #555; padding-left: 12px;">
+    <hbox align="center">
+      <label id="zotron-rag-chunk-label" value="Chunk Size:" style="width: 140px;" />
+      <html:input id="zotron-rag-chunksize" type="number" style="width: 80px;" />
+      <label value="chars" style="color: #888; margin-left: 4px;" />
+    </hbox>
+    <hbox align="center">
+      <label id="zotron-rag-overlap-label" value="Chunk Overlap:" style="width: 140px;" />
+      <html:input id="zotron-rag-overlap" type="number" style="width: 80px;" />
+      <label value="chars" style="color: #888; margin-left: 4px;" />
+    </hbox>
+    <hbox align="center">
+      <label id="zotron-rag-topk-label" value="Top-K:" style="width: 140px;" />
+      <html:input id="zotron-rag-topk" type="number" style="width: 80px;" />
+    </hbox>
+    <hbox align="center">
+      <label id="zotron-rag-mode-label" value="Retrieval Mode:" style="width: 140px;" />
+      <menulist id="zotron-rag-mode">
+        <menupopup>
+          <menuitem label="Hybrid (BM25 + Vector)" value="hybrid" />
+          <menuitem label="Dense (Vector Only)" value="dense" />
+          <menuitem label="Lexical (Keyword Only)" value="lexical" />
+        </menupopup>
+      </menulist>
+    </hbox>
+  </vbox>
 </groupbox>
 
 </vbox>

@@ -13,6 +13,7 @@ export const PREF_DEFAULTS: Record<string, string | number> = {
   "rag.chunkSize": 512,
   "rag.chunkOverlap": 64,
   "rag.topK": 5,
+  "rag.retrievalMode": "hybrid",
 };
 
 export function prefKey(key: string): string {
