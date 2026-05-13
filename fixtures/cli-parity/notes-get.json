@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "name": "notes get",
+  "command": [
+    "notes",
+    "get",
+    "NOTE1"
+  ],
+  "rpc": {
+    "method": "notes.get",
+    "params": {
+      "key": "NOTE1"
+    },
+    "result": {
+      "key": "NOTE1",
+      "note": "<p>First</p>",
+      "parentKey": "ITEM1",
+      "version": 1
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\n  \"key\": \"NOTE1\",\n  \"note\": \"<p>First</p>\",\n  \"parentKey\": \"ITEM1\",\n  \"version\": 1\n}\n"
+  }
+}

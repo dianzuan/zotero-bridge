@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "name": "collections rename",
+  "command": [
+    "collections",
+    "rename",
+    "typo",
+    "Corrected"
+  ],
+  "rpc": {
+    "calls": [
+      {
+        "method": "collections.list",
+        "params": null,
+        "result": [
+          {
+            "key": "COL4",
+            "name": "typo",
+            "parentKey": null
+          }
+        ]
+      },
+      {
+        "method": "collections.rename",
+        "params": {
+          "key": "COL4",
+          "name": "Corrected"
+        },
+        "result": {
+          "key": "COL4",
+          "name": "Corrected",
+          "parentKey": null
+        }
+      }
+    ]
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"key\": \"COL4\", \"name\": \"Corrected\", \"parentKey\": null}\n"
+  }
+}

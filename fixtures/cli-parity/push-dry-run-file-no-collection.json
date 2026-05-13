@@ -1,0 +1,16 @@
+{
+  "command": [
+    "push",
+    "../../fixtures/cli-parity/data/push-item.json",
+    "--dry-run",
+    "--on-duplicate",
+    "update"
+  ],
+  "rpc": {
+    "calls": []
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"dryRun\": true, \"wouldPush\": {\"title\": \"Rust Migration Parity Paper\", \"itemType\": \"journalArticle\", \"collectionKey\": null, \"pdfPath\": null, \"onDuplicate\": \"update\"}}\n"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "name": "items restore",
+  "command": [
+    "items",
+    "restore",
+    "TRASHME1"
+  ],
+  "rpc": {
+    "method": "items.restore",
+    "params": {
+      "key": "TRASHME1"
+    },
+    "result": {
+      "ok": true,
+      "restored": true,
+      "key": "TRASHME1"
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"restored\": true, \"key\": \"TRASHME1\"}\n"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "name": "items fulltext",
+  "command": [
+    "items",
+    "fulltext",
+    "ITEM1"
+  ],
+  "rpc": {
+    "method": "items.getFullText",
+    "params": {
+      "key": "ITEM1"
+    },
+    "result": {
+      "key": "ITEM1",
+      "text": "全文内容摘要"
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\n  \"key\": \"ITEM1\",\n  \"text\": \"全文内容摘要\"\n}\n"
+  }
+}

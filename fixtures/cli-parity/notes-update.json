@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "name": "notes update",
+  "command": [
+    "notes",
+    "update",
+    "NOTE2",
+    "--content",
+    "<p>Updated note</p>"
+  ],
+  "rpc": {
+    "method": "notes.update",
+    "params": {
+      "key": "NOTE2",
+      "content": "<p>Updated note</p>"
+    },
+    "result": {
+      "key": "NOTE2",
+      "itemType": "note",
+      "note": "<p>Updated note</p>"
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"key\": \"NOTE2\", \"itemType\": \"note\", \"note\": \"<p>Updated note</p>\"}\n"
+  }
+}

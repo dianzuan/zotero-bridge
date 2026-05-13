@@ -1,0 +1,36 @@
+{
+  "command": [
+    "status",
+    "--collection",
+    "Missing Collection"
+  ],
+  "rpc": {
+    "calls": [
+      {
+        "method": "collections.tree",
+        "result": [
+          {
+            "key": "COL1",
+            "name": "Missing Collection",
+            "children": []
+          }
+        ]
+      },
+      {
+        "method": "collections.getItems",
+        "params": {
+          "key": "COL1",
+          "limit": 500,
+          "offset": 0
+        },
+        "result": {
+          "items": []
+        }
+      }
+    ]
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"status\": \"not indexed\", \"collection\": \"Missing Collection\", \"total_items\": 0, \"indexed_items\": 0}\n"
+  }
+}

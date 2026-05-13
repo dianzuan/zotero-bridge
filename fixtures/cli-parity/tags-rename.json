@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "name": "tags rename",
+  "command": [
+    "tags",
+    "rename",
+    "todo",
+    "to-read"
+  ],
+  "rpc": {
+    "method": "tags.rename",
+    "params": {
+      "oldName": "todo",
+      "newName": "to-read"
+    },
+    "result": {
+      "ok": true,
+      "renamed": 3
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"renamed\": 3}\n"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "name": "items trash multi",
+  "command": [
+    "items",
+    "trash",
+    "KEY1",
+    "KEY2",
+    "--dry-run"
+  ],
+  "rpc": {
+    "calls": []
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"dryRun\": true, \"wouldCall\": \"items.batchTrash\", \"wouldCallParams\": {\"keys\": [\"KEY1\", \"KEY2\"]}}\n"
+  }
+}

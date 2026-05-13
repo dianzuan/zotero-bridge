@@ -63,7 +63,8 @@ export const exportHandlers = {
                  `Install via Zotero → Settings → Cite → Styles.`,
       };
     }
-    const itemIDs = params.keys;
+    const items = await resolveItems(params.keys);
+    const itemIDs = items.map((item) => item.id);
     const engine = style.getCiteProc();
     const formats: { html: string; text: string } = { html: "", text: "" };
     try {

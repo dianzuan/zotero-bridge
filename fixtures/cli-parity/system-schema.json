@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "name": "system schema (all types)",
+  "command": [
+    "system",
+    "schema"
+  ],
+  "rpc": {
+    "method": "system.itemTypes",
+    "params": null,
+    "result": [
+      {
+        "itemType": "journalArticle",
+        "localized": "Journal Article"
+      },
+      {
+        "itemType": "book",
+        "localized": "Book"
+      },
+      {
+        "itemType": "report",
+        "localized": "Report"
+      }
+    ]
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "[\n  \"journalArticle\",\n  \"book\",\n  \"report\"\n]\n"
+  }
+}

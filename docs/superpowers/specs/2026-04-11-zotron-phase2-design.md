@@ -1,5 +1,10 @@
 # Zotron Phase 2: OCR + RAG 设计文档
 
+> **Historical note (2026-05-09):** This design predates the Rust migration.
+> The current branch does not expose `zotron-ocr` / `zotron-rag` as product
+> commands. Use `zotron ocr ...` and `zotron rag ...`; Python remains reference
+> material only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** 为 Zotron 添加课题级 PDF OCR 和段落级 RAG 语义搜索，全部通过 Python CLI 工具实现，XPI 不改动。服务于中文学术论文写作流程：CNKI 收集文献 → OCR 提取全文 → RAG 语义检索 → 文献综述写作。

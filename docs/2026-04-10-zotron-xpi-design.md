@@ -1,5 +1,10 @@
 # Zotron XPI 插件设计文档
 
+> Historical design note. Current `rust-migration` status: Zotero-side XPI is
+> still the JS JSON-RPC bridge, but the user-facing CLI is the Rust `zotron`
+> binary. OCR/RAG are `zotron ocr ...` and `zotron rag ...`; legacy
+> Python/Bash-only names are reference material, not the target product surface.
+
 > Phase 1：基础能力，追平 cli-anything-zotero (~55 命令级别)
 > Phase 2（后续）：OCR 集成、CNKI 元数据自主抓取、语义搜索、引用图谱
 
@@ -52,7 +57,7 @@ Claude Code 侧
 | HTTP 协议 | JSON-RPC 2.0 over `Zotero.Server.Endpoints` | BBT 验证过的模式，单端点 |
 | 端口 | 23119（Zotero 内置，共用） | 不额外占端口 |
 | 路径 | `/zotron/rpc` | 避免和其他插件冲突 |
-| CLI | Bash shell script | 薄壳，调 curl，零依赖 |
+| CLI | Rust `zotron` binary | JSON-first typed CLI for agents; Bash wrapper only locates/execs it |
 | 构建 | esbuild + npm scripts | 模板自带 |
 
 ## JSON-RPC 协议
@@ -290,7 +295,7 @@ zotron/
 │   ├── zotero-add/SKILL.md
 │   ├── zotero-export/SKILL.md
 │   ├── zotero-manage/SKILL.md
-│   └── zotron-ocr/SKILL.md    # Phase 2
+│   └── zotero/ocr.md          # current Rust CLI skill doc
 └── agents/
     └── zotero-researcher.md
 ```

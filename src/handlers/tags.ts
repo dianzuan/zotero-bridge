@@ -10,10 +10,15 @@ export const tagsHandlers = {
     const offset = params.offset ?? 0;
     const libraryID = params.libraryId ?? Zotero.Libraries.userLibraryID;
     const tags = await Zotero.Tags.getAll(libraryID);
-    return tags.slice(offset, offset + limit).map((t: any) => ({
-      tag: t.tag,
-      type: t.type ?? 0,
-    }));
+    return {
+      items: tags.slice(offset, offset + limit).map((t: any) => ({
+        tag: t.tag,
+        type: t.type ?? 0,
+      })),
+      total: tags.length,
+      limit,
+      offset,
+    };
   },
 
   async add(params: { key: number; tags: string[] }) {

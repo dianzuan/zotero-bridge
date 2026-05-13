@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "name": "items recent",
+  "command": [
+    "items",
+    "recent",
+    "--limit",
+    "2",
+    "--type",
+    "modified"
+  ],
+  "rpc": {
+    "method": "items.getRecent",
+    "params": {
+      "limit": 2,
+      "offset": 0,
+      "type": "modified"
+    },
+    "result": {
+      "items": [
+        {
+          "key": "ITEM3",
+          "title": "Recent Paper"
+        }
+      ],
+      "total": 1,
+      "limit": 2,
+      "offset": 0
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\n  \"items\": [\n    {\n      \"key\": \"ITEM3\",\n      \"title\": \"Recent Paper\"\n    }\n  ],\n  \"total\": 1,\n  \"limit\": 2,\n  \"offset\": 0,\n  \"hasMore\": false\n}\n"
+  }
+}

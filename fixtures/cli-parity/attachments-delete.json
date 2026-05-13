@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "name": "attachments delete",
+  "command": [
+    "attachments",
+    "delete",
+    "ATT1"
+  ],
+  "rpc": {
+    "method": "attachments.delete",
+    "params": {
+      "key": "ATT1"
+    },
+    "result": {
+      "ok": true,
+      "key": "ATT1"
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"key\": \"ATT1\"}\n"
+  }
+}

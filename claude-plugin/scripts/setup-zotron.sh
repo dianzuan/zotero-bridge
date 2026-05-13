@@ -7,17 +7,6 @@ if [ -z "${PLUGIN_ROOT}" ]; then
   PLUGIN_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 fi
 
-if ! command -v uv >/dev/null 2>&1; then
-  echo "MISSING_UV"
-  echo "Install uv first: https://docs.astral.sh/uv/getting-started/installation/"
-  exit 1
-fi
-
-if [ ! -d "${PLUGIN_ROOT}/python" ]; then
-  echo "BROKEN_PLUGIN: missing ${PLUGIN_ROOT}/python"
-  exit 1
-fi
-
 if [ ! -x "${PLUGIN_ROOT}/bin/zotron" ]; then
   echo "BROKEN_PLUGIN: missing executable ${PLUGIN_ROOT}/bin/zotron"
   exit 1
@@ -25,9 +14,27 @@ fi
 
 BIN_DIR="${HOME}/.local/bin"
 mkdir -p "${BIN_DIR}"
-for name in zotron zotron-rag zotron-ocr; do
-  ln -sfn "${PLUGIN_ROOT}/bin/${name}" "${BIN_DIR}/${name}"
-done
+REPO_ROOT="$(cd -- "${PLUGIN_ROOT}/.." && pwd)"
+if [ -f "${REPO_ROOT}/crates/zotron-cli/Cargo.toml" ]; then
+  if ! command -v cargo >/dev/null 2>&1; then
+    echo "MISSING_CARGO"
+    echo "Install Rust/Cargo first, or set ZOTRON_RUST_BIN to an existing Rust zotron binary."
+    exit 1
+  fi
+  cargo install --path "${REPO_ROOT}/crates/zotron-cli" --root "${BIN_DIR}/.." --force
+  echo "Rust Zotron CLI installed in ${BIN_DIR}."
+else
+  if [ -n "${ZOTRON_RUST_BIN:-}" ] && [ -x "${ZOTRON_RUST_BIN}" ]; then
+    ln -sfn "${PLUGIN_ROOT}/bin/zotron" "${BIN_DIR}/zotron"
+    echo "Rust Zotron CLI wrapper linked in ${BIN_DIR}; ZOTRON_RUST_BIN=${ZOTRON_RUST_BIN}."
+  elif command -v zotron >/dev/null 2>&1; then
+    echo "Rust Zotron CLI already available at $(command -v zotron)."
+  else
+    echo "MISSING_RUST_ZOTRON"
+    echo "This plugin package does not include the Rust source tree. Install the Rust zotron binary or set ZOTRON_RUST_BIN."
+    exit 1
+  fi
+fi
 
 case ":${PATH}:" in
   *":${BIN_DIR}:"*) ;;
@@ -36,18 +43,17 @@ case ":${PATH}:" in
     ;;
 esac
 
-echo "Zotron CLI shims linked in ${BIN_DIR}."
-
-REQUIRED_VERSION="${ZOTRON_REQUIRED_VERSION:-0.1.3}"
+REQUIRED_VERSION="${ZOTRON_REQUIRED_VERSION:-0.1.5}"
 GITHUB_XPI_URL="https://github.com/dianzuan/zotron/releases/download/v${REQUIRED_VERSION}/zotron.xpi"
 DEFAULT_XPI_URLS="${GITHUB_XPI_URL}
 https://gh-proxy.com/${GITHUB_XPI_URL}
 https://gh.llkk.cc/${GITHUB_XPI_URL}
 https://hub.gitmirror.com/${GITHUB_XPI_URL}"
 
-if "${PLUGIN_ROOT}/bin/zotron" ping >/tmp/zotron-ping.json 2>/tmp/zotron-ping.err; then
+ZOTRON_CLI="${ZOTRON_RUST_BIN:-${BIN_DIR}/zotron}"
+if "${ZOTRON_CLI}" ping >/tmp/zotron-ping.json 2>/tmp/zotron-ping.err; then
   cat /tmp/zotron-ping.json
-  if "${PLUGIN_ROOT}/bin/zotron" system version >/tmp/zotron-version.json 2>/tmp/zotron-version.err; then
+  if "${ZOTRON_CLI}" system version >/tmp/zotron-version.json 2>/tmp/zotron-version.err; then
     INSTALLED_VERSION="$(sed -n 's/.*"plugin"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' /tmp/zotron-version.json | head -n 1)"
     if [ "${INSTALLED_VERSION}" = "${REQUIRED_VERSION}" ]; then
       echo "Zotron bridge is live at version ${INSTALLED_VERSION}."

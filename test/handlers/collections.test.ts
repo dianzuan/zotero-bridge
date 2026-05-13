@@ -41,6 +41,33 @@ describe("collections handler", () => {
   });
 
   describe("serializeCollection key-first (P2)", () => {
+    it("list returns recursive flat collections so nested collections are discoverable", async () => {
+      const parent = fakeCollection({ id: 1, key: "PARENT01", name: "Root" });
+      const child = fakeCollection({ id: 2, key: "CHILD001", name: "Sub", parentID: 1 });
+      const getByLibraryStub = sinon.stub().returns([parent, child]);
+
+      installZotero({
+        Libraries: { userLibraryID: 1 },
+        Collections: {
+          getByLibrary: getByLibraryStub,
+          get: sinon.stub().callsFake((id: number) => {
+            if (id === 1) return parent;
+            if (id === 2) return child;
+            return null;
+          }),
+        },
+      });
+
+      delete require.cache[require.resolve("../../src/handlers/collections")];
+      const { collectionsHandlers } = await import("../../src/handlers/collections");
+      const result = await collectionsHandlers.list();
+
+      expect(getByLibraryStub.firstCall.args).to.deep.equal([1, true]);
+      expect(result.items.map((collection: any) => collection.key)).to.deep.equal(["PARENT01", "CHILD001"]);
+      expect(result.total).to.equal(2);
+      expect(result.items[1].parentKey).to.equal("PARENT01");
+    });
+
     it("serializeCollection returns key-first, no id, parentKey, children as keys", async () => {
       const parent = fakeCollection({ id: 1, key: "PARENT01", name: "Root" });
       const child = fakeCollection({ id: 2, key: "CHILD001", name: "Sub", parentID: 1 });
@@ -61,12 +88,12 @@ describe("collections handler", () => {
       const { collectionsHandlers } = await import("../../src/handlers/collections");
       const result = await collectionsHandlers.list();
 
-      expect(result[0]).to.not.have.property("id");
-      expect(result[0].key).to.equal("PARENT01");
-      expect(result[0]).to.have.property("version");
-      expect(result[0].parentKey).to.equal(null);
-      expect(result[0]).to.not.have.property("parentID");
-      expect(result[0].childCollections).to.deep.equal(["CHILD001"]);
+      expect(result.items[0]).to.not.have.property("id");
+      expect(result.items[0].key).to.equal("PARENT01");
+      expect(result.items[0]).to.have.property("version");
+      expect(result.items[0].parentKey).to.equal(null);
+      expect(result.items[0]).to.not.have.property("parentID");
+      expect(result.items[0].childCollections).to.deep.equal(["CHILD001"]);
     });
   });
 
@@ -134,6 +161,88 @@ describe("collections handler", () => {
       expect(result).to.have.property("items").that.deep.equals([]);
       expect(result).to.not.have.property("limit");
       expect(result).to.not.have.property("offset");
+    });
+  });
+
+  describe("create parent resolution", () => {
+    it("resolves parent collection keys to numeric parentID before saving", async () => {
+      const parent = fakeCollection({ id: 7, key: "PARENT01", name: "test" });
+      const saveTxStub = sinon.stub().resolves();
+      let createdCollection: any = null;
+
+      installZotero({
+        Libraries: { userLibraryID: 1 },
+        Collections: {
+          getByLibraryAndKeyAsync: sinon.stub().withArgs(1, "PARENT01").resolves(parent),
+          get: sinon.stub().withArgs(7).returns(parent),
+        },
+        Collection: function () {
+          createdCollection = fakeCollection({
+            id: 8,
+            key: "CHILD001",
+            name: "Child",
+            parentID: null,
+          });
+          createdCollection.saveTx = saveTxStub;
+          return createdCollection;
+        },
+      });
+
+      delete require.cache[require.resolve("../../src/utils/guards")];
+      delete require.cache[require.resolve("../../src/handlers/collections")];
+      const { collectionsHandlers } = await import("../../src/handlers/collections");
+      const result = await collectionsHandlers.create({ name: "Child", parentKey: "PARENT01" });
+
+      expect(saveTxStub.calledOnce).to.equal(true);
+      expect(createdCollection.parentID).to.equal(7);
+      expect(result.parentKey).to.equal("PARENT01");
+    });
+  });
+
+  describe("stats", () => {
+    it("counts child PDF attachments under regular collection items", async () => {
+      const article: any = {
+        id: 10,
+        isNote: () => false,
+        isAttachment: () => false,
+        getAttachments: () => [20, 21],
+      };
+      const note: any = {
+        id: 11,
+        isNote: () => true,
+        isAttachment: () => false,
+        getAttachments: () => [],
+      };
+      const directAttachment: any = {
+        id: 12,
+        isNote: () => false,
+        isAttachment: () => true,
+        getAttachments: () => [],
+      };
+      const collection: any = {
+        id: 1,
+        key: "COLLKEY1",
+        name: "Test",
+        getChildItems: () => [article, note, directAttachment],
+        getChildCollections: () => [],
+      };
+
+      installZotero({
+        Collections: { getAsync: sinon.stub().withArgs(1).resolves(collection) },
+        Items: {
+          getAsync: sinon.stub()
+            .withArgs(20).resolves({ id: 20, isAttachment: () => true })
+            .withArgs(21).resolves({ id: 21, isAttachment: () => true }),
+        },
+      });
+
+      delete require.cache[require.resolve("../../src/handlers/collections")];
+      const { collectionsHandlers } = await import("../../src/handlers/collections");
+      const result = await collectionsHandlers.stats({ key: 1 });
+
+      expect(result.items).to.equal(1);
+      expect(result.notes).to.equal(1);
+      expect(result.attachments).to.equal(3);
     });
   });
 

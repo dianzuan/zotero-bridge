@@ -6,13 +6,14 @@ export const PREF_DEFAULTS: Record<string, string | number> = {
   "ocr.apiKey": "",
   "ocr.apiUrl": "https://open.bigmodel.cn/api/paas/v4/layout_parsing",
   "ocr.model": "glm-ocr",
-  "embedding.provider": "doubao",
-  "embedding.model": "doubao-embedding-vision-251215",
+  "embedding.provider": "volcengine",
+  "embedding.model": "doubao-embedding-text-240715",
   "embedding.apiKey": "",
-  "embedding.apiUrl": "https://ark.cn-beijing.volces.com/api/v3/embeddings/multimodal",
+  "embedding.apiUrl": "https://ark.cn-beijing.volces.com/api/v3/embeddings",
   "rag.chunkSize": 512,
   "rag.chunkOverlap": 64,
   "rag.topK": 5,
+  "rag.retrievalMode": "hybrid",
 };
 
 export function prefKey(key: string): string {

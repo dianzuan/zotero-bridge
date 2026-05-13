@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "name": "items related",
+  "command": [
+    "items",
+    "related",
+    "ITEM1"
+  ],
+  "rpc": {
+    "method": "items.getRelated",
+    "params": {
+      "key": "ITEM1"
+    },
+    "result": {
+      "items": [
+        {
+          "key": "ITEM2",
+          "title": "Related Paper"
+        }
+      ],
+      "total": 1
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\n  \"items\": [\n    {\n      \"key\": \"ITEM2\",\n      \"title\": \"Related Paper\"\n    }\n  ],\n  \"total\": 1,\n  \"offset\": 0,\n  \"hasMore\": false\n}\n"
+  }
+}

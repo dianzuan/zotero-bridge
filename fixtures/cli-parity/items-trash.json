@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "name": "items trash",
+  "command": [
+    "items",
+    "trash",
+    "TRASHME1"
+  ],
+  "rpc": {
+    "method": "items.trash",
+    "params": {
+      "key": "TRASHME1"
+    },
+    "result": {
+      "ok": true,
+      "trashed": true,
+      "key": "TRASHME1"
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"trashed\": true, \"key\": \"TRASHME1\"}\n"
+  }
+}

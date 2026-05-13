@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "name": "items citation key",
+  "command": [
+    "items",
+    "citation-key",
+    "ITEM1"
+  ],
+  "rpc": {
+    "method": "items.citationKey",
+    "params": {
+      "key": "ITEM1"
+    },
+    "result": {
+      "key": "ITEM1",
+      "citationKey": "zhang2024rural"
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\n  \"key\": \"ITEM1\",\n  \"citationKey\": \"zhang2024rural\"\n}\n"
+  }
+}

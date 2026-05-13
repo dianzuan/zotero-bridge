@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "name": "annotations list",
+  "command": [
+    "annotations",
+    "list",
+    "--parent",
+    "ATTACH1"
+  ],
+  "rpc": {
+    "method": "annotations.list",
+    "params": {
+      "parentKey": "ATTACH1"
+    },
+    "result": {
+      "items": [
+        {
+          "key": "ANN1",
+          "annotationType": "highlight",
+          "annotationText": "important point",
+          "annotationComment": "revisit",
+          "annotationColor": "#ffd400"
+        },
+        {
+          "key": "ANN2",
+          "annotationType": "note",
+          "annotationText": "",
+          "annotationComment": "margin note",
+          "annotationColor": "#ff6666"
+        }
+      ],
+      "total": 2
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\n  \"items\": [\n    {\n      \"key\": \"ANN1\",\n      \"annotationType\": \"highlight\",\n      \"annotationText\": \"important point\",\n      \"annotationComment\": \"revisit\",\n      \"annotationColor\": \"#ffd400\"\n    },\n    {\n      \"key\": \"ANN2\",\n      \"annotationType\": \"note\",\n      \"annotationText\": \"\",\n      \"annotationComment\": \"margin note\",\n      \"annotationColor\": \"#ff6666\"\n    }\n  ],\n  \"total\": 2,\n  \"offset\": 0,\n  \"hasMore\": false\n}\n"
+  }
+}

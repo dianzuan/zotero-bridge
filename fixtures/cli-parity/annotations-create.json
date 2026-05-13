@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "name": "annotations create",
+  "command": [
+    "annotations",
+    "create",
+    "--parent",
+    "ATTACH1",
+    "--type",
+    "highlight",
+    "--text",
+    "key finding",
+    "--position",
+    "{\"pageIndex\":0,\"rects\":[[10,20,30,40]]}",
+    "--comment",
+    "revisit this",
+    "--color",
+    "#ff6666"
+  ],
+  "rpc": {
+    "method": "annotations.create",
+    "params": {
+      "parentKey": "ATTACH1",
+      "type": "highlight",
+      "color": "#ff6666",
+      "position": {"pageIndex": 0, "rects": [[10, 20, 30, 40]]},
+      "text": "key finding",
+      "comment": "revisit this"
+    },
+    "result": {
+      "ok": true,
+      "key": "ANN3"
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"key\": \"ANN3\"}\n"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "name": "search create saved",
+  "command": [
+    "search",
+    "create-saved",
+    "Recent AI",
+    "--condition",
+    "tag contains AI",
+    "--condition",
+    "date isAfter 2022"
+  ],
+  "rpc": {
+    "method": "search.createSavedSearch",
+    "params": {
+      "name": "Recent AI",
+      "conditions": [
+        {
+          "field": "tag",
+          "operator": "contains",
+          "value": "AI"
+        },
+        {
+          "field": "date",
+          "operator": "isAfter",
+          "value": "2022"
+        }
+      ]
+    },
+    "result": {
+      "ok": true,
+      "key": "SAVED1",
+      "name": "Recent AI"
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"key\": \"SAVED1\", \"name\": \"Recent AI\"}\n"
+  }
+}

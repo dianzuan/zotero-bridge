@@ -17,14 +17,25 @@ const SETTINGS_KEYS = [
   "rag.chunkSize",
   "rag.chunkOverlap",
   "rag.topK",
+  "rag.retrievalMode",
 ];
 
 // ReadonlySet derived from SETTINGS_KEYS — shared by set (includes-check) and
 // setAll (findUnknownKey). Extend here when new settings are introduced.
 const KNOWN_KEYS: ReadonlySet<string> = new Set(SETTINGS_KEYS);
+const SECRET_KEYS: ReadonlySet<string> = new Set([
+  "ocr.apiKey",
+  "embedding.apiKey",
+]);
 
 function getSetting(key: string): any {
   return getPref(key);
+}
+
+function redactSetting(key: string, value: any): any {
+  if (!SECRET_KEYS.has(key)) return value;
+  if (value === undefined || value === null || value === "") return "";
+  return "REDACTED";
 }
 
 export const settingsHandlers = {
@@ -33,7 +44,7 @@ export const settingsHandlers = {
     if (!KNOWN_KEYS.has(params.key)) {
       throw { code: -32602, message: `Unknown setting key: ${params.key}` };
     }
-    return { [params.key]: getSetting(params.key) };
+    return { [params.key]: redactSetting(params.key, getSetting(params.key)) };
   },
 
   async set(params: { key: string; value: any }) {
@@ -42,28 +53,52 @@ export const settingsHandlers = {
       throw { code: -32602, message: `Unknown setting: ${params.key}. Valid: ${SETTINGS_KEYS.join(", ")}` };
     }
     setPref(params.key, params.value);
-    return { key: params.key, value: params.value };
+    return { key: params.key, value: redactSetting(params.key, params.value) };
   },
 
   async getAll() {
     const result: Record<string, any> = {};
     for (const key of SETTINGS_KEYS) {
-      result[key] = getSetting(key);
+      result[key] = redactSetting(key, getSetting(key));
     }
     return result;
   },
 
+  async getRaw(params: { key: string }) {
+    if (!params.key) throw { code: -32602, message: "key is required" };
+    if (!KNOWN_KEYS.has(params.key)) {
+      throw { code: -32602, message: `Unknown setting key: ${params.key}` };
+    }
+    return { [params.key]: getSetting(params.key) };
+  },
+
   async setAll(params: Record<string, any>) {
-    const unknown = findUnknownKey(params, KNOWN_KEYS);
+    const updates = normalizeSetAllPayload(params);
+    const unknown = findUnknownKey(updates, KNOWN_KEYS);
     if (unknown) throw { code: -32602, message: `Unknown setting key: ${unknown}` };
 
     const updated: Record<string, any> = {};
-    for (const [key, value] of Object.entries(params)) {
+    for (const [key, value] of Object.entries(updates)) {
       setPref(key, value);
-      updated[key] = value;
+      updated[key] = redactSetting(key, value);
     }
     return { updated };
   },
 };
+
+function normalizeSetAllPayload(params: Record<string, any>): Record<string, any> {
+  if (
+    params
+    && typeof params === "object"
+    && !Array.isArray(params)
+    && Object.keys(params).length === 1
+    && params.settings
+    && typeof params.settings === "object"
+    && !Array.isArray(params.settings)
+  ) {
+    return params.settings;
+  }
+  return params;
+}
 
 registerHandlers("settings", settingsHandlers);

@@ -21,20 +21,20 @@ describe("startup preference defaults", () => {
     return import("../src/hooks");
   }
 
-  it("writes GLM, Doubao, and English defaults for fresh installs", async () => {
+  it("writes GLM, Volcengine, and English defaults for fresh installs", async () => {
     const prefs = installPrefs({});
     const { __test__ } = await loadHooks();
 
     __test__.setPreferenceDefaults();
 
     expect(prefs.store.get("zotron.ocr.provider")).to.equal("glm");
-    expect(prefs.store.get("zotron.embedding.provider")).to.equal("doubao");
-    expect(prefs.store.get("zotron.embedding.model")).to.equal("doubao-embedding-vision-251215");
+    expect(prefs.store.get("zotron.embedding.provider")).to.equal("volcengine");
+    expect(prefs.store.get("zotron.embedding.model")).to.equal("doubao-embedding-text-240715");
     expect(prefs.store.get("zotron.embedding.apiKey")).to.equal("");
     expect(prefs.store.get("zotron.ui.language")).to.equal("en-US");
   });
 
-  it("migrates only the untouched old Ollama default to Doubao", async () => {
+  it("migrates only the untouched old Ollama default to Volcengine", async () => {
     const prefs = installPrefs({
       "embedding.provider": "ollama",
       "embedding.model": "qwen3-embedding:4b",
@@ -45,10 +45,27 @@ describe("startup preference defaults", () => {
 
     __test__.setPreferenceDefaults();
 
-    expect(prefs.store.get("zotron.embedding.provider")).to.equal("doubao");
-    expect(prefs.store.get("zotron.embedding.model")).to.equal("doubao-embedding-vision-251215");
-    expect(prefs.store.get("zotron.embedding.apiUrl")).to.equal("https://ark.cn-beijing.volces.com/api/v3/embeddings/multimodal");
+    expect(prefs.store.get("zotron.embedding.provider")).to.equal("volcengine");
+    expect(prefs.store.get("zotron.embedding.model")).to.equal("doubao-embedding-text-240715");
+    expect(prefs.store.get("zotron.embedding.apiUrl")).to.equal("https://ark.cn-beijing.volces.com/api/v3/embeddings");
     expect(prefs.store.get("zotron.embedding.apiKey")).to.equal("");
+  });
+
+  it("migrates the old Doubao multimodal default to Volcengine text embeddings", async () => {
+    const prefs = installPrefs({
+      "embedding.provider": "doubao",
+      "embedding.model": "doubao-embedding-vision-251215",
+      "embedding.apiUrl": "https://ark.cn-beijing.volces.com/api/v3/embeddings/multimodal",
+      "embedding.apiKey": "existing-key",
+    });
+    const { __test__ } = await loadHooks();
+
+    __test__.setPreferenceDefaults();
+
+    expect(prefs.store.get("zotron.embedding.provider")).to.equal("volcengine");
+    expect(prefs.store.get("zotron.embedding.model")).to.equal("doubao-embedding-text-240715");
+    expect(prefs.store.get("zotron.embedding.apiUrl")).to.equal("https://ark.cn-beijing.volces.com/api/v3/embeddings");
+    expect(prefs.store.get("zotron.embedding.apiKey")).to.equal("existing-key");
   });
 
   it("does not migrate customized Ollama settings", async () => {
@@ -82,14 +99,14 @@ describe("startup preference defaults", () => {
   it("migrates legacy extensions.zotron settings into the Zotero add-on branch", async () => {
     const prefs = installPrefs({});
     prefs.store.set("extensions.zotron.ui.language", "zh-CN");
-    prefs.store.set("extensions.zotron.ocr.provider", "qwen");
+    prefs.store.set("extensions.zotron.ocr.provider", "paddle");
     prefs.store.set("extensions.zotron.ocr.apiKey", "old-ocr-key");
     const { __test__ } = await loadHooks();
 
     __test__.setPreferenceDefaults();
 
     expect(prefs.store.get("zotron.ui.language")).to.equal("zh-CN");
-    expect(prefs.store.get("zotron.ocr.provider")).to.equal("qwen");
+    expect(prefs.store.get("zotron.ocr.provider")).to.equal("paddle");
     expect(prefs.store.get("zotron.ocr.apiKey")).to.equal("old-ocr-key");
   });
 

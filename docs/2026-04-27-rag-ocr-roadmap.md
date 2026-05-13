@@ -2,9 +2,41 @@
 
 > 2026-04-27 起草。本 roadmap 把 OCR、RAG、embedding storage、academic-zh 输出契约和 Codex 安装路径放到同一张路线图里。核心目标不是让人读 OCR 结果，而是让 Zotero 成为可检索、可定位、可复用的文献证据库。
 
+> 2026-05-08 修订：Rust 分支不再暴露 `zotron-ocr` / `zotron-rag`
+> 独立 CLI。产品面统一为 `zotron ocr ...` 和 `zotron rag ...`。
+> 机器文件默认写入每个 PDF 附件目录下的隐藏 sidecar：
+> `.zotron/ocr/latest.raw.json`、`.zotron/ocr/latest.blocks.jsonl`、
+> `.zotron/chunks/chunks.v1.jsonl`、`.zotron/embeddings/vectors.jsonl`。
+> 旧的 `zotron-*.jsonl` / `.npz` 名称只作为迁移和 legacy fallback 语境出现。
+
 ## 0. 总判断
 
 Zotron 应该作为 **Zotero/RAG producer**，输出带 provenance 的 retrieval hits。人仍然读 PDF；OCR 和 embedding 是机器层，用来节省 token、定位原文、支撑 academic-zh 后续生成 paper cards 和 citation map。
+
+### 0.1 2026-05-07 修订：从 RAG 问答转向 PDF 证据与标注
+
+当前路线收敛为 **PDF evidence and annotation pipeline**。Zotron 不内置
+LLM 问答能力；Codex / Claude Code 是推理层，Zotron 只负责把 PDF 变成
+可检索、可定位、可标注的证据。
+
+修订后的核心能力是五个：
+
+1. `parse-pdf`：把 PDF attachment 解析成结构化 blocks。主路径是 MinerU
+   等 document parser；Zotero fulltext 只做便宜文本 fallback，不承担结构化解析。
+2. `index-blocks`：按结构块建索引。embedding 可选，不能替代
+   `block_key + page_idx + bbox + text` 这些 provenance。
+3. `retrieve-blocks`：给 agent 返回证据块，不做问答、不调用 LLM。
+4. `locate-highlight-target`：把 quote / block / bbox 定位成可写入 Zotero
+   annotation 的目标。优先 text highlight，失败则 area-box。
+5. `apply-annotations`：把定位结果写成 Zotero 原生 annotation。
+
+由此废弃或降级的想法：
+
+- `ask-pdf` 不进入 Zotron 核心能力；问答由 agent 完成。
+- `export-annotated-pdf` 暂不列入核心 milestone；Zotero UI 已能导出嵌入标注
+  的 PDF，CLI 以后可作为 convenience wrapper。
+- 不把 PDF 按页/按 token 直接切 embedding 作为主路径。
+- 不用 Zotero fulltext + 大量正则/LLM 反推结构文档。
 
 第一阶段不再只做“保守修补”。既然要做，就把长期架构规划完整，并把 storage 一起纳入设计：
 
@@ -12,7 +44,91 @@ Zotron 应该作为 **Zotero/RAG producer**，输出带 provenance 的 retrieval
 - Provider 原始返回必须可审计、可重跑解析。
 - RAG 不能直接消费各家 OCR 的私有格式，必须有统一中间层。
 - academic-zh 不接收最终 paper card 作为主产物，优先接收一行一个 span 的 JSONL hit。
-- Zotero-native storage 是长期主路径；旧本地 JSON 索引只作为迁移/兼容路径。
+- Zotron 机器产物默认放在 PDF attachment storage 下的隐藏 sidecar；外部
+  cache 只作为大规模或本机私有部署的非默认选项。
+  Zotero 库里只保留真实文献、PDF attachment、人工/AI 可见 annotation。
+  OCR、blocks、chunks、embedding 这类机器派生产物不能作为普通 Zotero
+  note/attachment 写入，避免污染人类搜索和文献列表。
+
+### 0.2 2026-05-07 修订：PDF attachment sidecar 存储
+
+Zotron 可以把需要跨设备复核的证据 artifact 放进既有 PDF attachment 的
+storage 目录，但不创建新的 Zotero child attachment。目标结构：
+
+```text
+Zotero Data Directory/
+└── storage/
+    └── <attachment-key>/
+        ├── paper.pdf
+        └── .zotron/
+            ├── manifest.json
+            ├── ocr/
+            │   ├── latest.raw.json
+            │   ├── latest.blocks.jsonl
+            │   ├── latest.native.md
+            │   └── latest.assets.json
+            ├── chunks/
+            │   └── chunks.v1.jsonl
+            └── embeddings/
+                └── vectors.jsonl
+```
+
+这个方案的动机：
+
+- Zotero UI 仍然只显示原 PDF，不显示 `chunks.v1.jsonl` 等机器文件。
+- Zotron 搜索不再需要过滤一堆伪附件；Zotero 人类搜索也不会被 artifact
+  title 污染。
+- Zotero 文件同步会压缩 attachment storage 目录。源码显示普通 dotfile 会被
+  跳过，但 dot 目录下的普通文件有机会随 attachment zip 同步；落地前必须用
+  真实 WebDAV/Zotero Storage 做往返验证。
+
+约束：
+
+- Sidecar 只放可审计、可复建检索上下文的证据文件：raw OCR/parser output、
+  normalized blocks、chunks、manifest，以及可重建的 vectors。
+- `vectors.jsonl` 默认也放 sidecar，保证一个 PDF 的机器证据结构集中在同一棵树里；
+  大体积或本机私有 embedding cache 可以作为后续配置项，但不是默认路径。
+- 插件写入 sidecar 后必须显式标记 attachment 文件同步状态；不能只依赖外部
+  CLI 写文件后等待 Zotero 自动发现。
+- 禁止用 ordinary Zotero note/child attachment 存机器 artifact，除非用户显式
+  请求导出或调试。
+
+### 0.3 2026-05-08 修订：PDF 是人类阅读真源，OCR 是机器证据层
+
+人类阅读和复核的主界面必须是 PDF 本身。PDF 是人工编辑排版后的正式刊物，
+比任何 OCR Markdown 更适合阅读、核对图表、检查脚注和判断上下文。Zotron
+不追求把 PDF 转成一个“更适合人读的 Markdown 替代品”。
+
+OCR / parser 输出的职责是机器层：
+
+- 建立 page / bbox / block / chunk provenance。
+- 帮 agent 少量读取和定位证据，节省上下文 token。
+- 支撑 PDF 跳转、高亮、标注和人工复核。
+- 保留 provider 原始产物，便于重新 normalize 和审计。
+
+因此数据职责分层为：
+
+```text
+PDF                         # 人类阅读真源
+raw provider artifact        # 审计和重跑来源
+provider native markdown     # 快速预览，不是 truth
+latest.blocks.jsonl          # 结构化定位层
+chunks.v1.jsonl          # 检索层
+embedding cache              # 可重建机器缓存
+image/table assets           # 按需复核和视觉读取
+```
+
+表格和图片不能混为一类：
+
+- 表格是结构化文本证据。只要 provider 能返回 faithful Markdown、HTML table
+  或 table JSON，就应该进入 blocks/chunks/embedding，但必须独立切 chunk，
+  保留 table title、caption、列名、行名、单位、页码、bbox 和 raw_ref。
+- 公式可以进入检索层，短公式应和公式说明一起 chunk，长公式保留 raw_ref。
+- Figure/chart/image 的像素内容默认不进入 text embedding。默认只把 caption、
+  title、page、bbox、asset_ref、provider metadata 写入 block；当用户问题命中
+  图表、caption 不足以回答、或需要视觉复核时，再裁剪图片交给 VLM。
+- 没有 caption / 文本 / parser 内容的纯图片不进入 embedding，只保留定位和
+  asset 引用。
 
 ## 1. 非目标
 
@@ -20,6 +136,8 @@ Zotron 应该作为 **Zotero/RAG producer**，输出带 provenance 的 retrieval
 - 不把 raw markdown 当唯一 truth。markdown 可以派生，但不能丢掉 page、bbox、table、figure、provider 原始字段。
 - 不在 zotron 里直接生成最终 paper cards，除非同时保留 span provenance。paper card 聚合交给 academic-zh。
 - 不默认复制 PDF 里的所有图片。默认保留 image reference / bbox / caption；需要视觉复核时再裁剪。
+- 不做通用看图式 OCR fallback；不要把 PDF page 喂给视觉模型后让它按 prompt
+  生成 OCR-like Markdown/JSON。主路径必须保留 parser/provider 的原始结构输出。
 - 不做 graph RAG / citation graph。这是另一个阶段。
 
 ## 2. 三层数据模型
@@ -46,10 +164,10 @@ olmOCR       -> dolma.jsonl + optional markdown
 - 重新 normalize：规则升级后不用重新 OCR。
 - 保留 provider 专有信息：bbox、layout category、table、image crop、confidence、reading order。
 
-建议 Zotero artifact：
+建议 sidecar 文件：
 
 ```text
-<item-key>.zotron-ocr.raw.zip
+storage/<attachment-key>/.zotron/ocr/latest.raw.json
 ```
 
 如果 provider 只返回一个 JSON，可以直接放进 zip；如果 provider 返回目录，zip 保留目录结构。
@@ -100,10 +218,10 @@ Zotron blocks 是统一后的 OCR / parser block JSONL。一行一个 block。�
 heading | paragraph | table | figure | equation | caption | footnote | header | footer | reference | unknown
 ```
 
-建议 Zotero artifact：
+建议 sidecar 文件：
 
 ```text
-<item-key>.zotron-blocks.jsonl
+storage/<attachment-key>/.zotron/ocr/latest.blocks.jsonl
 ```
 
 ### 2.3 RAG Chunks：embedding / search 单位
@@ -114,10 +232,10 @@ Chunk 是从 blocks 组合出来的检索单位。一个 chunk 可以包含多�
 
 ```json
 {
-  "chunk_id": "attABC:c42",
+  "chunk_key": "attABC:c42",
   "item_key": "Wang_2022_trade_risk",
   "attachment_key": "attABC",
-  "block_ids": ["attABC:p12:b08", "attABC:p12:b09"],
+  "block_keys": ["attABC:p12:b08", "attABC:p12:b09"],
   "section_heading": "三、研究设计",
   "page_start": 12,
   "page_end": 12,
@@ -128,14 +246,17 @@ Chunk 是从 blocks 组合出来的检索单位。一个 chunk 可以包含多�
 }
 ```
 
-建议 Zotero artifacts：
+建议 artifact 文件：
 
 ```text
-<item-key>.zotron-chunks.jsonl
-<item-key>.zotron-embed.npz
+storage/<attachment-key>/.zotron/chunks/chunks.v1.jsonl
+storage/<attachment-key>/.zotron/embeddings/vectors.jsonl
 ```
 
-`zotron-embed.npz` 只存 vectors 和索引元数据，不替代 `zotron-chunks.jsonl`。这样调试时不用解 npz 才能看文本。
+`chunks.v1.jsonl` 可以进入 PDF attachment sidecar；`vectors.jsonl`
+默认进入本机 cache。`vectors.jsonl` 只存 vectors 和索引元数据，不替代
+`chunks.v1.jsonl`。这样调试时不用解 npz 才能看文本，换 embedding
+provider 时也能从 chunks 重建。
 
 ### 2.4 Retrieval Hits：对 academic-zh 的输出层
 
@@ -163,8 +284,8 @@ Hit 是检索结果，不是内部存储格式。一行一个 span，用 JSONL �
   "doi": "",
   "zotero_uri": "zotero://select/items/...",
   "section_heading": "三、研究设计",
-  "chunk_id": "attABC:c42",
-  "block_ids": ["attABC:p12:b08", "attABC:p12:b09"],
+  "chunk_key": "attABC:c42",
+  "block_keys": ["attABC:p12:b08", "attABC:p12:b09"],
   "query": "贸易中心性 金融风险 识别策略",
   "score": 0.82,
   "text": "本文利用世界投入产出表和金融风险指标..."
@@ -194,8 +315,8 @@ MVP 规则：
 4. 同一 section 下连续短 paragraph 可以合并到 600-1000 tokens。
 5. table / figure / equation 默认单独成 block；embedding 时优先使用 caption、标题、附近正文和线性化 table text。
 6. block 太长才在 block 内按句子或 token 二次拆分。
-7. overlap 不用粗暴字符 overlap；优先保留 `block_ids`，必要时在 chunk text 中附带上一句/下一句。
-8. 每个 hit 必须能追溯到 `chunk_id` 和 `block_ids`。
+7. overlap 不用粗暴字符 overlap；优先保留 `block_keys`，必要时在 chunk text 中附带上一句/下一句。
+8. 每个 hit 必须能追溯到 `chunk_key` 和 `block_keys`。
 
 粗粒度检索需要额外 `level`：
 
@@ -220,15 +341,11 @@ Provider 分三类，不要混成一种。
 | 层级 | Provider | 状态 |
 |---|---|---|
 | 默认 live | GLM-OCR | 默认 OCR provider；走智谱 layout parsing endpoint |
-| live fallback | Qwen-VL-OCR | DashScope `qwen-vl-ocr` 浅接入；还需补官方 `ocr_options`、逐页渲染和返回格式解析 |
-| live fallback | custom / OpenAI-compatible vision | 用户自带 endpoint；适合临时 VLM OCR |
-| parser scaffold | MinerU | 已有 raw parser scaffold；待接本地 CLI transport |
+| target parser | MinerU Cloud 精准解析 API | Rust `zotron ocr parse-pdf` 已接本地文件上传、URL submit、poll、download、result-dir/result-zip ingestion，并写入 attachment hidden sidecar |
 | parser scaffold | Mistral OCR | 已有 raw parser scaffold；待接 `/v1/ocr` transport |
 | parser scaffold | PaddleOCR-VL | 已有 raw parser scaffold；待接本地/服务端 transport |
 | spec only | Mathpix | 公式/表格/STEM 专项候选 |
 | spec only | olmOCR | 自托管英文 PDF linearization 候选 |
-| spec only | Doubao OCR | VLM OCR fallback 候选 |
-| spec only | openai-vision-compat | generic VLM OCR preset |
 
 ### 4.1 结构化 document parser 优先
 
@@ -244,18 +361,41 @@ Provider 分三类，不要混成一种。
 调研补充：
 
 - MinerU 官方输出不止 markdown，还包括 `content_list.json`、`content_list_v2.json`、`middle.json`、layout/span debug PDFs 和图片等辅助文件；`content_list_v2.json` 按 page 分组，block 有 `type/content/bbox/anchor` 等字段，最适合直接 normalize 成 zotron blocks。
+- MinerU 云 API 分精准解析和 Agent 轻量解析。Zotron 应接精准解析 API：
+  `POST /api/v4/extract/task` 或本地文件签名上传批量接口，轮询
+  `/api/v4/extract/task/{task_id}`，完成后下载 `full_zip_url`。Agent 轻量
+  API 只返回 Markdown CDN 链接，适合临时 agent 工作流，不适合作为 Zotron
+  证据库主路径。
+- Rust 当前落地路径：
+  `zotron ocr parse-pdf --provider mineru --parent <item_key> --attachment <attachment_key>`
+  会通过 Zotero `attachments.getPath` 取本地 PDF，申请 MinerU batch 上传 URL，
+  PUT 本地文件，轮询 batch 结果，下载 zip，解析 `*_content_list_v2.json`
+  或 `*_content_list.json`，并写入
+  `.zotron/ocr/latest.raw.json`、`.zotron/ocr/latest.blocks.jsonl`、
+  `.zotron/chunks/chunks.v1.jsonl`、`.zotron/ocr/latest.native.md`、
+  `.zotron/ocr/latest.assets.json`。有公网 PDF URL 时可传 `--source-url`
+  走 MinerU extract/task；`--result-dir` / `--result-zip` 用于离线回放和测试。
 - Mistral OCR 官方 `mistral-ocr-latest` / `/v1/ocr` 返回 markdown、图片 bbox 和文档结构 metadata；新版还支持 table_format、header/footer、confidence scores 等参数，适合云端结构化 OCR。
 - PaddleOCR/PaddleOCR-VL 是本地/服务化优先的开源路线；PaddleOCR-VL 1.5 面向 document parsing，适合做自托管 provider。
 
-### 4.2 VLM OCR 作为 fallback
+### 4.2 图表处理边界
 
-Qwen-VL-OCR、Doubao OCR、OpenAI-compatible vision endpoint 更像“按 prompt 输出文本/JSON”的 VLM 通道。它们可以补充支持，但 provenance 稳定性通常弱于 document parser。
+Zotron 不把图像内容改写成合成文本作为检索证据。图像、插图、截图类 block
+默认只保留 provider 返回的引用、caption、bbox、page 和原始 metadata；需要视觉
+复核时再裁剪，不默认复制所有图片。
 
 MVP 策略：
 
-- 支持它们返回 markdown/text。
-- 若 prompt 可控，可要求输出 JSON blocks。
-- 但不要把 VLM fallback 的 bbox/provenance 质量和 MinerU/Paddle/Mistral 等同看待。
+- 表格正常进入主线：如果 provider 返回结构化 table 或 faithful Markdown table，
+  就 normalize 成 table block/chunk，并保留原始 provider 字段。Table chunk
+  不和普通 paragraph 混切；embedding 文本应由 table title、caption、列名、
+  行名、单位和单元格内容显式构造。
+- Figure/image block 不默认进入全文语义检索文本；除非有 caption 或文档 parser
+  明确给出可引用文本。
+- Figure/chart 的图片资源要保存到 raw artifact / assets 中，因为它们是后续
+  人工复核、PDF 对照、按需 VLM 读图的入口；但图片像素不是默认 embedding
+  输入。
+- 不引入 Qwen/Doubao/OpenAI-compatible vision 这类 prompt-only OCR fallback。
 
 ### 4.3 公式/表格专项
 
@@ -289,7 +429,8 @@ Embedding provider 要抽成 registry/spec，而不是每个 provider 写一个�
 - Voyage：`input_type=query` / `document`。
 - Cohere：`input_type=search_query` / `search_document`，解析 `embeddings.float`。
 - Gemini：`taskType=RETRIEVAL_QUERY` / `RETRIEVAL_DOCUMENT`，使用 `:embedContent` endpoint。
-- Doubao：保留现有 multimodal embedding adapter 和 query/corpus instructions。
+- Volcengine/Doubao text embedding：可作为 embedding provider 之一保留；
+  不作为 OCR/VLM fallback 默认路径。
 
 关键要求：
 
@@ -298,18 +439,22 @@ Embedding provider 要抽成 registry/spec，而不是每个 provider 写一个�
 - provider 支持 input_type/task/prefix 时必须正确区分。
 - 模型维度、max tokens、modalities 写进 ModelSpec。
 
-## 6. Zotero-Native Storage
+## 6. Zotron Artifact Store
 
-长期主路径是每篇 item 下挂子附件：
+长期主路径分为 attachment sidecar 和本机 artifact cache。Zotero 只保留真实
+文献、PDF attachment 和可见 annotation。每篇 item/attachment 的证据产物路径：
 
 ```text
-<item-key>.zotron-ocr.raw.zip
-<item-key>.zotron-blocks.jsonl
-<item-key>.zotron-chunks.jsonl
-<item-key>.zotron-embed.npz
+storage/<attachment-key>/.zotron/manifest.json
+storage/<attachment-key>/.zotron/ocr/latest.raw.json
+storage/<attachment-key>/.zotron/ocr/latest.blocks.jsonl
+storage/<attachment-key>/.zotron/chunks/chunks.v1.jsonl
+storage/<attachment-key>/.zotron/embeddings/vectors.jsonl
 ```
 
-可选保留 HTML note：
+Sidecar 负责可同步、可复核的证据；本机 cache 负责可重建的大型机器索引。
+
+可选的人类预览必须显式 opt-in，且不能作为默认流程：
 
 ```text
 OCR Preview note, tag=ocr
@@ -327,7 +472,7 @@ chunking config 变了 -> chunks stale
 embedding provider/model/dim 变了 -> embed stale
 ```
 
-`zotron-embed.npz` 建议字段：
+`vectors.jsonl` 建议字段：
 
 ```text
 schema_version
@@ -335,7 +480,7 @@ embedder_id
 embedder_dim
 source_chunks_sha256
 created_at
-chunk_ids
+chunk_keys
 vectors
 ```
 
@@ -344,19 +489,23 @@ vectors
 ### 7.1 OCR
 
 ```text
-zotron-ocr run --collection "中国工业经济"
-zotron-ocr status --collection "中国工业经济"
-zotron-ocr rebuild --item <item-id>
+zotron ocr status --collection "中国工业经济"
+zotron ocr providers
+zotron ocr parse-pdf --provider mineru --parent ITEMKEY --attachment ATTACHKEY
+zotron ocr parse-pdf --provider mineru --parent ITEMKEY --attachment ATTACHKEY --source-url https://example.com/paper.pdf
+zotron ocr parse-pdf --provider mineru --parent ITEMKEY --attachment ATTACHKEY --result-dir /tmp/mineru-unzipped
+zotron ocr provider-json --provider mineru --input /tmp/request.json
 ```
 
-内部写入 Zotero artifacts。
+内部写入 attachment sidecar 或本机 artifact cache，不写入普通 Zotero
+note/child attachment。
 
 ### 7.2 RAG Index
 
 ```text
-zotron-rag index --collection "中国工业经济"
-zotron-rag status --collection "中国工业经济"
-zotron-rag migrate-to-zotero
+zotron rag status --collection "中国工业经济"
+zotron rag embedding-providers
+zotron rag embedding-json --provider alibaba --input /tmp/request.json
 ```
 
 旧 `~/.local/share/zotron/rag/*.json`：
@@ -371,7 +520,7 @@ zotron-rag migrate-to-zotero
 
 ```text
 rag.searchHits
-zotron-rag hits
+zotron rag hits
 ```
 
 请求：
@@ -400,8 +549,8 @@ zotron-rag hits
       "doi": "",
       "zotero_uri": "zotero://select/items/...",
       "section_heading": "三、研究设计",
-      "chunk_id": "attABC:c42",
-      "block_ids": ["attABC:p12:b08"],
+      "chunk_key": "attABC:c42",
+      "block_keys": ["attABC:p12:b08"],
       "query": "贸易中心性 金融风险 识别策略",
       "score": 0.82,
       "text": "本文利用世界投入产出表和金融风险指标..."
@@ -414,7 +563,7 @@ zotron-rag hits
 JSONL 输出：
 
 ```text
-zotron-rag hits "贸易中心性 金融风险 识别策略" --collection "中国工业经济" --output jsonl
+zotron rag hits "贸易中心性 金融风险 识别策略" --collection "中国工业经济" --output jsonl
 ```
 
 ## 8. Codex / Code CLI 安装路径
@@ -439,8 +588,6 @@ codex-plugin/
   skills/zotero/*.md
   agents/zotero-researcher.md
   bin/zotron
-  bin/zotron-ocr
-  bin/zotron-rag
 ```
 
 如果后续确认 Codex 插件规范与 Claude plugin 可以共用大部分文件，再减少重复：
@@ -460,34 +607,44 @@ agent-plugin/
 
 ## 9. Roadmap
 
+本 roadmap 以 `docs/2026-05-07-pdf-evidence-annotation-milestones.md`
+中的 milestone 为当前执行准线。下列早期 phase 仍保留历史上下文；如果与
+2026-05-07 milestone 冲突，以 milestone 文档为准。
+
 ### Phase 0 -- Contract Freeze
 
 产出：
 
 - 本 roadmap。
 - `docs/api-stability.md` 更新 retrieval hits JSONL contract。
-- 明确 `rag.searchHits` / `zotron-rag hits` 命名。
+- 明确 `rag.searchHits` / `zotron rag hits` 命名。
 - 明确 blocks/chunks/hits schema version。
+- 明确 key-first contract：RAG/OCR/PDF evidence 新输出不使用 `*_id` 字段。
+- 明确 `parse-pdf` / `index-blocks` / `retrieve-blocks` /
+  `locate-highlight-target` / `apply-annotations` 是当前能力边界。
 
 验收：
 
 - academic-zh 可以按 JSONL contract 开始对接。
 - README 不再暗示 RAG 只返回 paper-level result。
+- PRD 中不再把 `ask-pdf` 作为 Zotron 内置服务。
 
 ### Phase 1 -- Storage + Schema Foundation
 
 产出：
 
-- Zotero artifact helper：add/list/delete/find by suffix。
+- Zotron artifact helper：add/list/delete/find by item/attachment key and
+  artifact kind，支持 attachment sidecar 和本机 cache 两类 backend。
 - `provider_raw` zip 写入。
-- `zotron-blocks.jsonl` 写入。
-- `zotron-chunks.jsonl` 写入。
-- `zotron-embed.npz` 写入/读取。
+- `latest.blocks.jsonl` 写入。
+- `chunks.v1.jsonl` 写入。
+- `vectors.jsonl` 本机 cache 写入/读取。
 - stale 检测字段。
 
 验收：
 
-- 单篇论文 OCR 后能在 Zotero item 下看到 artifacts。
+- 单篇论文 OCR 后能看到 sidecar/cache artifacts，Zotero item 列表/search
+  不新增机器派生条目。
 - 不依赖 HTML note 做 RAG source。
 - 本地临时文件不会残留。
 
@@ -497,13 +654,12 @@ agent-plugin/
 
 - `OCREngineSpec` / registry。
 - Adapter：GLM、Mistral、MinerU、PaddleOCR-VL。
-- VLM fallback：Qwen / custom OpenAI-compatible。
 - Provider raw -> zotron blocks normalizer。
 
 验收：
 
 - 每个 adapter 有 mock-based test。
-- 同一篇 sample PDF 用不同 provider 后都能生成 `zotron-blocks.jsonl`。
+- 同一篇 sample PDF 用不同 provider 后都能生成 `latest.blocks.jsonl`。
 - 图片 block 只保存 refs/caption/bbox，不默认复制全部图片。
 
 ### Phase 3 -- Structure-First Chunking
@@ -513,7 +669,8 @@ agent-plugin/
 - blocks -> chunks builder。
 - doc / section / chunk 三层 level。
 - table/figure/equation chunk policy。
-- chunk provenance：`block_ids`、page range、section heading。
+- chunk provenance：`block_keys`、page range、section heading。
+- `retrieve-blocks` CLI/RPC：返回原文证据块，不做 LLM synthesis。
 
 验收：
 
@@ -529,23 +686,26 @@ agent-plugin/
 - OpenAI-compatible adapter。
 - Voyage / Jina / Cohere / Google / DashScope / Ollama support。
 - query/document role 区分。
-- embeddings 写入 Zotero `.zotron-embed.npz`。
+- embeddings 写入本机 artifact cache 的 `vectors.jsonl`。
 
 验收：
 
 - 同一 chunk 用不同 provider 可 embed。
 - 查询和建索引用不同 role。
-- 旧 `zotron-rag index/search/cite` 有兼容或清晰 deprecation。
+- 旧独立 `zotron-ocr` / `zotron-rag` 不在 Rust 产品面保留；如旧文档出现，
+  一律迁移到 `zotron ocr ...` / `zotron rag ...`。
 
 ### Phase 5 -- Retrieval Hits for academic-zh
 
 产出：
 
 - `rag.searchHits` JSON-RPC method。
-- `zotron-rag hits --output jsonl`。
+- `zotron rag hits --output jsonl`。
 - `top_spans_per_item`。
 - `include_fulltext_spans`。
 - optional grep/hybrid path。
+- `locate-highlight-target` 第一版：quote/block/bbox -> area annotation target。
+- `apply-annotations` 第一版：area-box targets -> Zotero native annotations。
 
 验收：
 
@@ -553,6 +713,8 @@ agent-plugin/
 - 每个 hit 至少有 `item_key/title/text`。
 - 推荐字段齐全时 academic-zh 能生成 `paper_cards.jsonl` 和 `citation_map.json`。
 - `text` 是可引用原文 span，不是泛泛摘要。
+- 对至少一个 MinerU block bbox 能创建可见 Zotero annotation。
+- 对 text-layer PDF 的 quote 定位失败时，能自动降级为 bbox area annotation。
 
 ### Phase 6 -- Codex Install Surface
 
@@ -573,7 +735,7 @@ agent-plugin/
 
 产出：
 
-- `zotron-rag migrate-to-zotero`。
+- `zotron rag migrate-to-zotero`。
 - 旧 JSON index 检测和 warning。
 - 迁移文档。
 
@@ -602,16 +764,17 @@ agent-plugin/
 
 回归测试：
 
-- 现有 `zotron-rag cite/search` 的兼容行为。
-- 现有 `zotron-ocr status/run` 的 CLI 参数。
+- `zotron rag hits --zotero` 的输出 schema 和定位字段。
+- `zotron ocr status` / provider JSON 工具的 CLI 参数。
 - README 命令仍可复制执行。
 
 ## 11. 关键风险
 
-- Zotero child attachment 数量变多，UI 可能变吵。需要隐藏命名约定和清晰 tag。
-- `.npz` 不是人读格式，所以必须保留 `.zotron-chunks.jsonl`。
+- 如果机器派生产物继续写成 Zotero child attachment，Zotero UI 和搜索会被污染；
+  默认必须写入 attachment sidecar 或本机 artifact cache。
+- `.npz` 不是人读格式，所以必须保留 `.chunks.v1.jsonl`。
 - Provider bbox 坐标系可能不同，需要记录 coordinate system。
-- VLM fallback 的 provenance 弱，不能和 parser provider 混同评分。
+- 看图式 OCR-like provider 不进入主线，避免 prompt 生成文本污染原始证据。
 - Full Zotero storage sync 会占配额；图片 crop 默认不复制是必要约束。
 - 一次改动较大，应按 phase 合并，避免一个 PR 同时改 OCR、embedding、README、RPC。
 
@@ -621,7 +784,7 @@ agent-plugin/
 
 ```text
 Contract Freeze
-  -> Zotero artifact storage
+  -> Zotron sidecar/cache artifact store
   -> OCR raw + blocks
   -> blocks -> chunks
   -> embedding provider registry + npz

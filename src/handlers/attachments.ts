@@ -33,9 +33,10 @@ export const attachmentsHandlers = {
   async list(params: { parentKey: number | string }) {
     const parent = await requireItem(params.parentKey);
     const attIDs = parent.getAttachments();
-    if (attIDs.length === 0) return [];
+    if (attIDs.length === 0) return { items: [], total: 0 };
     const atts = await Zotero.Items.getAsync(attIDs);
-    return Promise.all(atts.map(serializeAttachment));
+    const items = await Promise.all(atts.map(serializeAttachment));
+    return { items, total: items.length };
   },
 
   async getFulltext(params: { key: number | string }) {

@@ -25,8 +25,9 @@ function buildTree(collections: Zotero.Collection[]): any[] {
 export const collectionsHandlers = {
   async list() {
     const libraryID = Zotero.Libraries.userLibraryID;
-    const cols = Zotero.Collections.getByLibrary(libraryID, false);
-    return cols.map(serializeCollection);
+    const cols = Zotero.Collections.getByLibrary(libraryID, true);
+    const items = cols.map(serializeCollection);
+    return { items, total: items.length };
   },
 
   async get(params: { key: number | string }) {
@@ -62,11 +63,14 @@ export const collectionsHandlers = {
     return buildTree(cols);
   },
 
-  async create(params: { name: string; parentKey?: number }) {
+  async create(params: { name: string; parentKey?: number | string }) {
     const col = new Zotero.Collection();
     (col as any).libraryID = Zotero.Libraries.userLibraryID;
     col.name = params.name;
-    if (params.parentKey) col.parentID = params.parentKey;
+    if (params.parentKey) {
+      const parent = await requireCollection(params.parentKey);
+      col.parentID = parent.id;
+    }
     await col.saveTx();
     return serializeCollection(col);
   },
@@ -84,9 +88,14 @@ export const collectionsHandlers = {
     return { ok: true, key: col.key };
   },
 
-  async move(params: { key: number | string; newParentKey: number | null }) {
+  async move(params: { key: number | string; newParentKey: number | string | null }) {
     const col = await requireCollection(params.key);
-    (col as any).parentID = params.newParentKey || false;
+    if (params.newParentKey) {
+      const parent = await requireCollection(params.newParentKey);
+      (col as any).parentID = parent.id;
+    } else {
+      (col as any).parentID = false;
+    }
     await col.saveTx();
     return serializeCollection(col);
   },
@@ -115,11 +124,19 @@ export const collectionsHandlers = {
     const col = await requireCollection(params.key);
     const items = col.getChildItems(false);
     const subcols = col.getChildCollections(false);
+    let childAttachmentCount = 0;
+    for (const item of items) {
+      if (item.isNote() || item.isAttachment()) continue;
+      for (const attachmentID of item.getAttachments?.() || []) {
+        const attachment = await Zotero.Items.getAsync(attachmentID);
+        if (attachment?.isAttachment?.()) childAttachmentCount += 1;
+      }
+    }
     return {
       key: col.key,
       name: col.name,
       items: items.filter((i: any) => !i.isNote() && !i.isAttachment()).length,
-      attachments: items.filter((i: any) => i.isAttachment()).length,
+      attachments: items.filter((i: any) => i.isAttachment()).length + childAttachmentCount,
       notes: items.filter((i: any) => i.isNote()).length,
       subcollections: subcols.length,
     };

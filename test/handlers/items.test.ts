@@ -132,7 +132,7 @@ describe("items handler", () => {
 
       installZotero({
         Libraries: { userLibraryID: 1 },
-        DB: { columnQueryAsync: sinon.stub().resolves(itemIDs) },
+        DB: { columnQueryAsync: sinon.stub().resolves(itemIDs), valueQueryAsync: sinon.stub().resolves(2) },
         Items: { getAsync: sinon.stub().withArgs(itemIDs).resolves(items) },
         ItemFields: { getItemTypeFields: () => [], getName: () => "" },
         CreatorTypes: { getName: () => "author" },
@@ -142,7 +142,7 @@ describe("items handler", () => {
       const { itemsHandlers } = await import("../../src/handlers/items");
       const result = await itemsHandlers.getRecent({ limit: 2 });
 
-      expect(result).to.have.keys("items", "total", "limit");
+      expect(result).to.have.keys("items", "total", "limit", "offset");
       expect(result.limit).to.equal(2);
       expect(result.total).to.equal(2);
       expect(result.items).to.have.lengthOf(2);
@@ -310,7 +310,7 @@ describe("items handler", () => {
 
       installZotero({
         Libraries: { userLibraryID: 1 },
-        DB: { columnQueryAsync: queryStub },
+        DB: { columnQueryAsync: queryStub, valueQueryAsync: sinon.stub().resolves(3) },
         Items: {
           getAll: sinon.stub().rejects(new Error("getAll should NOT be called")),
           getAsync: sinon.stub().withArgs(sortedIDs).resolves(items),
@@ -328,7 +328,7 @@ describe("items handler", () => {
       expect(sql).to.match(/ORDER BY dateAdded DESC/i);
       expect(sql).to.match(/LIMIT/i);
       expect(sqlParams).to.deep.equal([1, 3, 0]);  // [libraryID, limit, offset]
-      expect(result).to.have.keys("items", "total", "limit");
+      expect(result).to.have.keys("items", "total", "limit", "offset");
       expect(result.items).to.have.lengthOf(3);
       expect(result.items[0].key).to.equal("K203"); // most recent
     });
@@ -344,7 +344,7 @@ describe("items handler", () => {
       const queryStub = sinon.stub().resolves(sortedIDs);
       installZotero({
         Libraries: { userLibraryID: 1 },
-        DB: { columnQueryAsync: queryStub },
+        DB: { columnQueryAsync: queryStub, valueQueryAsync: sinon.stub().resolves(200) },
         Items: { getAsync: sinon.stub().withArgs(sortedIDs).resolves(items) },
         ItemFields: { getItemTypeFields: () => [], getName: () => "" },
         CreatorTypes: { getName: () => "author" },
@@ -364,7 +364,7 @@ describe("items handler", () => {
       const queryStub = sinon.stub().resolves([301]);
       installZotero({
         Libraries: { userLibraryID: 1 },
-        DB: { columnQueryAsync: queryStub },
+        DB: { columnQueryAsync: queryStub, valueQueryAsync: sinon.stub().resolves(1) },
         Items: {
           getAsync: sinon.stub().resolves([{
             id: 301, key: "K301", itemType: "journalArticle", itemTypeID: 1,
@@ -430,7 +430,7 @@ describe("items handler", () => {
 
       installZotero({
         Libraries: { userLibraryID: 1 },
-        DB: { columnQueryAsync: sinon.stub().resolves(itemIDs) },
+        DB: { columnQueryAsync: sinon.stub().resolves(itemIDs), valueQueryAsync: sinon.stub().resolves(2) },
         Items: { getAsync: sinon.stub().withArgs(itemIDs).resolves(items) },
         ItemFields: { getItemTypeFields: () => [], getName: () => "" },
         CreatorTypes: { getName: () => "author" },
@@ -441,6 +441,7 @@ describe("items handler", () => {
       const result = await itemsHandlers.list({});
 
       expect(result).to.have.keys("items", "total", "limit", "offset");
+      expect(result.total).to.equal(2);
       expect(result.limit).to.equal(50);
       expect(result.offset).to.equal(0);
       expect(result.items).to.have.lengthOf(2);
@@ -450,7 +451,7 @@ describe("items handler", () => {
       const queryStub = sinon.stub().resolves([]);
       installZotero({
         Libraries: { userLibraryID: 1 },
-        DB: { columnQueryAsync: queryStub },
+        DB: { columnQueryAsync: queryStub, valueQueryAsync: sinon.stub().resolves(0) },
         Items: { getAsync: sinon.stub().resolves([]) },
       });
 
@@ -614,7 +615,7 @@ describe("items handler", () => {
   });
 
   describe("citationKey on items namespace (fix #52 relocation)", () => {
-    it("returns {citationKey, id} when called as items.citationKey", async () => {
+    it("returns {citationKey, key} when called as items.citationKey", async () => {
       const item: any = {
         id: 5, key: "K5",
         getField: (n: string) => {
@@ -640,6 +641,29 @@ describe("items handler", () => {
       expect(result.citationKey).to.be.a("string");
       // The citation key should include something derived from the item — be lenient on exact format
       expect(result.citationKey.length).to.be.greaterThan(0);
+    });
+
+    it("combines Chinese lastName and firstName before year fallback", async () => {
+      const item: any = {
+        id: 6, key: "K6",
+        getField: (n: string) => {
+          if (n === "date") return "2026";
+          if (n === "extra") return "";
+          return "";
+        },
+        getCreators: () => [{ lastName: "董", firstName: "敏凯", creatorTypeID: 1 }],
+        isNote: () => false, isAttachment: () => false,
+      };
+      installZotero({
+        Items: { getAsync: sinon.stub().withArgs(6).resolves(item) },
+        Date: { strToDate: sinon.stub().returns({ year: 2026 }) },
+        CreatorTypes: { getName: () => "author" },
+      });
+
+      const { itemsHandlers } = await import("../../src/handlers/items");
+      const result = await itemsHandlers.citationKey({ key: 6 });
+
+      expect(result.citationKey).to.equal("董敏凯2026");
     });
   });
 });

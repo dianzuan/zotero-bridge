@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "name": "settings set string",
+  "command": [
+    "settings",
+    "set",
+    "extensions.zotero.openURL.resolver",
+    "https://libgen.rs"
+  ],
+  "rpc": {
+    "method": "settings.set",
+    "params": {
+      "key": "extensions.zotero.openURL.resolver",
+      "value": "https://libgen.rs"
+    },
+    "result": {
+      "ok": true,
+      "key": "extensions.zotero.openURL.resolver",
+      "value": "https://libgen.rs"
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"key\": \"extensions.zotero.openURL.resolver\", \"value\": \"https://libgen.rs\"}\n"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "name": "export --format ris",
+  "command": ["export", "--format", "ris", "KEY1"],
+  "rpc": {
+    "method": "export.ris",
+    "params": {
+      "keys": ["KEY1"]
+    },
+    "result": {
+      "format": "ris",
+      "content": "TY  - JOUR\nTI  - Test Paper\nER  -",
+      "count": 1
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "TY  - JOUR\nTI  - Test Paper\nER  -\n"
+  }
+}

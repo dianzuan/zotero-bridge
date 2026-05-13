@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "name": "export bibtex with --collection",
+  "command": ["export", "--format", "bibtex", "--collection", "数字经济"],
+  "rpc": {
+    "calls": [
+      {
+        "method": "collections.list",
+        "params": null,
+        "result": {
+          "items": [
+            {
+              "key": "COL1",
+              "name": "Research",
+              "parentKey": null
+            },
+            {
+              "key": "COL2",
+              "name": "数字经济",
+              "parentKey": "COL1"
+            }
+          ],
+          "total": 2
+        }
+      },
+      {
+        "method": "collections.getItems",
+        "params": {
+          "key": "COL2"
+        },
+        "result": {
+          "items": [
+            {
+              "key": "ITEM1",
+              "title": "乡村振兴与数字经济"
+            },
+            {
+              "key": "ITEM2",
+              "title": "数字经济发展报告"
+            }
+          ],
+          "total": 2
+        }
+      },
+      {
+        "method": "export.bibtex",
+        "params": {
+          "keys": ["ITEM1", "ITEM2"]
+        },
+        "result": {
+          "format": "bibtex",
+          "content": "@article{item1,\n  title = {乡村振兴与数字经济}\n}\n@article{item2,\n  title = {数字经济发展报告}\n}",
+          "count": 2
+        }
+      }
+    ]
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "@article{item1,\n  title = {乡村振兴与数字经济}\n}\n@article{item2,\n  title = {数字经济发展报告}\n}\n"
+  }
+}

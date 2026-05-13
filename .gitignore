@@ -1,6 +1,7 @@
 node_modules/
 .scaffold/
 *.xpi
+target/
 
 # Python
 __pycache__/
@@ -18,6 +19,9 @@ addon/content/zotron.js
 
 # Dev config (machine-specific Windows paths)
 .env
+.env.local
+.env.providers
+.env.providers.local
 
 # Internal process artifacts — superpowers planning + smoke notes
 # (contain operator names, local paths, real paper titles from the

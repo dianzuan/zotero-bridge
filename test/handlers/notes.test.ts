@@ -29,12 +29,13 @@ describe("notes handler", () => {
       const { notesHandlers } = await import("../../src/handlers/notes");
       const result = await notesHandlers.list({ parentKey: 1 });
 
-      expect(result).to.have.lengthOf(1);
-      expect(result[0].key).to.equal("N1");
-      expect(result[0].note).to.equal("<p>Hello note</p>");  // from T0 upgrade
-      expect(result[0]).to.have.keys("key", "version", "itemType", "title", "dateAdded", "dateModified", "note", "creators", "tags", "collections", "relations");
+      expect(result).to.have.property("items").with.lengthOf(1);
+      expect(result).to.have.property("total", 1);
+      expect(result.items[0].key).to.equal("N1");
+      expect(result.items[0].note).to.equal("<p>Hello note</p>");  // from T0 upgrade
+      expect(result.items[0]).to.have.keys("key", "version", "itemType", "title", "dateAdded", "dateModified", "note", "creators", "tags", "collections", "relations");
       // Old custom-shape keys gone:
-      expect(result[0]).to.not.have.property("content");  // renamed to `note`
+      expect(result.items[0]).to.not.have.property("content");  // renamed to `note`
     });
   });
 

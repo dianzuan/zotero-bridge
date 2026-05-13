@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "name": "tags add dry run",
+  "command": [
+    "tags",
+    "add",
+    "YR5BUGHG",
+    "--tag",
+    "reviewed",
+    "--dry-run"
+  ],
+  "rpc": {
+    "calls": []
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"dryRun\": true, \"wouldCall\": \"tags.add\", \"wouldCallParams\": {\"key\": \"YR5BUGHG\", \"tags\": [\"reviewed\"]}}\n"
+  }
+}

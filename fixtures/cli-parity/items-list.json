@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "name": "items list",
+  "command": [
+    "items",
+    "list",
+    "--limit",
+    "2",
+    "--offset",
+    "1",
+    "--sort",
+    "title",
+    "--direction",
+    "desc"
+  ],
+  "rpc": {
+    "method": "items.list",
+    "params": {
+      "limit": 2,
+      "offset": 1,
+      "direction": "desc",
+      "sort": "title"
+    },
+    "result": {
+      "items": [
+        {
+          "key": "ITEM2",
+          "title": "县域产业发展研究"
+        }
+      ],
+      "total": 3,
+      "limit": 2,
+      "offset": 1
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\n  \"items\": [\n    {\n      \"key\": \"ITEM2\",\n      \"title\": \"县域产业发展研究\"\n    }\n  ],\n  \"total\": 3,\n  \"limit\": 2,\n  \"offset\": 1,\n  \"hasMore\": true\n}\n"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "name": "attachments add --from-url",
+  "command": [
+    "attachments",
+    "add",
+    "--parent",
+    "ITEM1",
+    "--from-url",
+    "https://example.com/paper.pdf"
+  ],
+  "rpc": {
+    "method": "attachments.addByURL",
+    "params": {
+      "parentKey": "ITEM1",
+      "url": "https://example.com/paper.pdf"
+    },
+    "result": {
+      "key": "ATT3",
+      "title": "Remote PDF",
+      "parentKey": "ITEM1"
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"key\": \"ATT3\", \"title\": \"Remote PDF\", \"parentKey\": \"ITEM1\"}\n"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "name": "items get",
+  "command": ["items", "get", "ITEM1"],
+  "rpc": {
+    "method": "items.get",
+    "params": {
+      "key": "ITEM1"
+    },
+    "result": {
+      "key": "ITEM1",
+      "title": "乡村振兴与数字经济",
+      "itemType": "journalArticle",
+      "creators": [
+        {
+          "firstName": "三",
+          "lastName": "张",
+          "creatorType": "author"
+        }
+      ],
+      "date": "2024"
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\n  \"key\": \"ITEM1\",\n  \"title\": \"乡村振兴与数字经济\",\n  \"itemType\": \"journalArticle\",\n  \"creators\": [\n    {\n      \"firstName\": \"三\",\n      \"lastName\": \"张\",\n      \"creatorType\": \"author\"\n    }\n  ],\n  \"date\": \"2024\"\n}\n"
+  }
+}

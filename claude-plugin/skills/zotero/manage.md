@@ -8,21 +8,27 @@ Choose the command based on what the user provides:
 
 | User gives you | Command | Example |
 |---------------|---------|---------|
-| DOI | `zotron items add-by-doi` | `zotron items add-by-doi 10.1016/j.jfineco.2024.01.001` |
-| URL (CNKI, journal site) | `zotron items add-by-url` | `zotron items add-by-url "https://..."` |
-| ISBN | `zotron items add-by-isbn` | `zotron items add-by-isbn 978-7-...` |
-| Local PDF file | `zotron items add-from-file` | `zotron items add-from-file /path/to/paper.pdf` |
+| DOI | `zotron items add --doi` | `zotron items add --doi 10.1016/j.jfineco.2024.01.001` |
+| URL (CNKI, journal site) | `zotron items add --from-url` | `zotron items add --from-url "https://..."` |
+| ISBN | `zotron items add --isbn` | `zotron items add --isbn 978-7-...` |
+| Local PDF file | `zotron items add --file` | `zotron items add --file /path/to/paper.pdf` |
 | Manual entry | `zotron items create` | See below |
 
 ```bash
 # By DOI (most reliable)
-zotron items add-by-doi 10.1016/j.jfineco.2024.01.001
+zotron items add --doi 10.1016/j.jfineco.2024.01.001
 
 # With collection
-zotron items add-by-doi 10.1016/j.jfineco.2024.01.001 --collection "数字经济"
+zotron items add --doi 10.1016/j.jfineco.2024.01.001 --collection "数字经济"
 
 # Import local PDF
-zotron items add-from-file /path/to/paper.pdf --collection "数字经济"
+zotron items add --file /path/to/paper.pdf --collection "数字经济"
+
+# By URL
+zotron items add --from-url "https://kns.cnki.net/..." --collection "数字经济"
+
+# By ISBN
+zotron items add --isbn 978-7-111-55555-5
 
 # Manual creation
 zotron items create --type journalArticle --field title="论文标题" --field date="2024" --field publicationTitle="经济研究"
@@ -31,7 +37,7 @@ zotron items create --type journalArticle --field title="论文标题" --field d
 ## Updating metadata
 
 ```bash
-zotron items update 12345 --field title="修正后的标题" --field date="2024-06"
+zotron items update YR5BUGHG --field title="修正后的标题" --field date="2024-06"
 ```
 
 ## Collections (folders)
@@ -42,10 +48,10 @@ zotron collections create "数字经济文献"
 zotron collections create "子文件夹" --parent "数字经济文献"
 
 # Add papers to collection
-zotron collections add-items "数字经济文献" 10 13 16
+zotron collections add-items "数字经济文献" YR5BUGHG ABC12345 DEF67890
 
 # Remove from collection (doesn't delete paper)
-zotron collections remove-items "数字经济文献" 10
+zotron collections remove-items "数字经济文献" YR5BUGHG
 
 # Rename
 zotron collections rename "typo-名称" "正确名称"
@@ -58,13 +64,14 @@ zotron collections delete "临时文件夹"
 
 ```bash
 # Add tags to a paper
-zotron tags add 12345 --tag "核心" --tag "待读"
+zotron tags add YR5BUGHG --tag "核心" --tag "待读"
 
 # Remove tags
-zotron tags remove 12345 --tag "待读"
+zotron tags remove YR5BUGHG --tag "待读"
 
 # Batch: tag multiple papers at once
-zotron tags batch-update 10 13 16 --add "已读" --remove "待读"
+zotron tags add YR5BUGHG ABC12345 DEF67890 --tag "已读"
+zotron tags remove YR5BUGHG ABC12345 DEF67890 --tag "待读"
 
 # List all tags
 zotron tags list
@@ -80,32 +87,32 @@ zotron tags delete "outdated-tag"
 
 ```bash
 # Move to trash (reversible)
-zotron items trash 12345
-
-# Restore from trash
-zotron items restore 12345
+zotron items trash YR5BUGHG
 
 # Batch trash
-zotron items batch-trash 12345 12346 12347
+zotron items trash YR5BUGHG ABC12345 DEF67890
+
+# Restore from trash
+zotron items restore YR5BUGHG
 
 # View trashed items
-zotron items list-trash
+zotron items list --trash
 
 # Permanent delete (irreversible!)
-zotron items delete 12345
+zotron items delete YR5BUGHG
 ```
 
 ## Related items
 
 ```bash
 # View related items
-zotron items related 12345
+zotron items related YR5BUGHG
 
 # Link two items as related
-zotron items add-related 12345 --target 67890
+zotron items add-related YR5BUGHG --target ABC12345
 
 # Unlink
-zotron items remove-related 12345 --target 67890
+zotron items remove-related YR5BUGHG --target ABC12345
 ```
 
 ## Duplicates
@@ -115,7 +122,7 @@ zotron items remove-related 12345 --target 67890
 zotron items find-duplicates
 
 # Merge duplicates (keeps first, merges others into it)
-zotron items merge-duplicates 10 25
+zotron items merge-duplicates YR5BUGHG ABC12345
 ```
 
 ## Attachments
@@ -125,7 +132,7 @@ zotron items merge-duplicates 10 25
 zotron attachments add --parent YR5BUGHG /path/to/paper.pdf
 
 # Add a remote URL as attachment
-zotron attachments add-by-url --parent YR5BUGHG --url https://example.com/paper.pdf
+zotron attachments add --from-url https://example.com/paper.pdf --parent YR5BUGHG
 
 # Auto-find and attach PDF from online sources
 zotron attachments find-pdf --parent YR5BUGHG
@@ -138,16 +145,16 @@ zotron attachments delete ATT_KEY
 
 ```bash
 # List notes on a paper
-zotron notes list --parent 12345
+zotron notes list --parent YR5BUGHG
 
 # Create a note
-zotron notes create --parent 12345 --content "重要发现：..." --tag research
+zotron notes create --parent YR5BUGHG --content "重要发现：..." --tag research
 
 # Update a note
-zotron notes update <note-id> --content "修改后内容"
+zotron notes update <note-key> --content "修改后内容"
 
 # Delete
-zotron notes delete <note-id>
+zotron notes delete <note-key>
 
 # Search notes
 zotron notes search "量化分析" --limit 20

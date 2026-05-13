@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "name": "collections tree",
+  "command": ["collections", "tree"],
+  "rpc": {
+    "method": "collections.tree",
+    "params": null,
+    "result": {
+      "key": "ROOT",
+      "name": "Library",
+      "children": [
+        {
+          "key": "COL1",
+          "name": "Research",
+          "children": [
+            {
+              "key": "COL2",
+              "name": "乡村振兴",
+              "children": []
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\n  \"key\": \"ROOT\",\n  \"name\": \"Library\",\n  \"children\": [\n    {\n      \"key\": \"COL1\",\n      \"name\": \"Research\",\n      \"children\": [\n        {\n          \"key\": \"COL2\",\n          \"name\": \"乡村振兴\",\n          \"children\": []\n        }\n      ]\n    }\n  ]\n}\n"
+  }
+}

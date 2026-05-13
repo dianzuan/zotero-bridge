@@ -4,25 +4,26 @@
 var PREF = "zotron.";
 
 var DEFAULT_OCR_PROVIDER = "glm";
-var DEFAULT_EMB_PROVIDER = "doubao";
+var DEFAULT_EMB_PROVIDER = "ollama";
 
 var OCR_CONFIGS = {
-  glm:    { label: "GLM-OCR",      url: "https://open.bigmodel.cn/api/paas/v4/layout_parsing",                                 model: "glm-ocr" },
-  qwen:   { label: "Qwen-VL-OCR",  url: "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation", model: "qwen-vl-ocr" },
-  custom: { label: "Custom OCR",   url: "",                                                                                        model: "custom-ocr-model" },
+  glm:    { label: "GLM-OCR",      url: "https://open.bigmodel.cn/api/paas/v4/layout_parsing", model: "glm-ocr" },
+  paddle: { label: "PaddleOCR-VL", url: "", model: "PaddleOCR-VL-1.5" },
+  mineru: { label: "MinerU",       url: "https://mineru.net/api/v4/extract/task", model: "vlm" },
+  custom: { label: "Custom OCR",   url: "", model: "custom-ocr-model" },
 };
 
 var EMB_CONFIGS = {
-  doubao:      { label: "Doubao",       url: "https://ark.cn-beijing.volces.com/api/v3/embeddings/multimodal", model: "doubao-embedding-vision-251215" },
-  ollama:      { label: "Ollama",       url: "http://localhost:11434",                                           model: "qwen3-embedding:4b" },
-  zhipu:       { label: "Zhipu",        url: "https://open.bigmodel.cn/api/paas/v4/embeddings",                 model: "embedding-3" },
-  dashscope:   { label: "DashScope",    url: "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings",    model: "text-embedding-v4" },
-  siliconflow: { label: "SiliconFlow",  url: "https://api.siliconflow.cn/v1/embeddings",                        model: "BAAI/bge-m3" },
-  jina:        { label: "Jina",         url: "https://api.jina.ai/v1/embeddings",                               model: "jina-embeddings-v3" },
-  voyage:      { label: "Voyage AI",    url: "https://api.voyageai.com/v1/embeddings",                          model: "voyage-4" },
-  cohere:      { label: "Cohere",       url: "https://api.cohere.com/v2/embed",                                 model: "embed-v4.0" },
-  gemini:      { label: "Google Gemini", url: "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent", model: "gemini-embedding-001" },
-  openai:      { label: "OpenAI",       url: "https://api.openai.com/v1/embeddings",                            model: "text-embedding-3-small" },
+  ollama:     { label: "Ollama (本地)", url: "http://localhost:11434/v1/embeddings", model: "nomic-embed-text" },
+  openai:     { label: "OpenAI",       url: "https://api.openai.com/v1/embeddings", model: "text-embedding-3-small" },
+  volcengine: { label: "Volcengine",   url: "https://ark.cn-beijing.volces.com/api/v3/embeddings", model: "doubao-embedding-text-240715" },
+  dashscope:  { label: "DashScope",    url: "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings", model: "text-embedding-v4" },
+  zhipu:      { label: "Zhipu",        url: "https://open.bigmodel.cn/api/paas/v4/embeddings", model: "embedding-3" },
+  jina:       { label: "Jina",         url: "https://api.jina.ai/v1/embeddings", model: "jina-embeddings-v3" },
+  siliconflow:{ label: "SiliconFlow",  url: "https://api.siliconflow.cn/v1/embeddings", model: "BAAI/bge-m3" },
+  voyage:     { label: "Voyage",       url: "https://api.voyageai.com/v1/embeddings", model: "voyage-4" },
+  cohere:     { label: "Cohere",       url: "https://api.cohere.com/v2/embed", model: "embed-multilingual-v3.0" },
+  custom:     { label: "Custom",       url: "", model: "" },
 };
 
 var I18N = {
@@ -47,6 +48,11 @@ var I18N = {
     okDim: "Connection OK - vector dimension",
     failedHttp: "Request failed",
     failed: "Connection failed",
+    ragTitle: "Advanced RAG Settings",
+    ragChunkSize: "Chunk Size:",
+    ragOverlap: "Chunk Overlap:",
+    ragTopK: "Top-K:",
+    ragMode: "Retrieval Mode:",
   },
   "zh-CN": {
     language: "语言:",
@@ -69,6 +75,11 @@ var I18N = {
     okDim: "连接成功 - 向量维度",
     failedHttp: "请求失败",
     failed: "连接失败",
+    ragTitle: "高级 RAG 设置",
+    ragChunkSize: "Chunk 大小:",
+    ragOverlap: "Chunk 重叠:",
+    ragTopK: "检索数量 (Top-K):",
+    ragMode: "检索模式:",
   },
 };
 
@@ -146,6 +157,11 @@ function applyProvider(kind, forceDefaults) {
   se(modelId, gp(prefix + ".model"));
   setReadonly(urlId, !editable);
   setReadonly(modelId, !editable);
+
+  if (!isOCR) {
+    var keyRow = el("zotron-emb-key-row");
+    if (keyRow) keyRow.style.display = (provider === "ollama") ? "none" : "";
+  }
 }
 
 function applyOCR(forceDefaults) { applyProvider("ocr", !!forceDefaults); }
@@ -175,6 +191,12 @@ function applyI18n() {
   setAttr("zotron-emb-apikey", "placeholder", t("apiKeyPlaceholder"));
   setStatus("zotron-ocr-status", t("ready"), "#888");
   setStatus("zotron-emb-status", t("ready"), "#888");
+
+  setText("zotron-rag-toggle-label", "▶ " + t("ragTitle"));
+  setAttr("zotron-rag-chunk-label", "value", t("ragChunkSize"));
+  setAttr("zotron-rag-overlap-label", "value", t("ragOverlap"));
+  setAttr("zotron-rag-topk-label", "value", t("ragTopK"));
+  setAttr("zotron-rag-mode-label", "value", t("ragMode"));
 }
 
 function testOCR() {
@@ -216,26 +238,6 @@ function testEmb() {
     reqUrl = url + "/api/embeddings";
     body = JSON.stringify({ model: model, prompt: "test" });
     headers = { "Content-Type": "application/json" };
-  } else if (provider === "doubao") {
-    reqUrl = url;
-    body = JSON.stringify({ model: model, input: [{ type: "text", text: "test" }] });
-    headers = { "Content-Type": "application/json", "Authorization": "Bearer " + key };
-  } else if (provider === "cohere") {
-    reqUrl = url;
-    body = JSON.stringify({ model: model, texts: ["test"], input_type: "search_query", embedding_types: ["float"] });
-    headers = { "Content-Type": "application/json", "Authorization": "Bearer " + key };
-  } else if (provider === "gemini") {
-    reqUrl = url;
-    body = JSON.stringify({ taskType: "RETRIEVAL_QUERY", content: { parts: [{ text: "test" }] } });
-    headers = { "Content-Type": "application/json", "x-goog-api-key": key };
-  } else if (provider === "voyage") {
-    reqUrl = url;
-    body = JSON.stringify({ model: model, input: "test", input_type: "query" });
-    headers = { "Content-Type": "application/json", "Authorization": "Bearer " + key };
-  } else if (provider === "jina") {
-    reqUrl = url;
-    body = JSON.stringify({ model: model, input: "test", task: "retrieval.query" });
-    headers = { "Content-Type": "application/json", "Authorization": "Bearer " + key };
   } else {
     reqUrl = url;
     body = JSON.stringify({ model: model, input: "test" });
@@ -255,11 +257,7 @@ function testEmb() {
         var data = JSON.parse(xhr.responseText);
         var dim = provider === "ollama"
           ? (data.embedding ? data.embedding.length : "?")
-          : provider === "cohere"
-            ? (data.embeddings && data.embeddings.float && data.embeddings.float[0] ? data.embeddings.float[0].length : "?")
-            : provider === "gemini"
-              ? (data.embedding && data.embedding.values ? data.embedding.values.length : "?")
-              : (data.data && data.data[0] ? data.data[0].embedding.length : "?");
+          : (data.data && data.data[0] ? data.data[0].embedding.length : "?");
         setStatus("zotron-emb-status", t("okDim") + ": " + dim, "#27ae60");
       } catch(e) {
         setStatus("zotron-emb-status", t("okHttp") + " (HTTP " + xhr.status + ")", "#27ae60");
@@ -315,6 +313,43 @@ function init() {
   var embBtn = el("zotron-emb-test");
   if (ocrBtn) ocrBtn.addEventListener("click", testOCR);
   if (embBtn) embBtn.addEventListener("click", testEmb);
+
+  // RAG toggle
+  var ragToggle = el("zotron-rag-toggle");
+  var ragPanel = el("zotron-rag-panel");
+  if (ragToggle && ragPanel) {
+    ragToggle.addEventListener("click", function() {
+      var hidden = ragPanel.style.display === "none";
+      ragPanel.style.display = hidden ? "" : "none";
+      var label = el("zotron-rag-toggle-label");
+      if (label) label.setAttribute("value", (hidden ? "▼ " : "▶ ") + t("ragTitle"));
+    });
+  }
+
+  // RAG bindings
+  var ragBindings = [
+    ["zotron-rag-chunksize", "rag.chunkSize"],
+    ["zotron-rag-overlap", "rag.chunkOverlap"],
+    ["zotron-rag-topk", "rag.topK"],
+  ];
+  for (var rb of ragBindings) {
+    (function(elId, prefKey) {
+      var node = el(elId);
+      if (node) {
+        var saved = gp(prefKey);
+        if (saved !== "" && saved !== undefined) node.value = saved;
+        var save = function() { sp(prefKey, Number(node.value) || 0); };
+        node.addEventListener("input", save);
+        node.addEventListener("change", save);
+      }
+    })(rb[0], rb[1]);
+  }
+
+  var ragMode = el("zotron-rag-mode");
+  if (ragMode) {
+    ragMode.value = gp("rag.retrievalMode") || "hybrid";
+    ragMode.addEventListener("command", function() { sp("rag.retrievalMode", ragMode.value); });
+  }
 }
 
 if (document.getElementById("zotron-ocr-provider")) { init(); }

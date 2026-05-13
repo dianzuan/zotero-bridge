@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "name": "items update",
+  "command": [
+    "items",
+    "update",
+    "NEWITEM1",
+    "--field",
+    "title=Updated Migration Paper",
+    "--field",
+    "year=2027"
+  ],
+  "rpc": {
+    "method": "items.update",
+    "params": {
+      "key": "NEWITEM1",
+      "fields": {
+        "title": "Updated Migration Paper",
+        "year": "2027"
+      }
+    },
+    "result": {
+      "ok": true,
+      "key": "NEWITEM1",
+      "updated": true
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"key\": \"NEWITEM1\", \"updated\": true}\n"
+  }
+}

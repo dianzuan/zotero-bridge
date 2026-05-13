@@ -24,19 +24,19 @@ export const systemHandlers = {
   },
   async itemTypes() {
     const types = Zotero.ItemTypes.getAll();
-    return types.map((t: any) => ({ itemType: t.name, itemTypeID: t.id, localized: Zotero.ItemTypes.getLocalizedString(t.id) }));
+    return types.map((t: any) => ({ itemType: t.name, localized: Zotero.ItemTypes.getLocalizedString(t.id) }));
   },
   async itemFields(params: { itemType: string }) {
     const typeID = Zotero.ItemTypes.getID(params.itemType);
     if (!typeID) throw { code: -32602, message: `Unknown item type: ${params.itemType}` };
     const fields = Zotero.ItemFields.getItemTypeFields(typeID);
-    return fields.map((fid: number) => ({ field: Zotero.ItemFields.getName(fid), fieldID: fid, localized: Zotero.ItemFields.getLocalizedString(fid) }));
+    return fields.map((fid: number) => ({ field: Zotero.ItemFields.getName(fid), localized: Zotero.ItemFields.getLocalizedString(fid) }));
   },
   async creatorTypes(params: { itemType: string }) {
     const typeID = Zotero.ItemTypes.getID(params.itemType);
     if (!typeID) throw { code: -32602, message: `Unknown item type: ${params.itemType}` };
     const types = Zotero.CreatorTypes.getTypesForItemType(typeID);
-    return types.map((t: any) => ({ creatorType: t.name, creatorTypeID: t.id, localized: Zotero.CreatorTypes.getLocalizedString(t.id) }));
+    return types.map((t: any) => ({ creatorType: t.name, localized: Zotero.CreatorTypes.getLocalizedString(t.id) }));
   },
   async sync() { await Zotero.Sync.Runner.sync(); return { status: "ok" }; },
   async currentCollection() {

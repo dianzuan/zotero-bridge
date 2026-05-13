@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "name": "export --format bibtex",
+  "command": ["export", "--format", "bibtex", "KEY1"],
+  "rpc": {
+    "method": "export.bibtex",
+    "params": {
+      "keys": ["KEY1"]
+    },
+    "result": {
+      "format": "bibtex",
+      "content": "@article{key1,\n  title = {Test Paper}\n}",
+      "count": 1
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "@article{key1,\n  title = {Test Paper}\n}\n"
+  }
+}

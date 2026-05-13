@@ -1,59 +1,87 @@
 # zotron API Stability
 
-This document is the contract for external consumers of zotron.
+This document is the contract for external consumers of the current
+`rust-migration` branch.
 
-## SDK (Python `zotron` package)
+## Product Surface
 
-The following symbols, importable from `zotron`, are **stable** —
-breaking changes require a major-version bump:
+The supported product stack is:
 
-### Core RPC client
-- `ZoteroRPC` — class, constructor takes `url: str`
-- `ZoteroRPC.call(method: str, params: dict | None = None) -> Any`
+- Rust CLI/crates for agent-facing commands and provider integration.
+- Zotero-side JavaScript/XPI JSON-RPC bridge for Zotero operations.
+- Claude/Codex skill wrappers that call the Rust CLI.
 
-### Push orchestration
-- `push_item(rpc, item_json: dict, *, pdf_path=None, collection=None, on_duplicate="skip") -> PushResult`
-- `resolve_collection(rpc, name_or_id: str | int) -> int`
-- `find_duplicate(rpc, item_json: dict) -> int | None`
-- `check_pdf_magic(path) -> bool`
-- `PushResult` — dataclass with fields `status: Literal["created", "updated", "skipped_duplicate", "failed"]`, `zotero_item_id: int | None`, `pdf_attached: bool`, `pdf_size_bytes: int`, `error: dict | None`; convenience property `pdf_size_kb: int`
+Python code in this repository is legacy reference material. Do not treat the
+Python CLI as the current product contract unless a file explicitly says it is
+a temporary compatibility shim.
 
-### Errors
-- `ZotronError` — base
-- `ZoteroUnavailable`
-- `CollectionNotFound`
-- `CollectionAmbiguous` (has `.candidates: list[dict]`)
-- `InvalidPDF`
+## Rust CLI
 
-### Citation API (since 0.2.0)
-- `Citation` — dataclass; fields `item_key: str`, `attachment_id: int | None`, `title: str`, `authors: str`, `section: str`, `chunk_index: int`, `text: str`, `score: float`; method `zotero_uri() -> str`
-- `retrieve_with_citations(query: str, *, store_path, embedder, top_k=10) -> list[Citation]`
-- `format_citation_markdown(c: Citation) -> str`
-- `format_citation_json(c: Citation) -> dict`
+The user-facing command is a single binary:
 
-Anything not in this list is internal — modules with leading underscore
-(`_output`, `_paginate`) are explicitly private.
+```text
+zotron
+```
 
-## CLI (`zotron` binary)
+OCR and RAG are command groups under that binary:
 
-### Stable command surface
+```text
+zotron ocr ...
+zotron rag ...
+```
 
-All subcommands listed in `zotron --help` are stable. Their flags
-are stable. New flags may be added; existing flags will not be removed
-or have their semantics changed without a major-version bump.
+Standalone `zotron-ocr`, `zotron-rag`, `zotero-ocr`, and `zotero-rag` names are
+historical Python/Bash references, not the Rust product surface.
 
-The `rpc` escape hatch is stable as a calling pattern; the set of XPI
-methods reachable through it tracks the XPI version, not zotron.
+### Stable Command Groups
 
-### Stable JSON envelope
+The branch currently exposes these command groups:
 
-**Success:** stdout is JSON. Shape depends on the command — see
-the per-command section below.
+- `zotron ping`
+- `zotron rpc`
+- `zotron push`
+- `zotron system ...`
+- `zotron search ...`
+- `zotron items ...`
+- `zotron collections ...`
+- `zotron notes ...`
+- `zotron attachments ...`
+- `zotron settings ...`
+- `zotron tags ...`
+- `zotron export ...`
+- `zotron annotations ...`
+- `zotron ocr ...`
+- `zotron rag ...`
+- `zotron find-pdfs`
 
-**Error envelope:**
+New flags and subcommands may be added. Existing command names and flag
+semantics should not be removed or changed without a major-version decision.
+
+### Filtering
+
+Rust `zotron` prints structured JSON by default. Filtering is done with an
+external pipe:
+
+```text
+zotron collections get-items "test" | jq '.items[].title'
+```
+
+The Python-era embedded `--jq` convenience is not part of the Rust contract.
+
+### Collection-Scoped Search
+
+`zotron search quick --collection NAME QUERY` is supported as a convenience
+path for collection-limited metadata search. `zotron collections get-items
+NAME` remains the direct command for listing collection members.
+
+## JSON Contract
+
+Success output is JSON. Shape depends on the command.
+
+Errors use this envelope:
+
 ```json
 {
-  "ok": false,
   "error": {
     "code": "UPPERCASE_TOKEN",
     "message": "human-readable string"
@@ -61,41 +89,84 @@ the per-command section below.
 }
 ```
 
-Error codes (all stable; new codes may be added):
-- `INVALID_JSON` — params didn't parse
-- `INVALID_ARGS` — bad CLI flags / argument values
-- `INVALID_JQ` — `--jq` expression didn't compile
-- `ZOTERO_UNAVAILABLE` — Zotero process not reachable
-- `RPC_ERROR` — XPI returned a JSON-RPC error
-- `COLLECTION_NOT_FOUND`
-- `COLLECTION_AMBIGUOUS` — additionally has `candidates: [...]`
-- `INVALID_PDF`
-- `ZOTERO_ERROR` — generic XPI-side failure
+Known stable error-code families include:
 
-**Dry-run envelope** (when `--dry-run` is passed to a write command):
-```json
-{
-  "ok": true,
-  "dryRun": true,
-  "wouldCall": "items.addByDOI",
-  "wouldCallParams": { ... }
-}
+- `INVALID_JSON`
+- `INVALID_ARGS`
+- `INVALID_REQUEST`
+- `ZOTERO_UNAVAILABLE`
+- `RPC_ERROR`
+- `COLLECTION_NOT_FOUND`
+- `COLLECTION_AMBIGUOUS`
+- `INVALID_PDF`
+- `INVALID_PROVIDER`
+- `PROVIDER_ERROR`
+- `ZOTERO_ERROR`
+
+Dry-run write commands return JSON describing the skipped operation. The exact
+payload is command-specific, but it must clearly identify the RPC method or
+local action that would have run.
+
+## Identifier Policy
+
+Public schemas are key-first:
+
+- `item_key`
+- `attachment_key`
+- `collection_key`
+- `annotation_key`
+- `block_key`
+- `chunk_key`
+- `block_keys`
+- `keys`
+
+New public OCR/RAG/PDF-evidence fields must not introduce `item_id`,
+`attachment_id`, `collection_id`, `collectionId`, `itemId`, or similar Zotero
+numeric-id fields.
+
+## OCR and RAG Evidence
+
+The canonical evidence path is hidden per-PDF sidecar storage under the Zotero
+attachment storage directory:
+
+```text
+storage/<attachment-key>/.zotron/
+  ocr/latest.raw.json
+  ocr/latest.blocks.jsonl
+  chunks/chunks.v1.jsonl
+  embeddings/vectors.jsonl
 ```
 
-`push --dry-run` uses `wouldPush` instead of `wouldCall` because it
-chains multiple RPCs internally.
+`zotron ocr parse-pdf` writes provider raw output, normalized blocks,
+structure-first chunks, Markdown preview, and assets when the provider returns
+them. Markdown is a convenience artifact; blocks/chunks are the evidence source
+of truth.
 
-### Per-command stable fields
+`zotron rag hits` returns evidence spans for agents. Zotron does not provide an
+`ask-pdf` LLM service; Codex/Claude perform reasoning from returned evidence.
 
-Refer to `docs/superpowers/specs/2026-04-23-xpi-api-prd.md` for the XPI
-response shape; CLI commands forward those responses verbatim.
+## Rust Crates
+
+The repository may use multiple internal crates for maintainability, but the
+public user-facing package and command name remain `zotron`.
+
+Current intended crate boundaries:
+
+- `zotron-cli`: command parsing and CLI orchestration; binary name `zotron`.
+- `zotron-rpc`: JSON-RPC client and transport helpers.
+- `zotron-types`: shared request/response/provider types.
+
+Internal crates do not need to be published to crates.io until there is a
+clear external reuse need. Publishing a single `zotron` crate that installs the
+`zotron` binary remains compatible with internal crate splitting.
 
 ## Versioning
 
-zotron follows semver:
-- **major** — anything in this document changes
-- **minor** — new methods / commands / flags
-- **patch** — fixes that don't change observable contract
+Zotron follows semver for the Rust/XPI product surface:
 
-The XPI and Python SDK ship together from this monorepo; their version
-numbers move in lockstep.
+- Major: breaking command, flag, JSON schema, or sidecar layout changes.
+- Minor: new commands, flags, providers, or fields.
+- Patch: bug fixes and documentation updates that preserve behavior.
+
+The XPI bridge and Rust CLI should be tested together. Python reference code
+does not define version lockstep for the current product.

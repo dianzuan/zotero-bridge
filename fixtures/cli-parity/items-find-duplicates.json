@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "name": "items find duplicates",
+  "command": [
+    "items",
+    "find-duplicates"
+  ],
+  "rpc": {
+    "method": "items.findDuplicates",
+    "params": null,
+    "result": {
+      "groups": [
+        [
+          {
+            "key": "ITEM1",
+            "title": "A"
+          },
+          {
+            "key": "ITEM2",
+            "title": "A"
+          }
+        ]
+      ],
+      "total": 1
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\n  \"groups\": [\n    [\n      {\n        \"key\": \"ITEM1\",\n        \"title\": \"A\"\n      },\n      {\n        \"key\": \"ITEM2\",\n        \"title\": \"A\"\n      }\n    ]\n  ],\n  \"total\": 1\n}\n"
+  }
+}

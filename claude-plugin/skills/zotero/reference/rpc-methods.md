@@ -22,28 +22,21 @@ zotron system list-methods
 
 ## Namespace summary
 
-| Namespace | Methods | CLI | What it does |
-|---|---|---|---|
-| `items` | 22 | `zotron items <verb>` | Get, list, create, update, delete, trash/restore/batch-trash/list-trash, fulltext, recent, push, citation-key, add by DOI/URL/ISBN/file, find/merge duplicates, related |
-| `collections` | 12 | `zotron collections <verb>` | List, tree, get, create, rename, delete, move, add/remove items, getItems, getSubcollections, stats |
-| `attachments` | 8 | `zotron attachments <verb>` | List, get, fulltext, add, add-by-url, path, delete, find-pdf |
-| `notes` | 5 | `zotron notes <verb>` | Get, list, create, update, search (CLI `notes delete` routes through items.delete — not a separate RPC method) |
-| `annotations` | 3 | `zotron annotations <verb>` | List, create, delete PDF annotations |
-| `search` | 8 | `zotron search <verb>` | Quick, fulltext, advanced, by-tag, by-identifier, saved searches |
-| `tags` | 6 | `zotron tags <verb>` | List, add, remove, rename, delete, batch-update |
-| `export` | 5 | `zotron export <format>` | BibTeX, CSL-JSON, RIS, bibliography, CSV |
-| `settings` | 4 | `zotron settings <verb>` | Get, set, list, set-all preferences |
-| `system` | 13 | `zotron system <verb>` | Version, sync, ping, reload, libraries, switch-library, library-stats, current-collection, item-types, item-fields, creator-types, list-methods, describe |
-| `rag` | 1 | `zotron rpc rag.*` | Semantic search over OCR'd collection chunks |
+| Namespace | CLI | What it does |
+|---|---|---|
+| `search` | `zotron search "query" --author --tag --fulltext --doi` | Unified search with ergonomic flags |
+| `items` | `zotron items <verb>` | Get, list, create, update, delete, trash/restore, fulltext, recent, citation-key, add (--doi/--isbn/--from-url/--file), find/merge duplicates, related |
+| `collections` | `zotron collections <verb>` | List, tree, get, create, rename, delete, add/remove items, get-items, stats |
+| `attachments` | `zotron attachments <verb>` | List, get, fulltext, add (--path/--from-url), path, delete, find-pdf |
+| `notes` | `zotron notes <verb>` | Get, list, create, update, delete, search |
+| `annotations` | `zotron annotations <verb>` | List, create, delete PDF annotations |
+| `tags` | `zotron tags <verb>` | List, add, remove, rename, delete (add/remove accept multiple keys) |
+| `export` | `zotron export --format bibtex/ris/csl-json/bibliography` | Export citations in various formats |
+| `settings` | `zotron settings <verb>` | Get, set, list preferences |
+| `system` | `zotron system <verb>` | Version, libraries, library-stats, schema, current-collection, list-methods, describe |
+| `ocr` | `zotron ocr <verb>` | providers, run, status, process |
+| `rag` | `zotron rag <verb>` | providers, embed, status, search |
 
-**Total: 87 RPC methods**
+## Identifiers
 
-## RPC escape hatch
-
-For methods without a typed CLI subcommand:
-
-```bash
-zotron rpc <namespace>.<method> '<json-params>'
-```
-
-**Parameters**: All item/collection/attachment identifiers use `key` (8-char alphanumeric string like `"YR5BUGHG"`). Parent references use `parentKey`. Batch operations use `keys: [...]`. Numeric IDs are also accepted.
+All item/collection/attachment identifiers use `key` (8-char alphanumeric string like `"YR5BUGHG"`). Parent references use `parentKey`. Batch operations use `keys: [...]`. Collections also accept name strings.

@@ -3,7 +3,7 @@
 import { rpcError, INVALID_PARAMS } from "./errors";
 
 /**
- * Fetch an Item by numeric ID or 8-char alphanumeric key.
+ * Fetch an Item by key. Numeric IDs are accepted only for internal Zotero calls.
  * Accepts both `42` and `"YR5BUGHG"` so callers that have an item_key
  * from RAG hits or search results can pass it directly.
  */
@@ -27,7 +27,7 @@ export async function requireItem(idOrKey: number | string): Promise<Zotero.Item
 }
 
 /**
- * Fetch a Collection by numeric ID or 8-char alphanumeric key.
+ * Fetch a Collection by key. Numeric IDs are accepted only for internal Zotero calls.
  * Accepts both `42` and `"COL12345"` so callers that have a collection_key
  * from RAG hits or search results can pass it directly.
  */
@@ -51,7 +51,7 @@ export async function requireCollection(idOrKey: number | string): Promise<Zoter
 }
 
 /**
- * Resolve a mixed array of numeric IDs and 8-char alphanumeric keys to Items.
+ * Resolve item keys to Items. Numeric IDs are accepted only for internal Zotero calls.
  * Delegates to `requireItem` for each entry, so callers can freely pass
  * `[42, "YR5BUGHG", 7]` and get back `Zotero.Item[]`.
  */

@@ -15,9 +15,9 @@ export const notesHandlers = {
   async list(params: { parentKey: number | string }) {
     const parent = await requireItem(params.parentKey);
     const noteIDs = parent.getNotes();
-    if (noteIDs.length === 0) return [];
+    if (noteIDs.length === 0) return { items: [], total: 0 };
     const notes = await Zotero.Items.getAsync(noteIDs);
-    return notes.map(serializeItem);
+    return { items: notes.map(serializeItem), total: noteIDs.length };
   },
 
   async create(params: { parentKey: number | string; content: string; tags?: string[] }) {

@@ -1,5 +1,10 @@
 # RAG 与 Embedding 重设计
 
+> Historical Python RAG redesign note. Current `rust-migration` branch treats
+> Python as reference material only. The active product path is Rust+JS:
+> `zotron ocr parse-pdf` produces hidden sidecar blocks/chunks and
+> `zotron rag hits --zotero` reads provenance-rich hits through the XPI.
+
 > 2026-04-27 起草。诊断当前 RAG 流水线的两个症结——provider 接入面太窄、embedding 策略颗粒度单一——并给出按 ROI 排序的修法。
 
 ## 范围
@@ -18,7 +23,7 @@
 |---|---|
 | `OllamaEmbedder` | 本地 Ollama，唯一本地通路 |
 | `CloudEmbedder` | OpenAI 兼容协议：openai / zhipu / dashscope / doubao（文本） |
-| `DoubaoMultimodalEmbedder` | 豆包多模态版，带 query/corpus instructions + ThreadPool 并发 |
+| `DoubaoMultimodalEmbedder` | 历史 Python 多模态版，带 query/corpus instructions + ThreadPool 并发 |
 
 ### 缺口
 
@@ -33,12 +38,12 @@
 
 ### 真正的问题不是数量，是抽象
 
-`_QUERY_INSTRUCTION` / `_CORPUS_INSTRUCTION` 写死在 `DoubaoMultimodalEmbedder` 里。Voyage、Jina、BGE 都有 query/document 区分，但实现路径各不相同：
+`_QUERY_INSTRUCTION` / `_CORPUS_INSTRUCTION` 写死在历史 `DoubaoMultimodalEmbedder` 里。Voyage、Jina、BGE 都有 query/document 区分，但实现路径各不相同：
 
 - Voyage：API 字段 `input_type: "query" | "document"`
 - Jina：API 字段 `task: "retrieval.query" | "retrieval.passage"`
 - BGE：客户端拼前缀字符串 `"为这个句子生成表示用于检索相关文章："`
-- doubao：客户端拼 `Instruction:...\nQuery:` 字符串
+- Volcengine/Doubao text embedding：客户端拼 `Instruction:...\nQuery:` 字符串
 
 每加一个 provider 就 fork 一个 `Embedder` 子类是错的。应抽出一个 provider spec：
 
@@ -78,7 +83,11 @@ class ProviderSpec:
 
 引用编号（`[12]`）、人名、数据集名、模型名（`DeepSeek-V3`）、年份这类 query，embedding 召回经常不如 `ripgrep`。学术场景里这类 query 占比不低，且 grep 零成本零延迟。
 
-**修法**：cli 加 `zotron-rag grep` 子命令，直接对原始 OCR 文本做 ripgrep，结果 schema 与 `search` 对齐（`item_id` / `title` / `text` / `score`）。grep 不替代 search，是另一条调用路径——agent 在 prompt 里会被告知"精确匹配用 grep，语义模糊用 search"。
+**修法**：在 Rust `zotron rag ...` 下增加 lexical/hybrid 检索路径，直接对
+sidecar chunks 做精确匹配，结果 schema 与 `hits` 对齐（`item_key` /
+`attachment_key` / `chunk_key` / `title` / `text` / `score`）。grep 不替代
+semantic retrieval，是另一条调用路径——agent 在 prompt 里会被告知"精确匹配用
+lexical，语义模糊用 semantic/hybrid"。
 
 更上一层是 hybrid（BM25 + dense + rerank），但 grep 是最低成本的第一步，且与 charter 一致（不当产品，给 AI 提供互补的检索原语）。
 
@@ -86,7 +95,10 @@ class ProviderSpec:
 
 top-10 dense 召回的 precision 在中文学术里偏低。Voyage rerank-2 / Jina reranker / BGE reranker-v2-m3 接一个，top-K 质量能跳一档。
 
-**修法**：retrieval 后处理层。`zotron-rag search` / `cite` 增加 `--rerank` 开关，召回 top-50 → rerank → top-10。不动现有索引结构。reranker provider 与 embedder 的 spec 可以复用同一套抽象（只是 API endpoint / payload 不同）。
+**修法**：retrieval 后处理层。未来在 `zotron rag hits` 或后续
+sidecar-backed search 中增加 `--rerank` 开关，召回 top-50 → rerank →
+top-10。不动 blocks/chunks sidecar。reranker provider 与 embedder 的 spec
+可以复用同一套抽象（只是 API endpoint / payload 不同）。
 
 ### D. 存储退化（性能问题，非正确性）
 

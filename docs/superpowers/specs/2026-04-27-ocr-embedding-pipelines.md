@@ -1,5 +1,11 @@
 # OCR + Embedding 双 Pipeline 重整
 
+> **Historical note (2026-05-09):** This spec predates the Rust migration.
+> Current product work uses the single Rust `zotron` CLI, hidden per-PDF
+> `.zotron` sidecars, and structure-first blocks/chunks. Do not implement the
+> visible Zotero note / child attachment storage design from this file as the
+> default path.
+
 > 2026-04-27 起草。本 spec 只覆盖 OCR pipeline 和 embedding pipeline 两件事，不动 chunk 策略、retrieval API、MCP 形态、检索原语等其他议题（这些后续单独 spec）。
 
 ## 一句话决策

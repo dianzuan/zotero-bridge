@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "name": "system schema --type journalArticle",
+  "command": [
+    "system",
+    "schema",
+    "--type",
+    "journalArticle"
+  ],
+  "rpc": {
+    "calls": [
+      {
+        "method": "system.itemFields",
+        "params": {
+          "itemType": "journalArticle"
+        },
+        "result": [
+          {
+            "field": "title",
+            "localized": "Title"
+          },
+          {
+            "field": "publicationTitle",
+            "localized": "Publication"
+          },
+          {
+            "field": "date",
+            "localized": "Date"
+          },
+          {
+            "field": "DOI",
+            "localized": "DOI"
+          }
+        ]
+      },
+      {
+        "method": "system.creatorTypes",
+        "params": {
+          "itemType": "journalArticle"
+        },
+        "result": [
+          {
+            "creatorType": "author",
+            "localized": "Author"
+          },
+          {
+            "creatorType": "editor",
+            "localized": "Editor"
+          },
+          {
+            "creatorType": "translator",
+            "localized": "Translator"
+          }
+        ]
+      }
+    ]
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\n  \"itemType\": \"journalArticle\",\n  \"fields\": [\n    \"title\",\n    \"publicationTitle\",\n    \"date\",\n    \"DOI\"\n  ],\n  \"creatorTypes\": [\n    \"author\",\n    \"editor\",\n    \"translator\"\n  ]\n}\n"
+  }
+}

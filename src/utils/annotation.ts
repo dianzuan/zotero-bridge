@@ -9,6 +9,7 @@ const VALID_TYPES: ReadonlySet<AnnotationType> = new Set([
 const TEXT_TYPES: ReadonlySet<AnnotationType> = new Set(["highlight", "underline"]);
 
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+const PDF_SORT_INDEX = /^\d{5}\|\d{6}\|\d{5}$/;
 
 export interface AnnotationParams {
   type: AnnotationType;
@@ -16,6 +17,7 @@ export interface AnnotationParams {
   color?: string;
   comment?: string;
   position: any;
+  sortIndex?: unknown;
 }
 
 export type ValidationResult =
@@ -50,5 +52,77 @@ export function validateAnnotationParams(p: AnnotationParams): ValidationResult 
       message: `Invalid annotation color: ${p.color} (expected #RRGGBB 6-char hex)`,
     };
   }
+  if (
+    p.position === undefined
+    || p.position === null
+    || Array.isArray(p.position)
+    || typeof p.position !== "object"
+    || Object.keys(p.position).length === 0
+  ) {
+    return {
+      ok: false,
+      message: "annotation position must be a non-empty object",
+    };
+  }
+  const positionResult = validateAnnotationPosition(p.type, p.position);
+  if (!positionResult.ok) {
+    return positionResult;
+  }
+  try {
+    JSON.stringify(p.position);
+  } catch (err: any) {
+    return {
+      ok: false,
+      message: `annotation position must be JSON-serializable: ${err.message}`,
+    };
+  }
+  if (p.sortIndex !== undefined) {
+    if (typeof p.sortIndex !== "number" && typeof p.sortIndex !== "string") {
+      return {
+        ok: false,
+        message: `annotation sortIndex must be a Zotero PDF sort index or numeric y-offset (got ${String(p.sortIndex)})`,
+      };
+    }
+    const raw = typeof p.sortIndex === "number" ? String(p.sortIndex) : p.sortIndex.trim();
+    if (!PDF_SORT_INDEX.test(raw) && !Number.isFinite(Number(raw))) {
+      return {
+        ok: false,
+        message: `annotation sortIndex must be a Zotero PDF sort index or numeric y-offset (got ${p.sortIndex})`,
+      };
+    }
+  }
   return { ok: true };
+}
+
+function validateAnnotationPosition(type: AnnotationType, position: any): ValidationResult {
+  if (!Number.isInteger(position.pageIndex) || position.pageIndex < 0) {
+    return {
+      ok: false,
+      message: "annotation position must include a non-negative integer pageIndex",
+    };
+  }
+
+  if (type === "ink") {
+    if (!Array.isArray(position.paths) || position.paths.length === 0) {
+      return {
+        ok: false,
+        message: "ink annotation position must include non-empty paths",
+      };
+    }
+    return { ok: true };
+  }
+
+  if (!Array.isArray(position.rects) || position.rects.length === 0 || !position.rects.every(isRect)) {
+    return {
+      ok: false,
+      message: "annotation position must include non-empty rects of [x1, y1, x2, y2]",
+    };
+  }
+  return { ok: true };
+}
+
+function isRect(value: any): boolean {
+  return Array.isArray(value)
+    && value.length === 4
+    && value.every((coord) => typeof coord === "number" && Number.isFinite(coord));
 }

@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "name": "items delete",
+  "command": [
+    "items",
+    "delete",
+    "NEWITEM1"
+  ],
+  "rpc": {
+    "method": "items.delete",
+    "params": {
+      "key": "NEWITEM1"
+    },
+    "result": {
+      "ok": true,
+      "deleted": true,
+      "key": "NEWITEM1"
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"deleted\": true, \"key\": \"NEWITEM1\"}\n"
+  }
+}

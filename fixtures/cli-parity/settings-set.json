@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "name": "settings set",
+  "command": [
+    "settings",
+    "set",
+    "extensions.zotero.debug.log",
+    "false"
+  ],
+  "rpc": {
+    "method": "settings.set",
+    "params": {
+      "key": "extensions.zotero.debug.log",
+      "value": false
+    },
+    "result": {
+      "ok": true,
+      "key": "extensions.zotero.debug.log",
+      "value": false
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"key\": \"extensions.zotero.debug.log\", \"value\": false}\n"
+  }
+}

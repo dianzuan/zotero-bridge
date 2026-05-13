@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "name": "tags delete",
+  "command": [
+    "tags",
+    "delete",
+    "outdated"
+  ],
+  "rpc": {
+    "method": "tags.delete",
+    "params": {
+      "tag": "outdated"
+    },
+    "result": {
+      "ok": true,
+      "deleted": 2
+    }
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"ok\": true, \"deleted\": 2}\n"
+  }
+}

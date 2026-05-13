@@ -1,0 +1,77 @@
+{
+  "command": [
+    "push",
+    "../../fixtures/cli-parity/data/push-item.json",
+    "--collection",
+    "Reading List",
+    "--on-duplicate",
+    "create"
+  ],
+  "rpc": {
+    "calls": [
+      {
+        "method": "collections.list",
+        "params": null,
+        "result": [
+          {
+            "key": "COLL1",
+            "name": "Reading List"
+          }
+        ]
+      },
+      {
+        "method": "search.byIdentifier",
+        "params": {
+          "doi": "10.1234/zotron.push"
+        },
+        "result": {
+          "items": [],
+          "total": 0
+        }
+      },
+      {
+        "method": "search.quick",
+        "params": {
+          "query": "Rust Migration Parity Paper",
+          "limit": 20
+        },
+        "result": {
+          "items": [],
+          "total": 0
+        }
+      },
+      {
+        "method": "items.create",
+        "params": {
+          "itemType": "journalArticle",
+          "fields": {
+            "title": "Rust Migration Parity Paper",
+            "DOI": "10.1234/zotron.push",
+            "abstractNote": "Fixture item for push parity."
+          },
+          "creators": [
+            {
+              "firstName": "Ada",
+              "lastName": "Lovelace",
+              "creatorType": "author"
+            }
+          ],
+          "tags": [
+            "migration",
+            "rust"
+          ],
+          "collections": [
+            "COLL1"
+          ]
+        },
+        "result": {
+          "key": "NEW123"
+        }
+      }
+    ]
+  },
+  "expect": {
+    "exitCode": 0,
+    "stdout": "{\"status\": \"created\", \"zotero_item_key\": \"NEW123\", \"pdf_attached\": false, \"pdf_size_bytes\": 0, \"error\": null}\n"
+  }
+}
