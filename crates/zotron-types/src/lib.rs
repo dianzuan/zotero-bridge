@@ -1996,3 +1996,180 @@ fn vector_to_f64(values: &[Value]) -> Result<Vec<f64>, String> {
         })
         .collect()
 }
+
+/// Score chunks against a whitespace-tokenized query using BM25.
+///
+/// Returns `(chunk_index, score)` pairs sorted descending by score.
+/// Only chunks with a positive score are included.
+pub fn bm25_score_chunks(
+    chunks: &[StructureChunk],
+    query: &str,
+    k1: f64,
+    b: f64,
+) -> Vec<(usize, f64)> {
+    let terms = tokenize_query(query);
+    if terms.is_empty() || chunks.is_empty() {
+        return Vec::new();
+    }
+    let n = chunks.len() as f64;
+    let avg_dl: f64 = chunks.iter().map(|c| c.text.len() as f64).sum::<f64>() / n;
+
+    let mut df: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for chunk in chunks {
+        let lower = chunk.text.to_lowercase();
+        for term in &terms {
+            if lower.contains(term.as_str()) {
+                *df.entry(term.as_str()).or_default() += 1;
+            }
+        }
+    }
+
+    let mut scores: Vec<(usize, f64)> = chunks
+        .iter()
+        .enumerate()
+        .filter_map(|(i, chunk)| {
+            let lower = chunk.text.to_lowercase();
+            let dl = lower.len() as f64;
+            let mut score = 0.0_f64;
+            for term in &terms {
+                let tf = lower.matches(term.as_str()).count() as f64;
+                if tf == 0.0 { continue; }
+                let doc_freq = *df.get(term.as_str()).unwrap_or(&0) as f64;
+                let idf = ((n - doc_freq + 0.5) / (doc_freq + 0.5) + 1.0).ln();
+                score += idf * (tf * (k1 + 1.0)) / (tf + k1 * (1.0 - b + b * dl / avg_dl));
+            }
+            if score > 0.0 { Some((i, score)) } else { None }
+        })
+        .collect();
+    scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    scores
+}
+
+/// Cosine similarity between two equal-length f64 vectors.
+///
+/// Returns 0.0 for empty, mismatched-length, or zero-norm inputs.
+pub fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
+    if a.len() != b.len() || a.is_empty() { return 0.0; }
+    let dot: f64 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
+    let norm_a: f64 = a.iter().map(|x| x * x).sum::<f64>().sqrt();
+    let norm_b: f64 = b.iter().map(|x| x * x).sum::<f64>().sqrt();
+    if norm_a == 0.0 || norm_b == 0.0 { return 0.0; }
+    dot / (norm_a * norm_b)
+}
+
+/// Reciprocal Rank Fusion of two ranked lists.
+///
+/// Each input is `(index, score)` sorted descending by score. The output
+/// merges them using RRF with constant `k` and returns at most `limit`
+/// entries sorted by combined RRF score.
+pub fn rrf_merge(
+    bm25_ranked: &[(usize, f64)],
+    dense_ranked: &[(usize, f64)],
+    k: f64,
+    limit: usize,
+) -> Vec<(usize, f64)> {
+    let mut scores: std::collections::HashMap<usize, f64> = std::collections::HashMap::new();
+    for (rank, &(idx, _)) in bm25_ranked.iter().enumerate() {
+        *scores.entry(idx).or_default() += 1.0 / (k + rank as f64 + 1.0);
+    }
+    for (rank, &(idx, _)) in dense_ranked.iter().enumerate() {
+        *scores.entry(idx).or_default() += 1.0 / (k + rank as f64 + 1.0);
+    }
+    let mut merged: Vec<(usize, f64)> = scores.into_iter().collect();
+    merged.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    merged.truncate(limit);
+    merged
+}
+
+fn tokenize_query(text: &str) -> Vec<String> {
+    text.to_lowercase()
+        .split(|c: char| c.is_whitespace() || "，。、；：\u{201c}\u{201d}\u{2018}\u{2019}【】（）".contains(c))
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty() && s.len() > 1)
+        .map(String::from)
+        .collect()
+}
+
+#[cfg(test)]
+mod retrieval_tests {
+    use super::*;
+
+    #[test]
+    fn bm25_ranks_exact_match_highest() {
+        let chunks = vec![
+            StructureChunk {
+                chunk_key: "c1".into(), item_key: "I1".into(), attachment_key: "A1".into(),
+                block_keys: vec![], section_path: vec![], text: "就业弹性的测量方法与实证分析".into(),
+                page_range: [0, 0], page_start: None, page_end: None, evidence_refs: vec![],
+            },
+            StructureChunk {
+                chunk_key: "c2".into(), item_key: "I1".into(), attachment_key: "A1".into(),
+                block_keys: vec![], section_path: vec![], text: "数字经济对产业结构的影响分析".into(),
+                page_range: [1, 1], page_start: None, page_end: None, evidence_refs: vec![],
+            },
+            StructureChunk {
+                chunk_key: "c3".into(), item_key: "I2".into(), attachment_key: "A2".into(),
+                block_keys: vec![], section_path: vec![], text: "就业弹性在不同行业的差异".into(),
+                page_range: [0, 0], page_start: None, page_end: None, evidence_refs: vec![],
+            },
+        ];
+        let results = bm25_score_chunks(&chunks, "就业弹性 测量", 1.2, 0.75);
+        assert!(!results.is_empty());
+        // c1 should rank first (has both terms)
+        assert_eq!(results[0].0, 0);
+        // c3 should rank second (has 就业弹性 but not 测量)
+        assert_eq!(results[1].0, 2);
+        // c2 should not appear (has neither term)
+        assert!(results.len() == 2 || results[2].1 == 0.0);
+    }
+
+    #[test]
+    fn bm25_empty_query_returns_empty() {
+        let chunks = vec![StructureChunk {
+            chunk_key: "c1".into(), item_key: "I1".into(), attachment_key: "A1".into(),
+            block_keys: vec![], section_path: vec![], text: "some text".into(),
+            page_range: [0, 0], page_start: None, page_end: None, evidence_refs: vec![],
+        }];
+        assert!(bm25_score_chunks(&chunks, "", 1.2, 0.75).is_empty());
+        assert!(bm25_score_chunks(&[], "query", 1.2, 0.75).is_empty());
+    }
+
+    #[test]
+    fn cosine_similarity_identical_vectors() {
+        let a = vec![1.0, 0.0, 0.0];
+        let b = vec![1.0, 0.0, 0.0];
+        assert!((cosine_similarity(&a, &b) - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn cosine_similarity_orthogonal_vectors() {
+        let a = vec![1.0, 0.0];
+        let b = vec![0.0, 1.0];
+        assert!(cosine_similarity(&a, &b).abs() < 1e-10);
+    }
+
+    #[test]
+    fn cosine_similarity_empty_returns_zero() {
+        assert_eq!(cosine_similarity(&[], &[]), 0.0);
+        assert_eq!(cosine_similarity(&[1.0], &[1.0, 2.0]), 0.0);
+    }
+
+    #[test]
+    fn rrf_merge_combines_rankings() {
+        let bm25 = vec![(0, 5.0), (1, 3.0), (2, 1.0)];
+        let dense = vec![(2, 0.9), (0, 0.7), (3, 0.5)];
+        let merged = rrf_merge(&bm25, &dense, 60.0, 10);
+        // idx 0 appears in both lists (rank 0 in bm25, rank 1 in dense) — should be top
+        assert_eq!(merged[0].0, 0);
+        // idx 2 also appears in both (rank 2 in bm25, rank 0 in dense)
+        assert!(merged.iter().any(|(idx, _)| *idx == 2));
+    }
+
+    #[test]
+    fn rrf_merge_respects_limit() {
+        let bm25 = vec![(0, 5.0), (1, 3.0), (2, 1.0)];
+        let dense = vec![(3, 0.9), (4, 0.7)];
+        let merged = rrf_merge(&bm25, &dense, 60.0, 2);
+        assert!(merged.len() <= 2);
+    }
+}
