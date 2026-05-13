@@ -3762,6 +3762,23 @@ fn run_push_command(
     let item_json = serde_json::from_str::<Value>(&payload)
         .map_err(|err| format!("INVALID_JSON: Could not parse JSON: {err}"))?;
 
+    // If --pdf not given, check for _pdf field in the JSON
+    let pdf = pdf.or_else(|| {
+        item_json
+            .get("_pdf")
+            .and_then(Value::as_str)
+            .map(String::from)
+    });
+
+    // Strip _pdf from the item before pushing to Zotero
+    let item_json = {
+        let mut obj = item_json;
+        if let Some(map) = obj.as_object_mut() {
+            map.remove("_pdf");
+        }
+        obj
+    };
+
     if dry_run {
         let collection_key = collection
             .as_deref()
