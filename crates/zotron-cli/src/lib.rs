@@ -1525,29 +1525,64 @@ fn run_ocr_process_sync(
 
     let pdf_bytes = fs::read(attachment_path)
         .map_err(|e| format!("READ_PDF_FAILED: {}: {e}", attachment_path.display()))?;
+
+    const MAX_PDF_SIZE: usize = 100 * 1024 * 1024; // 100 MB
+    if pdf_bytes.len() > MAX_PDF_SIZE {
+        return Err(format!(
+            "PDF_TOO_LARGE: {} is {} MB, max {} MB",
+            attachment_path.display(),
+            pdf_bytes.len() / (1024 * 1024),
+            MAX_PDF_SIZE / (1024 * 1024),
+        ));
+    }
+
     let base64_pdf = format!("data:application/pdf;base64,{}", base64_encode(&pdf_bytes));
 
-    let model = {
-        let settings = client.call("settings.getAll", None)?;
-        settings.get("ocr.model")
-            .and_then(Value::as_str)
-            .unwrap_or("glm-ocr")
-            .to_string()
+    let input = OcrRequestInput {
+        content_base64: base64_pdf,
+        file_name: attachment_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("document.pdf")
+            .to_string(),
+        mime_type: "application/pdf".to_string(),
+        item_key: options.parent.clone(),
+        attachment_key: attachment_key.to_string(),
+        source_url: None,
+        local_path: Some(attachment_path.to_string_lossy().to_string()),
+        output_dir: None,
     };
+    let request = build_ocr_provider_request(provider, &input)?;
 
-    let body = serde_json::json!({
-        "model": model,
-        "file": base64_pdf,
-    });
+    let payload = if request.command.is_empty() {
+        let method = request
+            .method
+            .ok_or_else(|| format!("OCR provider {provider} missing HTTP method"))?;
+        let spec = raw_ocr_provider_spec(provider)?;
 
-    let mut req = ureq::post(&api_url).set("Content-Type", "application/json");
-    if !api_key.is_empty() {
-        req = req.set("Authorization", &format!("Bearer {api_key}"));
-    }
-    let response = req.send_json(&body)
-        .map_err(|e| format!("OCR_REQUEST_FAILED: {provider}: {e}"))?;
-    let payload: Value = response.into_json()
-        .map_err(|e| format!("OCR_RESPONSE_PARSE_FAILED: {e}"))?;
+        let mut transport = if !api_key.is_empty() {
+            match spec.auth {
+                "bearer" => UreqProviderHttpTransport::with_bearer_token(&api_key),
+                "token" => UreqProviderHttpTransport::with_api_key(format!("token {api_key}")),
+                _ => UreqProviderHttpTransport::new(),
+            }
+        } else {
+            UreqProviderHttpTransport::new()
+        };
+
+        transport.post_json(&ProviderHttpInvocation {
+            provider: request.provider.to_string(),
+            style: request.style.to_string(),
+            method: method.to_string(),
+            url: Some(api_url),
+            auth_header_name: request.auth_header.map(ToString::to_string),
+            auth_header_value: None,
+            body: request.body,
+        })?
+    } else {
+        let mut runner = StdProviderCommandRunner;
+        runner.run_json(&request.command)?
+    };
 
     let blocks = parse_ocr_provider_response(provider, &payload, &options.parent, attachment_key)?;
     let chunks = zotron_types::chunks_from_blocks(&blocks, options.chunk_chars);
