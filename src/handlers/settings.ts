@@ -64,6 +64,14 @@ export const settingsHandlers = {
     return result;
   },
 
+  async getRaw(params: { key: string }) {
+    if (!params.key) throw { code: -32602, message: "key is required" };
+    if (!KNOWN_KEYS.has(params.key)) {
+      throw { code: -32602, message: `Unknown setting key: ${params.key}` };
+    }
+    return { [params.key]: getSetting(params.key) };
+  },
+
   async setAll(params: Record<string, any>) {
     const updates = normalizeSetAllPayload(params);
     const unknown = findUnknownKey(updates, KNOWN_KEYS);

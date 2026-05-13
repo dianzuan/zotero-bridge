@@ -1505,19 +1505,23 @@ fn run_ocr_process_sync(
         return Err(format!("MISSING_CONFIG: ocr.apiUrl not configured for provider {provider}"));
     }
 
-    let api_key = if !options.api_key_env.is_empty() {
-        env::var(&options.api_key_env).unwrap_or_default()
-    } else {
-        let settings = client.call("settings.getAll", None)?;
-        settings.get("ocr.apiKey")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_string()
+    let api_key = {
+        let from_env = if !options.api_key_env.is_empty() {
+            env::var(&options.api_key_env).ok().filter(|v| !v.is_empty())
+        } else {
+            None
+        };
+        from_env.unwrap_or_else(|| {
+            client.call("settings.getRaw", Some(serde_json::json!({"key": "ocr.apiKey"})))
+                .ok()
+                .and_then(|raw| raw.get("ocr.apiKey").and_then(Value::as_str).map(String::from))
+                .unwrap_or_default()
+        })
     };
 
     let pdf_bytes = fs::read(attachment_path)
         .map_err(|e| format!("READ_PDF_FAILED: {}: {e}", attachment_path.display()))?;
-    let base64_pdf = base64_encode(&pdf_bytes);
+    let base64_pdf = format!("data:application/pdf;base64,{}", base64_encode(&pdf_bytes));
 
     let model = {
         let settings = client.call("settings.getAll", None)?;
@@ -2691,7 +2695,8 @@ fn fetch_embedding_settings(
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string();
-    let api_key = settings
+    let raw = client.call("settings.getRaw", Some(serde_json::json!({"key": "embedding.apiKey"})))?;
+    let api_key = raw
         .get("embedding.apiKey")
         .and_then(Value::as_str)
         .unwrap_or("")
