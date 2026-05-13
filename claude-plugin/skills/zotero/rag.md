@@ -2,6 +2,10 @@
 
 Find relevant spans across papers in a Zotero collection and return provenance-rich hits for literature review or `academic-zh`. Use the single Rust CLI surface `zotron rag ...`; do not call standalone `zotron-rag`.
 
+Uses hybrid BM25 + vector + RRF retrieval by default. Falls back to keyword matching when no vector index exists.
+
+Embedding provider is configured in Zotero → Settings → Zotron. Default: Ollama (nomic-embed-text, local, free). 10 providers supported: Ollama, OpenAI, Volcengine, DashScope, Zhipu, Jina, SiliconFlow, Voyage, Cohere, Custom.
+
 ## Workflow
 
 ```bash
@@ -11,8 +15,8 @@ zotron ocr status --collection "财务报表造假识别"
 # 2. Check RAG artifact state.
 zotron rag status --collection "财务报表造假识别"
 
-# 3. Emit academic-zh retrieval hits via Zotero XPI JSON-RPC.
-zotron rag search --zotero \
+# 3. Emit academic-zh retrieval hits (hybrid search is the default).
+zotron rag search \
   --collection "财务报表造假识别" \
   --limit 50 \
   --top-spans-per-item 3 \
@@ -24,10 +28,10 @@ zotron rag search --zotero \
 
 ```bash
 # Search across a collection
-zotron rag search --zotero --collection "数字经济" --output jsonl "数字经济对劳动力市场的影响机制"
+zotron rag search --collection "数字经济" --output jsonl "数字经济对劳动力市场的影响机制"
 
 # Search specific items by key (from RAG hits or search results)
-zotron rag search --zotero --key YR5BUGHG --key BF4I9QX4 --top-spans-per-item 10 --output jsonl "关键词"
+zotron rag search --key YR5BUGHG --key BF4I9QX4 --top-spans-per-item 10 --output jsonl "关键词"
 ```
 
 Returns one JSON hit per line with score, paper title, authors, section heading, `chunk_key`, `block_keys`, page/bbox provenance, and Zotero URI.
@@ -35,7 +39,7 @@ Returns one JSON hit per line with score, paper title, authors, section heading,
 ## Retrieval hits
 
 ```bash
-zotron rag search --zotero \
+zotron rag search \
   --collection "中国工业经济" \
   --limit 50 \
   --top-spans-per-item 3 \
@@ -43,7 +47,7 @@ zotron rag search --zotero \
   "贸易中心性 金融风险 识别策略"
 ```
 
-`--zotero` calls the XPI `rag.searchHits` method, so callers do not need to know where hidden per-PDF `.zotron/chunks/chunks.v1.jsonl` sidecars live. The output is one `academic-zh` retrieval hit per line with span provenance:
+Hybrid search runs BM25 + vector + RRF fusion locally in the Rust CLI, then calls the XPI for metadata enrichment. Callers do not need to know where hidden per-PDF `.zotron/chunks/chunks.v1.jsonl` sidecars live. The output is one `academic-zh` retrieval hit per line with span provenance:
 
 ```json
 {
@@ -90,9 +94,9 @@ With RAG: get 10 relevant paragraphs → ~5K tokens per query
 
 ## Configuration
 
-Default provider setup is managed from Zotron settings. Current Rust contracts expose GLM/Paddle/MinerU OCR provider helpers and Volcengine, Alibaba/DashScope, or custom OpenAI-compatible embedding helpers. API tokens are user-provided and should not be hardcoded in commands or skill docs.
+Embedding provider and retrieval mode (hybrid/dense/lexical) are configured in Zotero → Settings → Zotron panel. API tokens are user-provided and should not be hardcoded in commands or skill docs.
 
 ```bash
 zotron ocr process --provider mineru --parent ITEMKEY --attachment ATTACHKEY
-zotron rag search --zotero --key ITEMKEY --output jsonl "研究问题"
+zotron rag search --key ITEMKEY --output jsonl "研究问题"
 ```

@@ -250,7 +250,36 @@ Commands:
   embed      Execute an embedding provider request from JSON and emit vectors
   status     Show index status for a collection
   search     Emit academic-zh retrieval hits with item_key/title/text provenance
+  help       Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
 ```
+
+### zotron rag search
+```
+Emit academic-zh retrieval hits with item_key/title/text provenance
+
+Usage: zotron rag search [OPTIONS] <QUERY>
+
+Arguments:
+  <QUERY>
+
+Options:
+      --collection <COLLECTION>
+      --key <KEYS>                               Limit retrieval to one or more Zotero item keys
+      --top-spans-per-item <TOP_SPANS_PER_ITEM>  [default: 3]
+      --include-fulltext-spans
+      --limit <TOP_K>                            [default: 50]
+      --output <OUTPUT>                          [default: json] [possible values: json, jsonl]
+      --url <URL>                                [default: http://127.0.0.1:23119/zotron/rpc]
+  -h, --help                                     Print help
+```
+
+Hybrid retrieval (BM25 + vector + RRF fusion) is the default. Falls back to
+keyword matching when no vector index exists. Embedding provider is configured
+in Zotero → Settings → Zotron panel. 10 providers supported: Ollama (default),
+OpenAI, Volcengine, DashScope, Zhipu, Jina, SiliconFlow, Voyage, Cohere, Custom.
 
 ## zotron find-pdfs
 ```

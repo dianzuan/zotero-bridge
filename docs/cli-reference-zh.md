@@ -166,12 +166,14 @@ zotron search "就业" --collection "数字经济" --author "张三" --after 202
 
 ## rag — 检索增强
 
+默认使用混合检索（BM25 + 向量 + RRF 融合），无需额外标志。当不存在向量索引（sidecar 文件）时自动回退到关键词匹配。Embedding 提供商在 Zotero → 设置 → Zotron 面板中配置（默认 Ollama nomic-embed-text，本地免费）。支持 10 种 embedding 提供商：Ollama、OpenAI、火山引擎、DashScope、智谱、Jina、SiliconFlow、Voyage、Cohere、自定义。
+
 | 命令 | 参数 | 说明 |
 |------|------|------|
 | `rag providers` | — | 列出支持的 embedding 提供商 |
 | `rag embed --provider <名称> --input <文件>` | `--endpoint` `--model` `--input-type` `--api-key-env` | 执行 embedding 请求 |
 | `rag status --collection <名称>` | — | 查看集合的 RAG 索引状态 |
-| `rag search <查询词>` | `--collection` `--key` `--zotero` `--top-spans-per-item` `--include-fulltext-spans` `--limit` `--output (json/jsonl)` | 语义检索，返回相关段落 |
+| `rag search <查询词>` | `--collection` `--key` `--top-spans-per-item` `--include-fulltext-spans` `--limit` `--output (json/jsonl)` | 混合检索（BM25 + 向量 + RRF），返回相关段落 |
 
 ---
 
