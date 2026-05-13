@@ -74,3 +74,15 @@ Do not assume Python-only conveniences such as built-in `--jq` exist in the Rust
 - `zotron <namespace> --help` — list subcommands in a namespace
 - `zotron system list-methods` — list all RPC methods
 - `zotron system describe items.get` — describe a specific method's parameters
+
+## Academic paper sources
+
+Zotron supports external source plugins for academic paper search and import.
+
+```bash
+zotron sources list              # show installed source plugins
+zotron sources sync              # sync plugin skills into Claude Code
+```
+
+Each source has its own skill with detailed usage. Check available sources
+with `zotron sources list`.
