@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Zotron CLI — Rust RPC client for the Zotron XPI
-# Usage: zotron ping | zotron search quick "..." | zotron ocr status | zotron rag search
+# Usage: zotron ping | zotron search "..." | zotron ocr status | zotron rag search
 set -euo pipefail
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-${CODEX_PLUGIN_ROOT:-}}"
 if [ -z "${PLUGIN_ROOT}" ]; then

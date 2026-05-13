@@ -17,5 +17,3 @@ clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 ureq = { version = "2", features = ["json"] }
-zotron-rpc = { path = "crates/zotron-rpc" }
-zotron-types = { path = "crates/zotron-types" }

@@ -1,22 +1,27 @@
 [package]
-name = "zotron-cli"
+name = "zotron"
 version = "0.1.0"
+description = "Typed CLI for Zotero — search, manage, export, OCR, and RAG over your academic library"
+authors = ["diamondrill <hongzuanlv@gmail.com>"]
+keywords = ["zotero", "academic", "citations", "cli", "rag"]
+categories = ["command-line-utilities"]
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
-[features]
-default = []
-
 [[bin]]
 name = "zotron"
 path = "src/main.rs"
+
+[lib]
+name = "zotron_cli"
+path = "src/lib.rs"
 
 [dependencies]
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 ureq.workspace = true
-zotron-rpc.workspace = true
-zotron-types.workspace = true
+zotron-rpc = { version = "0.1.0", path = "../zotron-rpc" }
+zotron-types = { version = "0.1.0", path = "../zotron-types" }

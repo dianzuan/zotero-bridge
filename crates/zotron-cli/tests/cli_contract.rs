@@ -1684,8 +1684,8 @@ fn default_package_exposes_only_zotron_binary() {
         .unwrap_or_else(|err| panic!("read {manifest_path:?}: {err}"));
 
     assert!(
-        manifest.contains("default = []"),
-        "zotron-cli should keep default features empty"
+        !manifest.contains("default = [\"") || manifest.contains("default = []"),
+        "zotron should not enable non-empty default features"
     );
 
     let zotron_bin = manifest_section(&manifest, "name = \"zotron\"");
