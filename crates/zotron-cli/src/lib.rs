@@ -2701,16 +2701,45 @@ fn load_sidecar_chunks(sidecar_root: &Path) -> Vec<StructureChunk> {
         .collect()
 }
 
-fn load_sidecar_vectors(sidecar_root: &Path) -> Vec<EmbeddingVector> {
-    let vectors_path = sidecar_root.join("embeddings").join("vectors.v1.jsonl");
-    let Ok(content) = fs::read_to_string(&vectors_path) else {
-        return Vec::new();
-    };
-    content
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .filter_map(|line| serde_json::from_str::<EmbeddingVector>(line).ok())
-        .collect()
+fn embedding_vector_filename(provider: &str, model: &str) -> String {
+    let p = provider.trim().to_lowercase().replace('/', "-");
+    let m = model.trim().to_lowercase().replace('/', "-");
+    if p.is_empty() && m.is_empty() {
+        return "vectors.jsonl".to_string();
+    }
+    format!("{p}--{m}.jsonl")
+}
+
+fn load_sidecar_vectors(sidecar_root: &Path, provider: &str, model: &str) -> Vec<EmbeddingVector> {
+    let embeddings_dir = sidecar_root.join("embeddings");
+    let target = embedding_vector_filename(provider, model);
+    let target_path = embeddings_dir.join(&target);
+    if let Ok(content) = fs::read_to_string(&target_path) {
+        let vecs: Vec<EmbeddingVector> = content
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .filter_map(|line| serde_json::from_str(line).ok())
+            .collect();
+        if !vecs.is_empty() {
+            return vecs;
+        }
+    }
+    // Fallback: try legacy vectors.v1.jsonl / vectors.jsonl with provider match
+    for legacy in &["vectors.v1.jsonl", "vectors.jsonl"] {
+        let path = embeddings_dir.join(legacy);
+        if let Ok(content) = fs::read_to_string(&path) {
+            let vecs: Vec<EmbeddingVector> = content
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+                .filter_map(|line| serde_json::from_str::<EmbeddingVector>(line).ok())
+                .filter(|v| v.source_provider == provider || provider.is_empty())
+                .collect();
+            if !vecs.is_empty() {
+                return vecs;
+            }
+        }
+    }
+    Vec::new()
 }
 
 fn embed_query_text(
@@ -2845,11 +2874,12 @@ fn run_rag_search_command(
     };
 
     // Step 2: load all chunks and vectors from sidecars.
+    let (emb_provider, emb_model, emb_url, emb_key) = fetch_embedding_settings(client)?;
     let mut all_chunks: Vec<StructureChunk> = Vec::new();
     let mut all_vectors: Vec<EmbeddingVector> = Vec::new();
     for (_item_key, _att_key, sidecar_root) in sidecars {
         all_chunks.extend(load_sidecar_chunks(sidecar_root));
-        all_vectors.extend(load_sidecar_vectors(sidecar_root));
+        all_vectors.extend(load_sidecar_vectors(sidecar_root, &emb_provider, &emb_model));
     }
 
     if all_chunks.is_empty() {
@@ -2868,32 +2898,24 @@ fn run_rag_search_command(
 
     // Step 5: dense vector scoring (unless mode is "lexical" or no vectors).
     let dense_ranked = if mode != "lexical" && !all_vectors.is_empty() {
-        match fetch_embedding_settings(client) {
-            Ok((provider, model, api_url, api_key)) => {
-                match embed_query_text(&options.query, &provider, &model, &api_url, &api_key) {
-                    Ok(query_vec) => {
-                        // Build chunk_key → vector lookup.
-                        let vec_map: std::collections::HashMap<&str, &[f64]> = all_vectors
-                            .iter()
-                            .map(|v| (v.chunk_key.as_str(), v.vector.as_slice()))
-                            .collect();
-                        let mut scores: Vec<(usize, f64)> = all_chunks
-                            .iter()
-                            .enumerate()
-                            .filter_map(|(i, chunk)| {
-                                vec_map.get(chunk.chunk_key.as_str()).map(|stored| {
-                                    (i, cosine_similarity(&query_vec, stored))
-                                })
-                            })
-                            .filter(|(_, s)| *s > 0.0)
-                            .collect();
-                        scores.sort_by(|a, b| {
-                            b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
-                        });
-                        scores
-                    }
-                    Err(_) => Vec::new(),
-                }
+        match embed_query_text(&options.query, &emb_provider, &emb_model, &emb_url, &emb_key) {
+            Ok(query_vec) => {
+                let vec_map: std::collections::HashMap<&str, &[f64]> = all_vectors
+                    .iter()
+                    .map(|v| (v.chunk_key.as_str(), v.vector.as_slice()))
+                    .collect();
+                let mut scores: Vec<(usize, f64)> = all_chunks
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, chunk)| {
+                        vec_map.get(chunk.chunk_key.as_str()).map(|stored| {
+                            (i, cosine_similarity(&query_vec, stored))
+                        })
+                    })
+                    .filter(|(_, s)| *s > 0.0)
+                    .collect();
+                scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                scores
             }
             Err(_) => Vec::new(),
         }
