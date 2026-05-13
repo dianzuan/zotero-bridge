@@ -1,3 +1,4 @@
+mod fetch;
 mod manifest;
 mod sources;
 mod types;
@@ -63,13 +64,29 @@ fn run() -> Result<String, String> {
             serde_json::to_string_pretty(&papers).map_err(|e| e.to_string())
         }
 
-        Cli::Fetch { doi, arxiv } => {
-            if doi.is_none() && arxiv.is_none() {
-                return Err("provide --doi or --arxiv".into());
-            }
-            Err("fetch not yet implemented".into())
-        }
+        Cli::Fetch { doi, arxiv } => run_fetch(doi, arxiv),
     }
+}
+
+fn run_fetch(doi: Option<String>, arxiv: Option<String>) -> Result<String, String> {
+    let (paper, pdf_path) = if let Some(arxiv_id) = arxiv {
+        fetch::fetch_arxiv(&arxiv_id)?
+    } else if let Some(doi) = doi {
+        fetch::fetch_doi(&doi)?
+    } else {
+        return Err("provide --doi or --arxiv".to_string());
+    };
+
+    let mut json = paper.to_zotero_json();
+    if let Some(path) = pdf_path {
+        json.as_object_mut()
+            .unwrap()
+            .insert("_pdf".to_string(), serde_json::Value::String(
+                path.to_string_lossy().to_string()
+            ));
+    }
+
+    serde_json::to_string_pretty(&json).map_err(|e| e.to_string())
 }
 
 fn main() {
