@@ -68,40 +68,41 @@ Pre-Zotero-7 alternatives — vendoring a SQLite reader (fragile, write-locked, 
 
 ### Path A — Claude Code (recommended)
 
-**Prerequisites:** [Claude Code](https://docs.claude.com/en/docs/claude-code/), [`uv`](https://docs.astral.sh/uv/getting-started/installation/), Zotero 8 desktop.
+**Prerequisites:** [Claude Code](https://docs.claude.com/en/docs/claude-code/), Rust toolchain (`cargo`), Zotero 8 desktop.
 
-```
+```bash
+# 1) Install the CLI from crates.io
+cargo install zotron
+
+# 2) Install the Claude Code plugin
 /plugin marketplace add dianzuan/zotron
 /plugin install zotron@zotron
+
+# 3) Bootstrap — verifies CLI + XPI bridge
 /zotron:setup
 ```
 
-`/zotron:setup` pings the bridge. If the XPI is missing, it downloads the release `zotron.xpi` to your real Downloads folder (auto-detected, handles drive relocation like `E:\Downloads` on Windows, OneDrive redirect, and POSIX defaults), trying GitHub first and then configured mirror URLs. If the XPI is installed but older than the setup target, it tells you to use Zotero's built-in add-on update flow instead of reinstalling. Then talk to Claude in plain English — *"find papers on transformer attention"*, *"add DOI 10.1038/nature12373 to my ML collection"*, *"export APA references for items 10, 13, 16"*. Claude routes to the right sub-workflow (search / manage / export / OCR / RAG), which calls the RPC.
+`/zotron:setup` pings the bridge. If the XPI is missing, it downloads the release `zotron.xpi` to your Downloads folder and guides you through Zotero's native install dialog. Then talk to Claude — *"find papers on transformer attention"*, *"add DOI 10.1038/nature12373 to my ML collection"*, *"export references for this collection"*. Claude routes to the right workflow (search / manage / export / OCR / RAG).
 
-### Path B — OpenAI Codex CLI / code-cli
+### Path B — OpenAI Codex CLI
 
-Use this path when you work from Codex instead of Claude Code. The same `claude-plugin/` package also ships a native Codex plugin manifest, so Codex and Claude Code use the same bridge, Rust CLI, XPI, and skills. Python code remains in the repository as migration reference material; it is not the target product surface on the `rust-migration` branch.
-
-**Prerequisites:** OpenAI Codex CLI (`codex`; some environments label it `code-cli`), [`uv`](https://docs.astral.sh/uv/getting-started/installation/), Zotero 8 desktop.
+**Prerequisites:** [Codex CLI](https://github.com/openai/codex), Rust toolchain (`cargo`), Zotero 8 desktop.
 
 ```bash
-# 1) Install Codex CLI if it is not already available.
-npm install -g @openai/codex
+# 1) Install the CLI from crates.io
+cargo install zotron
 
-# 2) Add the Zotron plugin marketplace.
+# 2) Add the Zotron plugin
 codex plugin marketplace add dianzuan/zotron
-
-# Local checkout alternative:
-# codex plugin marketplace add .
 ```
 
-Then install **Zotron** from Codex's plugin UI and invoke the setup skill:
+Then invoke the setup skill from Codex:
 
 ```text
 $zotron-setup
 ```
 
-The setup skill exposes the bundled `zotron` CLI. OCR and RAG live under that single command as `zotron ocr ...` and `zotron rag ...`; the old standalone `zotron-ocr` / `zotron-rag` shims are not part of the Rust product surface. Setup downloads release `zotron.xpi` into your Downloads folder when needed and walks you through Zotero's native **Tools → Plugins → ⚙ → Install Add-on From File → restart** flow. The repository does not track generated XPI files; releases are the install source. Set `ZOTRON_XPI_URLS` to a whitespace/comma/semicolon-separated mirror list when GitHub is not reachable.
+Setup verifies the CLI and XPI bridge. If the XPI is missing, it downloads `zotron.xpi` and walks you through Zotero's **Tools → Plugins → Install Add-on From File** flow.
 
 After Zotero restarts:
 
@@ -110,21 +111,23 @@ zotron ping
 zotron search "transformer attention" --limit 10
 ```
 
-After `zotron ping` succeeds, Codex can call `zotron` subcommands or raw HTTP directly through the installed plugin skill.
-
-### Path C — Rust CLI From Source
+### Path C — Standalone CLI (no plugin)
 
 ```bash
-# 1) Install the XPI manually from https://github.com/dianzuan/zotron/releases/latest
-# 2) Install the Rust CLI from this checkout:
-cargo install --path crates/zotron-cli --root ~/.local --force
+# Install from crates.io
+cargo install zotron
+
+# Or from source
+cargo install --path crates/zotron-cli
+
+# Install the XPI manually from https://github.com/dianzuan/zotron/releases/latest
 
 zotron ping
 zotron search "transformer attention" --limit 10
 zotron rpc items.get '{"key":"YR5BUGHG"}'  # escape hatch — covers all 86 methods
 ```
 
-Rust `zotron` emits JSON-first output; use a shell pipeline such as `zotron items list | jq ...` for filtering. The old Python CLI/SDK is kept as reference/parity material only. Current CLI contract: [`docs/api-stability.md`](docs/api-stability.md).
+JSON-first output; pipe to `jq` for filtering: `zotron items list | jq '.items[].title'`.
 
 ### Path D — Raw HTTP
 
@@ -138,7 +141,7 @@ curl -s -X POST http://localhost:23119/zotron/rpc \
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `/zotron:setup` says `MISSING_UV` | `uv` not on PATH | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| `zotron: command not found` | Rust CLI not installed | `cargo install zotron` |
 | Skill startup banner: *"Zotron not detected"* | Zotero not running or XPI not installed | Start Zotero, then re-run `/zotron:setup` |
 | `connection refused` on port 23119 | Zotero's built-in HTTP server is off | Edit → Settings → Advanced → Config Editor → `extensions.zotero.httpServer.enabled = true` |
 | Skill doesn't auto-trigger after install | Plugin not loaded into the session | `/reload-plugins`, or restart Claude Code |

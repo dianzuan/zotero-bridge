@@ -23,15 +23,19 @@ Tools -> Plugins -> Zotron -> gear icon -> Check for Updates -> restart Zotero
 
 ## Procedure
 
-1. Check that a Rust CLI can be installed or resolved.
+1. Check that the `zotron` CLI is installed.
 
 ```bash
-command -v cargo >/dev/null || command -v zotron >/dev/null || echo "MISSING_RUST_ZOTRON"
+command -v zotron >/dev/null || echo "MISSING_ZOTRON"
 ```
 
-2. Run the setup script. In a source checkout it installs the Rust CLI from
-`crates/zotron-cli`; in a packaged plugin it links the wrapper and requires an
-existing Rust binary through `ZOTRON_RUST_BIN` when OCR/RAG are needed.
+If missing, install from crates.io:
+
+```bash
+cargo install zotron
+```
+
+2. Run the setup script to verify and bootstrap the XPI.
 
 ```bash
 PLUGIN_ROOT="${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
