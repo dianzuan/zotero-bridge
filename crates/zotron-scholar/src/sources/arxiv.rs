@@ -183,6 +183,7 @@ fn parse_single_entry(entry: &str) -> Result<Paper, String> {
         pdf_url,
         arxiv_id,
         source: Some("arxiv".to_string()),
+        cited_by_count: None,
     })
 }
 

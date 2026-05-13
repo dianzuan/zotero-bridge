@@ -21,7 +21,7 @@ impl Source for SemanticScholar {
         let url = format!(
             "https://api.semanticscholar.org/graph/v1/paper/search\
              ?query={}&limit={}\
-             &fields=title,authors,year,abstract,externalIds,openAccessPdf,journal,url",
+             &fields=title,authors,year,abstract,externalIds,openAccessPdf,journal,url,citationCount",
             urlenc(query),
             capped,
         );
@@ -106,6 +106,7 @@ fn parse_paper(p: &Value) -> Paper {
         pdf_url,
         arxiv_id,
         source: Some("s2".to_string()),
+        cited_by_count: p["citationCount"].as_u64(),
     }
 }
 

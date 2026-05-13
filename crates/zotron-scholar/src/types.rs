@@ -29,6 +29,8 @@ pub struct Paper {
     pub arxiv_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cited_by_count: Option<u64>,
 }
 
 impl Paper {
@@ -86,6 +88,9 @@ impl Paper {
         }
         if let Some(ref url) = self.url {
             obj.insert("url".into(), serde_json::Value::String(url.clone()));
+        }
+        if let Some(count) = self.cited_by_count {
+            obj.insert("extra".into(), serde_json::Value::String(format!("Citations: {count}")));
         }
 
         item

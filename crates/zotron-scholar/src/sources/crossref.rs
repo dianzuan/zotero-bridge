@@ -103,6 +103,7 @@ fn parse_message(msg: &Value, doi: &str) -> Paper {
         pdf_url: None,
         arxiv_id: None,
         source: Some("crossref".to_string()),
+        cited_by_count: msg["is-referenced-by-count"].as_u64(),
     }
 }
 

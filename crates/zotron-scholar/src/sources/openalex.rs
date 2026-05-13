@@ -105,6 +105,7 @@ fn parse_work(work: &Value) -> Paper {
         pdf_url,
         arxiv_id: None,
         source: Some("openalex".to_string()),
+        cited_by_count: work["cited_by_count"].as_u64(),
     }
 }
 
