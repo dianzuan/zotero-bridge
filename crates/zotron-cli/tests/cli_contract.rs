@@ -181,7 +181,7 @@ fn attachments_add_dry_run_translates_local_path_for_zotero() {
 
 #[test]
 fn attachments_path_translates_zotero_path_for_local_cli_use() {
-    let zotero_path = r"C:\Users\bslhz\Zotero\storage\ATTACH1\paper.pdf";
+    let zotero_path = r"C:\Users\testuser\Zotero\storage\ATTACH1\paper.pdf";
     let mut client = FakeClient::with_response(json!({
         "key": "ATTACH1",
         "path": zotero_path,

@@ -137,7 +137,7 @@ describe("rag handler", () => {
       getField: sinon.stub().callsFake((name: string) => (
         name === "title" ? "Full Text PDF" : ""
       )),
-      getFilePathAsync: sinon.stub().resolves("C:\\Users\\bslhz\\Zotero\\storage\\ATT42\\paper.pdf"),
+      getFilePathAsync: sinon.stub().resolves("C:\\Users\\testuser\\Zotero\\storage\\ATT42\\paper.pdf"),
     };
     installZotero({
       Items: {
