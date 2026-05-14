@@ -5,7 +5,7 @@ import { registerHandlers } from "../server";
 import { serializeItem } from "../utils/serialize";
 import { requireItem } from "../utils/guards";
 import { validateAnnotationParams } from "../utils/annotation";
-import { findQuoteInChars, getRangeRects } from "../utils/pdf-locate";
+import { findQuoteInChars, getRangeRects, recognizerPageToChars } from "../utils/pdf-locate";
 
 /**
  * Resolve a parentKey to the annotation-bearing attachment item.
@@ -40,56 +40,60 @@ async function resolveQuotePosition(
   quote: string,
   pageIndex?: number,
 ): Promise<{ pageIndex: number; rects: number[][] }> {
-  const reader = await getReaderForAttachment(attachment);
+  // Path 1: try reader-based chars (most precise — needs PDF open in reader)
+  try {
+    const reader = await getReaderForAttachment(attachment);
+    const internalReader = (reader as any)?._internalReader;
+    const primaryView = internalReader?._primaryView ?? internalReader?._state;
+    const pdfPages = primaryView?._pdfPages ?? {};
+    const pdfDocument = primaryView?._pdfDocument;
 
-  // Navigate to Zotero reader's internal per-char page data
-  const internalReader = (reader as any)._internalReader;
-  if (!internalReader) {
-    throw {
-      code: -32603,
-      message: "Reader missing _internalReader — Zotero reader structure may have changed",
-    };
-  }
+    if (internalReader && primaryView) {
+      const totalPages: number = pdfDocument?.pagesCount
+        ?? pdfDocument?.numPages
+        ?? (Array.isArray(pdfPages) ? pdfPages.length : Object.keys(pdfPages).length);
 
-  const primaryView = internalReader._primaryView ?? internalReader._state;
-  if (!primaryView) {
-    throw {
-      code: -32603,
-      message: "Reader missing _primaryView and _state — cannot access per-char page data",
-    };
-  }
+      const pagesToSearch = pageIndex !== undefined
+        ? [pageIndex]
+        : Array.from({ length: totalPages }, (_, i) => i);
 
-  const pdfPages = primaryView._pdfPages ?? {};
-  const pdfDocument = primaryView._pdfDocument;
+      for (const pi of pagesToSearch) {
+        let chars = pdfPages[pi]?.chars;
+        if ((!chars || chars.length === 0) && pdfDocument?.getPageData) {
+          try {
+            const loaded = await pdfDocument.getPageData({ pageIndex: pi });
+            chars = loaded?.chars;
+          } catch { /* skip */ }
+        }
+        if (!chars || chars.length === 0) continue;
 
-  // Get total page count from the PDF document (not from lazy-loaded _pdfPages)
-  const totalPages: number = pdfDocument?.pagesCount
-    ?? pdfDocument?.numPages
-    ?? (Array.isArray(pdfPages) ? pdfPages.length : Object.keys(pdfPages).length);
-
-  const pagesToSearch = pageIndex !== undefined
-    ? [pageIndex]
-    : Array.from({ length: totalPages }, (_, i) => i);
-
-  for (const pi of pagesToSearch) {
-    // Try pre-loaded chars first, then force-load via getPageData
-    let chars = pdfPages[pi]?.chars;
-
-    if ((!chars || chars.length === 0) && pdfDocument?.getPageData) {
-      try {
-        const loaded = await pdfDocument.getPageData({ pageIndex: pi });
-        chars = loaded?.chars;
-      } catch { /* page load failed — skip */ }
+        const match = findQuoteInChars(chars, quote);
+        if (match) {
+          return { pageIndex: pi, rects: getRangeRects(chars, match.offsetStart, match.offsetEnd) };
+        }
+      }
     }
+  } catch { /* reader not available — fall through to PDFWorker */ }
 
-    if (!chars || chars.length === 0) continue;
+  // Path 2: headless via PDFWorker.getRecognizerData (no reader needed)
+  try {
+    const recognizerData = await (Zotero as any).PDFWorker.getRecognizerData(attachment.id);
+    const recognizerPages = recognizerData?.pages ?? [];
+    const rpagesToSearch = pageIndex !== undefined
+      ? [pageIndex]
+      : Array.from({ length: recognizerPages.length }, (_, i) => i);
 
-    const match = findQuoteInChars(chars, quote);
-    if (match) {
-      const rects = getRangeRects(chars, match.offsetStart, match.offsetEnd);
-      return { pageIndex: pi, rects };
+    for (const pi of rpagesToSearch) {
+      const rchars = recognizerPageToChars(recognizerPages[pi]);
+      if (rchars.length === 0) continue;
+
+      const match = findQuoteInChars(rchars, quote);
+      if (match) {
+        const rects = getRangeRects(rchars, match.offsetStart, match.offsetEnd);
+        return { pageIndex: pi, rects };
+      }
     }
-  }
+  } catch { /* PDFWorker fallback failed — report the original not-found error */ }
 
   const scope = pageIndex !== undefined ? `page ${pageIndex}` : "any page";
   throw {

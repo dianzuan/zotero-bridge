@@ -145,3 +145,53 @@ export function getRangeRects(
   return rects;
 }
 
+/**
+ * Convert PDFWorker.getRecognizerData page data into a flat CharData array.
+ * This enables headless quote matching without an open reader.
+ *
+ * Recognizer data format per page: [pageWidth, pageHeight, lineGroups]
+ * where lineGroups is deeply nested arrays. Each char element is:
+ * [xMin, yMin, xMax, yMax, fontSize, spaceAfter, baseline, rotation,
+ *  underlined, bold, italic, colorIndex, fontType, text]
+ */
+export function recognizerPageToChars(pageData: any): CharData[] {
+  const lineGroups = pageData?.[2];
+  if (!Array.isArray(lineGroups)) return [];
+
+  const allChars: CharData[] = [];
+  const rawChars: { c: string; rect: [number, number, number, number]; spaceAfter: boolean; rotation: number; baseline: number }[] = [];
+
+  // Recursively collect all char arrays (14+ elements, last is string)
+  function collect(node: any): void {
+    if (!Array.isArray(node)) return;
+    if (node.length >= 14 && typeof node[13] === "string") {
+      rawChars.push({
+        c: node[13],
+        rect: [node[0], node[1], node[2], node[3]],
+        spaceAfter: !!node[5],
+        rotation: node[7] || 0,
+        baseline: node[6] || 0,
+      });
+      return;
+    }
+    for (const child of node) collect(child);
+  }
+  collect(lineGroups);
+
+  // Detect line breaks: when baseline changes significantly between consecutive chars
+  for (let i = 0; i < rawChars.length; i++) {
+    const rc = rawChars[i];
+    const next = rawChars[i + 1];
+    const lineBreak = next ? Math.abs(rc.baseline - next.baseline) > rc.rect[3] - rc.rect[1] : false;
+    allChars.push({
+      c: rc.c,
+      rect: rc.rect,
+      spaceAfter: rc.spaceAfter,
+      lineBreakAfter: lineBreak,
+      rotation: rc.rotation,
+    });
+  }
+
+  return allChars;
+}
+
