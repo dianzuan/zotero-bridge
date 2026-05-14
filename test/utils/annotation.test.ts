@@ -100,4 +100,46 @@ describe("validateAnnotationParams", () => {
     });
     expect(r.ok).to.equal(true);
   });
+
+  it("accepts highlight with quote and no position", () => {
+    const r = validateAnnotationParams({
+      type: "highlight",
+      quote: "some text to find",
+    });
+    expect(r.ok).to.equal(true);
+  });
+
+  it("accepts underline with quote and no position", () => {
+    const r = validateAnnotationParams({
+      type: "underline",
+      quote: "some text to find",
+    });
+    expect(r.ok).to.equal(true);
+  });
+
+  it("rejects quote for note type", () => {
+    const r = validateAnnotationParams({
+      type: "note",
+      quote: "some text",
+    });
+    expect(r.ok).to.equal(false);
+    if (!r.ok) expect(r.message).to.match(/quote.*highlight.*underline/i);
+  });
+
+  it("rejects quote for image type", () => {
+    const r = validateAnnotationParams({
+      type: "image",
+      quote: "some text",
+    });
+    expect(r.ok).to.equal(false);
+    if (!r.ok) expect(r.message).to.match(/quote.*highlight.*underline/i);
+  });
+
+  it("still requires position when quote is not provided", () => {
+    const r = validateAnnotationParams({
+      type: "highlight",
+    });
+    expect(r.ok).to.equal(false);
+    if (!r.ok) expect(r.message).to.match(/position/i);
+  });
 });

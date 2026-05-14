@@ -226,6 +226,13 @@ Acceptance:
 - Graph RAG / citation graph.
 - Full text-layer quote-to-Zotero-position perfection. Text highlights can be
   improved incrementally after area-box annotation works reliably.
+- Scanned-PDF fallback: when the PDF has no text layer (scanned document),
+  the reader's `chars` array is empty. In this case, fall back to OCR sidecar
+  blocks (`latest.blocks.jsonl`) which have `bbox` coordinates from MinerU.
+  Use block-level `bbox` to create area-box annotations instead of text
+  highlights. Requires: OCR must have run (`zotron ocr process`), and the
+  annotation type degrades from `highlight` (text-hugging) to `image`
+  (region box) since there are no text-layer glyphs to highlight.
 
 ## Artifact Vocabulary
 

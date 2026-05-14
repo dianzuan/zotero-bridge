@@ -495,6 +495,160 @@ describe("annotations handler", () => {
     });
   });
 
+  describe("create with quote (mocked reader)", () => {
+    it("rejects quote for non-highlight/underline types with -32602", async () => {
+      const parent: any = { id: 5, key: "ATT05", libraryID: 1, isAttachment: () => true };
+      installZotero({
+        Items: { getAsync: sinon.stub().withArgs(5).resolves(parent) },
+      });
+
+      const { annotationsHandlers } = await import("../../src/handlers/annotations");
+      try {
+        await annotationsHandlers.create({
+          parentKey: 5,
+          type: "note",
+          quote: "some text to find",
+        });
+        expect.fail("should have thrown");
+      } catch (e: any) {
+        expect(e.code).to.equal(-32602);
+        expect(e.message).to.match(/quote.*highlight.*underline/i);
+      }
+    });
+
+    it("throws -32602 when quote is not found on any page (mocked reader)", async () => {
+      const parent: any = { id: 5, key: "ATT05", libraryID: 1, isAttachment: () => true };
+      const mockChars = [
+        { c: "H", rect: [0, 90, 5, 100], spaceAfter: false, lineBreakAfter: false },
+        { c: "e", rect: [5, 90, 10, 100], spaceAfter: false, lineBreakAfter: false },
+        { c: "l", rect: [10, 90, 15, 100], spaceAfter: false, lineBreakAfter: false },
+        { c: "l", rect: [15, 90, 20, 100], spaceAfter: false, lineBreakAfter: false },
+        { c: "o", rect: [20, 90, 25, 100], spaceAfter: true, lineBreakAfter: false },
+        { c: "w", rect: [30, 90, 35, 100], spaceAfter: false, lineBreakAfter: false },
+        { c: "o", rect: [35, 90, 40, 100], spaceAfter: false, lineBreakAfter: false },
+        { c: "r", rect: [40, 90, 45, 100], spaceAfter: false, lineBreakAfter: false },
+        { c: "l", rect: [45, 90, 50, 100], spaceAfter: false, lineBreakAfter: false },
+        { c: "d", rect: [50, 90, 55, 100], spaceAfter: false, lineBreakAfter: true },
+        { c: "S", rect: [0, 78, 5, 88], spaceAfter: false, lineBreakAfter: false },
+        { c: "e", rect: [5, 78, 10, 88], spaceAfter: false, lineBreakAfter: false },
+        { c: "c", rect: [10, 78, 15, 88], spaceAfter: false, lineBreakAfter: false },
+        { c: "o", rect: [15, 78, 20, 88], spaceAfter: false, lineBreakAfter: false },
+        { c: "n", rect: [20, 78, 25, 88], spaceAfter: false, lineBreakAfter: false },
+        { c: "d", rect: [25, 78, 30, 88], spaceAfter: false, lineBreakAfter: true },
+      ];
+      const mockReader = {
+        itemID: 5,
+        _internalReader: {
+          _primaryView: {
+            _pdfPages: [{ chars: mockChars }],
+          },
+        },
+      };
+
+      installZotero({
+        Items: { getAsync: sinon.stub().withArgs(5).resolves(parent) },
+        Reader: {
+          getByTabID: sinon.stub(),
+          open: sinon.stub().resolves(mockReader),
+        },
+        getMainWindows: () => [],
+      });
+
+      const { annotationsHandlers } = await import("../../src/handlers/annotations");
+      try {
+        await annotationsHandlers.create({
+          parentKey: 5,
+          type: "highlight",
+          quote: "this text does not exist in the PDF",
+        });
+        expect.fail("should have thrown");
+      } catch (e: any) {
+        expect(e.code).to.equal(-32602);
+        expect(e.message).to.match(/Quote not found/);
+      }
+    });
+
+    it("resolves quote to position and creates annotation (mocked reader)", async () => {
+      const parent: any = { id: 5, key: "ATT05", libraryID: 1, isAttachment: () => true };
+      const saveTxStub = sinon.stub().resolves();
+      let createdItem: any = null;
+      // Build chars for "This is an important sentence in the PDF."
+      const text1 = "This is an important sentence in the PDF.";
+      const text2 = "And another line follows.";
+      const mockChars: any[] = [];
+      let x = 10;
+      for (let i = 0; i < text1.length; i++) {
+        const c = text1[i];
+        const isSpace = c === " ";
+        const isLast = i === text1.length - 1;
+        mockChars.push({
+          c, rect: [x, 90, x + 6, 102],
+          inlineRect: [10, 88, 260, 104],
+          spaceAfter: isSpace,
+          lineBreakAfter: isLast,
+        });
+        x += 6;
+      }
+      x = 10;
+      for (let i = 0; i < text2.length; i++) {
+        const c = text2[i];
+        const isSpace = c === " ";
+        const isLast = i === text2.length - 1;
+        mockChars.push({
+          c, rect: [x, 70, x + 6, 82],
+          inlineRect: [10, 68, 160, 84],
+          spaceAfter: isSpace,
+          lineBreakAfter: isLast,
+        });
+        x += 6;
+      }
+      const mockReader = {
+        itemID: 5,
+        _internalReader: {
+          _primaryView: {
+            _pdfPages: [{ chars: mockChars }],
+          },
+        },
+      };
+
+      installZotero({
+        Items: { getAsync: sinon.stub().withArgs(5).resolves(parent) },
+        Reader: {
+          getByTabID: sinon.stub(),
+          open: sinon.stub().resolves(mockReader),
+        },
+        getMainWindows: () => [],
+        Item: function (itemType: string) {
+          createdItem = {
+            itemType,
+            libraryID: 0,
+            parentID: 0,
+            key: "NEWANN04",
+            saveTx: saveTxStub,
+          };
+          return createdItem;
+        },
+      });
+
+      const { annotationsHandlers } = await import("../../src/handlers/annotations");
+      const result = await annotationsHandlers.create({
+        parentKey: 5,
+        type: "highlight",
+        quote: "important sentence",
+      });
+
+      expect(result.ok).to.equal(true);
+      expect(result.key).to.equal("NEWANN04");
+      expect(result.attachmentKey).to.equal("ATT05");
+      expect(saveTxStub.calledOnce).to.equal(true);
+      expect(createdItem.annotationText).to.equal("important sentence");
+      const pos = JSON.parse(createdItem.annotationPosition);
+      expect(pos.pageIndex).to.equal(0);
+      expect(pos.rects).to.have.lengthOf(1);
+      expect(pos.rects[0]).to.have.lengthOf(4);
+    });
+  });
+
   describe("delete", () => {
     it("erases the annotation item and returns {ok, key}", async () => {
       const eraseTxStub = sinon.stub().resolves();

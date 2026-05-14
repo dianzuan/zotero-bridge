@@ -858,8 +858,16 @@ enum AnnotationsCommand {
         #[arg(long = "type")]
         annotation_type: String,
         /// JSON annotation position, for example '{"pageIndex":0,"rects":[[10,20,30,40]]}'.
+        /// Not required when --quote is given.
         #[arg(long)]
         position: Option<String>,
+        /// Text to locate in the PDF and highlight. Resolves to rects automatically.
+        /// Use with --dry-run for locate-only mode.
+        #[arg(long)]
+        quote: Option<String>,
+        /// Restrict quote search to a specific page (0-indexed).
+        #[arg(long)]
+        page: Option<u32>,
         /// Zotero annotation sort index.
         #[arg(long = "sort-index")]
         sort_index: Option<String>,
@@ -4779,6 +4787,8 @@ fn run_annotations_command(
             parent,
             annotation_type,
             position,
+            quote,
+            page,
             sort_index,
             text,
             comment,
@@ -4794,18 +4804,42 @@ fn run_annotations_command(
                     "INVALID_ARGS: --type must be highlight|note|underline|image|ink, got {annotation_type:?}"
                 ));
             }
-            let position = position
-                .ok_or_else(|| "INVALID_ARGS: --position JSON is required".to_string())
-                .and_then(|raw| {
-                    serde_json::from_str::<Value>(&raw)
-                        .map_err(|err| format!("INVALID_JSON: Could not parse --position: {err}"))
-                })?;
-            validate_annotation_position(annotation_type.as_str(), &position)?;
             let mut params = serde_json::Map::new();
             params.insert("parentKey".to_string(), Value::String(parent));
-            params.insert("type".to_string(), Value::String(annotation_type));
+            params.insert("type".to_string(), Value::String(annotation_type.clone()));
             params.insert("color".to_string(), Value::String(color));
-            params.insert("position".to_string(), position);
+
+            if let Some(ref quote_text) = quote {
+                if !matches!(annotation_type.as_str(), "highlight" | "underline") {
+                    return Err(format!(
+                        "INVALID_ARGS: --quote is only valid for highlight|underline, got {annotation_type:?}"
+                    ));
+                }
+                params.insert("quote".to_string(), Value::String(quote_text.clone()));
+                if let Some(page_idx) = page {
+                    params.insert(
+                        "pageIndex".to_string(),
+                        Value::Number(page_idx.into()),
+                    );
+                }
+                // When --quote is given, --position is optional
+                if let Some(raw) = position {
+                    let pos = serde_json::from_str::<Value>(&raw)
+                        .map_err(|err| format!("INVALID_JSON: Could not parse --position: {err}"))?;
+                    validate_annotation_position(annotation_type.as_str(), &pos)?;
+                    params.insert("position".to_string(), pos);
+                }
+            } else {
+                let position = position
+                    .ok_or_else(|| "INVALID_ARGS: --position JSON is required (or use --quote)".to_string())
+                    .and_then(|raw| {
+                        serde_json::from_str::<Value>(&raw)
+                            .map_err(|err| format!("INVALID_JSON: Could not parse --position: {err}"))
+                    })?;
+                validate_annotation_position(annotation_type.as_str(), &position)?;
+                params.insert("position".to_string(), position);
+            }
+
             if let Some(sort_index) = sort_index {
                 params.insert(
                     "sortIndex".to_string(),

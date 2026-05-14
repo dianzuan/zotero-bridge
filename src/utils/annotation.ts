@@ -16,7 +16,8 @@ export interface AnnotationParams {
   text?: string;
   color?: string;
   comment?: string;
-  position: any;
+  position?: any;
+  quote?: string;
   sortIndex?: unknown;
 }
 
@@ -51,6 +52,18 @@ export function validateAnnotationParams(p: AnnotationParams): ValidationResult 
       ok: false,
       message: `Invalid annotation color: ${p.color} (expected #RRGGBB 6-char hex)`,
     };
+  }
+  if (p.quote !== undefined && p.quote !== "") {
+    if (!TEXT_TYPES.has(p.type)) {
+      return {
+        ok: false,
+        message: `quote-based locate is only valid for highlight or underline annotations (got type=${p.type})`,
+      };
+    }
+    // In quote mode, position is resolved by the handler — skip position validation
+    if (p.position === undefined || p.position === null) {
+      return { ok: true };
+    }
   }
   if (
     p.position === undefined

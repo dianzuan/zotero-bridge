@@ -360,6 +360,86 @@ fn annotations_create_rejects_json_boolean_sort_index_without_rpc() {
 }
 
 #[test]
+fn annotations_create_with_quote_sends_quote_and_page_index_in_rpc_params() {
+    let mut client = FakeClient::default();
+    let output = run_with_client(
+        [
+            "zotron",
+            "annotations",
+            "create",
+            "--parent",
+            "ATT01",
+            "--type",
+            "highlight",
+            "--quote",
+            "important sentence in the paper",
+            "--page",
+            "3",
+            "--dry-run",
+        ],
+        &mut client,
+    )
+    .expect("quote-based create should succeed as dry-run");
+
+    let parsed: Value = serde_json::from_str(&output).expect("output should be valid JSON");
+    assert_eq!(parsed["dryRun"], json!(true));
+    assert_eq!(parsed["wouldCall"], json!("annotations.create"));
+    let params = &parsed["wouldCallParams"];
+    assert_eq!(params["quote"], json!("important sentence in the paper"));
+    assert_eq!(params["pageIndex"], json!(3));
+    assert_eq!(params["parentKey"], json!("ATT01"));
+    assert_eq!(params["type"], json!("highlight"));
+    assert!(params.get("position").is_none(), "position should not be set when using --quote");
+}
+
+#[test]
+fn annotations_create_with_quote_rejects_non_highlight_type() {
+    let mut client = FakeClient::default();
+    let err = run_with_client(
+        [
+            "zotron",
+            "annotations",
+            "create",
+            "--parent",
+            "ATT01",
+            "--type",
+            "note",
+            "--quote",
+            "some text",
+            "--dry-run",
+        ],
+        &mut client,
+    )
+    .expect_err("quote with note type should be rejected");
+
+    assert!(err.contains("INVALID_ARGS"), "{err}");
+    assert!(err.contains("quote"), "{err}");
+    assert!(client.calls.is_empty(), "validation should fail before RPC");
+}
+
+#[test]
+fn annotations_create_without_quote_or_position_fails() {
+    let mut client = FakeClient::default();
+    let err = run_with_client(
+        [
+            "zotron",
+            "annotations",
+            "create",
+            "--parent",
+            "ATT01",
+            "--type",
+            "highlight",
+            "--dry-run",
+        ],
+        &mut client,
+    )
+    .expect_err("missing both quote and position should be rejected");
+
+    assert!(err.contains("INVALID_ARGS") || err.contains("--position"), "{err}");
+    assert!(client.calls.is_empty(), "validation should fail before RPC");
+}
+
+#[test]
 fn ocr_provider_contracts_are_key_first_for_glm_paddle_and_mineru() {
     let specs = zotron_cli::ocr_provider_specs();
     let ids: Vec<_> = specs.iter().map(|spec| spec.id).collect();
