@@ -7,6 +7,7 @@ const VALID_TYPES: ReadonlySet<AnnotationType> = new Set([
 ]);
 
 const TEXT_TYPES: ReadonlySet<AnnotationType> = new Set(["highlight", "underline"]);
+const QUOTE_TYPES: ReadonlySet<AnnotationType> = new Set(["highlight", "underline"]);
 
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 const PDF_SORT_INDEX = /^\d{5}\|\d{6}\|\d{5}$/;
@@ -16,7 +17,8 @@ export interface AnnotationParams {
   text?: string;
   color?: string;
   comment?: string;
-  position: any;
+  position?: any;
+  quote?: string;
   sortIndex?: unknown;
 }
 
@@ -51,6 +53,18 @@ export function validateAnnotationParams(p: AnnotationParams): ValidationResult 
       ok: false,
       message: `Invalid annotation color: ${p.color} (expected #RRGGBB 6-char hex)`,
     };
+  }
+  if (p.quote !== undefined && p.quote !== "") {
+    if (!QUOTE_TYPES.has(p.type)) {
+      return {
+        ok: false,
+        message: `quote-based locate is only valid for highlight or underline annotations (got type=${p.type})`,
+      };
+    }
+    // In quote mode, position is resolved by the handler — skip position validation
+    if (p.position === undefined || p.position === null) {
+      return { ok: true };
+    }
   }
   if (
     p.position === undefined

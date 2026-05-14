@@ -495,6 +495,141 @@ describe("annotations handler", () => {
     });
   });
 
+  describe("create with quote (mocked reader)", () => {
+    it("rejects quote for non-highlight/underline types with -32602", async () => {
+      const parent: any = { id: 5, key: "ATT05", libraryID: 1, isAttachment: () => true };
+      installZotero({
+        Items: { getAsync: sinon.stub().withArgs(5).resolves(parent) },
+      });
+
+      const { annotationsHandlers } = await import("../../src/handlers/annotations");
+      try {
+        await annotationsHandlers.create({
+          parentKey: 5,
+          type: "note",
+          quote: "some text to find",
+        });
+        expect.fail("should have thrown");
+      } catch (e: any) {
+        expect(e.code).to.equal(-32602);
+        expect(e.message).to.match(/quote.*highlight.*underline/i);
+      }
+    });
+
+    it("throws -32602 when quote is not found on any page (mocked reader)", async () => {
+      const parent: any = { id: 5, key: "ATT05", libraryID: 1, isAttachment: () => true };
+      const mockTextContent = {
+        items: [
+          { str: "Hello world", transform: [1, 0, 0, 1, 10, 100], width: 60, height: 12 },
+          { str: "Second line", transform: [1, 0, 0, 1, 10, 85], width: 60, height: 12 },
+        ],
+      };
+      const mockPdfPage = {
+        getTextContent: sinon.stub().resolves(mockTextContent),
+      };
+      const mockReader = {
+        itemID: 5,
+        _iframeWindow: {
+          wrappedJSObject: {
+            PDFViewerApplication: {
+              pdfLoadingTask: { promise: Promise.resolve() },
+              pdfViewer: {
+                pagesPromise: Promise.resolve(),
+                _pages: [{ pdfPage: mockPdfPage }],
+              },
+            },
+          },
+        },
+      };
+
+      installZotero({
+        Items: { getAsync: sinon.stub().withArgs(5).resolves(parent) },
+        Reader: {
+          getByTabID: sinon.stub(),
+          open: sinon.stub().resolves(mockReader),
+        },
+        getMainWindows: () => [],
+      });
+
+      const { annotationsHandlers } = await import("../../src/handlers/annotations");
+      try {
+        await annotationsHandlers.create({
+          parentKey: 5,
+          type: "highlight",
+          quote: "this text does not exist in the PDF",
+        });
+        expect.fail("should have thrown");
+      } catch (e: any) {
+        expect(e.code).to.equal(-32602);
+        expect(e.message).to.match(/Quote not found/);
+      }
+    });
+
+    it("resolves quote to position and creates annotation (mocked reader)", async () => {
+      const parent: any = { id: 5, key: "ATT05", libraryID: 1, isAttachment: () => true };
+      const saveTxStub = sinon.stub().resolves();
+      let createdItem: any = null;
+      const mockTextContent = {
+        items: [
+          { str: "This is an important sentence in the PDF.", transform: [1, 0, 0, 1, 10, 100], width: 250, height: 12 },
+          { str: "And another line follows.", transform: [1, 0, 0, 1, 10, 85], width: 150, height: 12 },
+        ],
+      };
+      const mockPdfPage = {
+        getTextContent: sinon.stub().resolves(mockTextContent),
+      };
+      const mockReader = {
+        itemID: 5,
+        _iframeWindow: {
+          wrappedJSObject: {
+            PDFViewerApplication: {
+              pdfLoadingTask: { promise: Promise.resolve() },
+              pdfViewer: {
+                pagesPromise: Promise.resolve(),
+                _pages: [{ pdfPage: mockPdfPage }],
+              },
+            },
+          },
+        },
+      };
+
+      installZotero({
+        Items: { getAsync: sinon.stub().withArgs(5).resolves(parent) },
+        Reader: {
+          getByTabID: sinon.stub(),
+          open: sinon.stub().resolves(mockReader),
+        },
+        getMainWindows: () => [],
+        Item: function (itemType: string) {
+          createdItem = {
+            itemType,
+            libraryID: 0,
+            parentID: 0,
+            key: "NEWANN04",
+            saveTx: saveTxStub,
+          };
+          return createdItem;
+        },
+      });
+
+      const { annotationsHandlers } = await import("../../src/handlers/annotations");
+      const result = await annotationsHandlers.create({
+        parentKey: 5,
+        type: "highlight",
+        quote: "important sentence",
+      });
+
+      expect(result.ok).to.equal(true);
+      expect(result.key).to.equal("NEWANN04");
+      expect(result.attachmentKey).to.equal("ATT05");
+      expect(saveTxStub.calledOnce).to.equal(true);
+      const pos = JSON.parse(createdItem.annotationPosition);
+      expect(pos.pageIndex).to.equal(0);
+      expect(pos.rects).to.have.lengthOf(1);
+      expect(pos.rects[0]).to.have.lengthOf(4);
+    });
+  });
+
   describe("delete", () => {
     it("erases the annotation item and returns {ok, key}", async () => {
       const eraseTxStub = sinon.stub().resolves();

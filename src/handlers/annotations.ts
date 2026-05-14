@@ -5,6 +5,7 @@ import { registerHandlers } from "../server";
 import { serializeItem } from "../utils/serialize";
 import { requireItem } from "../utils/guards";
 import { validateAnnotationParams } from "../utils/annotation";
+import { mergeTextItems, locateQuote } from "../utils/pdf-locate";
 
 /**
  * Resolve a parentKey to the annotation-bearing attachment item.
@@ -25,6 +26,81 @@ async function resolveAnnotationParent(parentKey: number | string): Promise<Zote
     }
   }
   throw { code: -32602, message: `No PDF attachment found for item ${item.key ?? parentKey}` };
+}
+
+/**
+ * Resolve a text quote to PDF coordinates by reading the text layer
+ * from an open (or newly opened) Zotero reader instance.
+ */
+async function resolveQuotePosition(
+  attachment: Zotero.Item,
+  quote: string,
+  pageIndex?: number,
+): Promise<{ pageIndex: number; rects: number[][] }> {
+  const reader = await getReaderForAttachment(attachment);
+  const pdfApp = (reader as any)._iframeWindow.wrappedJSObject.PDFViewerApplication;
+  await pdfApp.pdfLoadingTask.promise;
+  await pdfApp.pdfViewer.pagesPromise;
+
+  const pages = pdfApp.pdfViewer._pages;
+  const pagesToSearch = pageIndex !== undefined
+    ? [pageIndex]
+    : Array.from({ length: pages.length }, (_, i) => i);
+
+  for (const pi of pagesToSearch) {
+    if (pi < 0 || pi >= pages.length) continue;
+    const pdfPage = pages[pi].pdfPage;
+    const textContent = await pdfPage.getTextContent();
+    const items = textContent.items.filter((item: any) => item.str.trim().length > 0);
+    if (items.length === 0) continue;
+
+    const lines = mergeTextItems(items);
+    const result = locateQuote(lines, quote);
+    if (result) {
+      return { pageIndex: pi, rects: result.rects };
+    }
+  }
+
+  const scope = pageIndex !== undefined ? `page ${pageIndex}` : "any page";
+  throw {
+    code: -32602,
+    message: `Quote not found on ${scope}: ${quote.slice(0, 80)}${quote.length > 80 ? "..." : ""}`,
+  };
+}
+
+async function getReaderForAttachment(attachment: Zotero.Item): Promise<any> {
+  // Try to find an already-open reader tab for this attachment
+  const readers: any[] = (Zotero as any).Reader?.getByTabID
+    ? getAllReaders()
+    : [];
+  for (const reader of readers) {
+    if (reader.itemID === attachment.id) return reader;
+  }
+  // Open the attachment in a new reader tab
+  const reader = await (Zotero as any).Reader.open(attachment.id);
+  if (!reader) {
+    throw { code: -32602, message: `Could not open PDF reader for attachment ${attachment.key}` };
+  }
+  return reader;
+}
+
+function getAllReaders(): any[] {
+  try {
+    const windows = (Zotero as any).getMainWindows?.() ?? [];
+    const readers: any[] = [];
+    for (const win of windows) {
+      const tabs = win?.Zotero_Tabs?._tabs ?? [];
+      for (const tab of tabs) {
+        if (tab.id) {
+          const reader = (Zotero as any).Reader.getByTabID(tab.id);
+          if (reader) readers.push(reader);
+        }
+      }
+    }
+    return readers;
+  } catch {
+    return [];
+  }
 }
 
 export const annotationsHandlers = {
@@ -51,7 +127,9 @@ export const annotationsHandlers = {
     text?: string;
     comment?: string;
     color?: string;
-    position: any;
+    position?: any;
+    quote?: string;
+    pageIndex?: number;
     sortIndex?: unknown;
   }) {
     const parent = await resolveAnnotationParent(params.parentKey);
@@ -61,9 +139,15 @@ export const annotationsHandlers = {
       color: params.color,
       comment: params.comment,
       position: params.position,
+      quote: params.quote,
       sortIndex: params.sortIndex,
     });
     if (!validation.ok) throw { code: -32602, message: validation.message };
+
+    let position = params.position;
+    if (params.quote && !position) {
+      position = await resolveQuotePosition(parent, params.quote, params.pageIndex);
+    }
 
     const ann = new Zotero.Item("annotation");
     ann.libraryID = parent.libraryID;
@@ -72,9 +156,9 @@ export const annotationsHandlers = {
     if (params.text) (ann as any).annotationText = params.text;
     if (params.comment) (ann as any).annotationComment = params.comment;
     if (params.color) (ann as any).annotationColor = params.color;
-    (ann as any).annotationPosition = JSON.stringify(params.position);
+    (ann as any).annotationPosition = JSON.stringify(position);
     (ann as any).annotationSortIndex = normalizeAnnotationSortIndex(
-      params.position,
+      position,
       params.sortIndex,
     );
     await ann.saveTx();
