@@ -118,9 +118,25 @@ zotron annotations list ATT_KEY
 # Create a highlight by quoting text (auto-locates in the PDF)
 zotron annotations create ATT_KEY --quote "要高亮的文字"
 
+# With color for a specific dimension
+zotron annotations create ATT_KEY --quote "研究基于..." --color "#56B4E9" --comment "背景"
+
 # With explicit type/color/position (for non-text annotations)
 zotron annotations create ATT_KEY --type image --position '{"pageIndex":0,"rects":[[10,20,30,40]]}'
 ```
+
+**Annotation color convention** (Okabe-Ito colorblind-safe palette):
+
+| Dimension | Color | Hex | Use for |
+|-----------|-------|-----|---------|
+| Background | Sky blue | `#56B4E9` | Research context, motivation, literature review |
+| Method | Teal | `#009E73` | Algorithm, experimental design, theoretical framework |
+| Result | Orange | `#E69F00` | Key findings, data, empirical evidence |
+| Conclusion | Yellow | `#F0E442` | Final contributions, implications |
+| Question | Vermillion | `#D55E00` | Points to challenge, limitations, gaps |
+| My idea | Pink | `#CC79A7` | Reader's own thoughts, connections |
+
+When annotating a paper, use `--color` with the appropriate hex code. Default (no `--color`) is yellow `#ffd400`.
 
 ## Browse collections
 
