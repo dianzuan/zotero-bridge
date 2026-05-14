@@ -59,25 +59,29 @@ async function resolveQuotePosition(
     };
   }
 
-  const pdfPages = primaryView._pdfPages;
-  if (!pdfPages) {
-    throw {
-      code: -32603,
-      message: "Reader missing _pdfPages — cannot access per-char page data",
-    };
-  }
+  const pdfPages = primaryView._pdfPages ?? {};
+  const pdfDocument = primaryView._pdfDocument;
+
+  // Get total page count from the PDF document (not from lazy-loaded _pdfPages)
+  const totalPages: number = pdfDocument?.pagesCount
+    ?? pdfDocument?.numPages
+    ?? (Array.isArray(pdfPages) ? pdfPages.length : Object.keys(pdfPages).length);
 
   const pagesToSearch = pageIndex !== undefined
     ? [pageIndex]
-    : (Array.isArray(pdfPages)
-        ? Array.from({ length: pdfPages.length }, (_, i) => i)
-        : Object.keys(pdfPages).map(Number).filter(n => !isNaN(n)).sort((a, b) => a - b));
+    : Array.from({ length: totalPages }, (_, i) => i);
 
   for (const pi of pagesToSearch) {
-    const pageData = pdfPages[pi];
-    if (!pageData) continue;
+    // Try pre-loaded chars first, then force-load via getPageData
+    let chars = pdfPages[pi]?.chars;
 
-    const chars = pageData.chars;
+    if ((!chars || chars.length === 0) && pdfDocument?.getPageData) {
+      try {
+        const loaded = await pdfDocument.getPageData({ pageIndex: pi });
+        chars = loaded?.chars;
+      } catch { /* page load failed — skip */ }
+    }
+
     if (!chars || chars.length === 0) continue;
 
     const match = findQuoteInChars(chars, quote);
