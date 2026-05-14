@@ -13,11 +13,11 @@
     },
     "result": {
       "key": "extensions.zotero.openURL.resolver",
-      "value": "https://libgen.rs"
+      "value": "https://www.worldcat.org/search"
     }
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\n  \"key\": \"extensions.zotero.openURL.resolver\",\n  \"value\": \"https://libgen.rs\"\n}\n"
+    "stdout": "{\n  \"key\": \"extensions.zotero.openURL.resolver\",\n  \"value\": \"https://www.worldcat.org/search\"\n}\n"
   }
 }

@@ -833,7 +833,7 @@ struct ExportArgs {
     #[arg(long)]
     collection: Option<String>,
     /// Citation style URL (only for bibliography format).
-    #[arg(long, default_value = "http://www.zotero.org/styles/gb-t-7714-2015-numeric")]
+    #[arg(long, default_value = "http://www.zotero.org/styles/apa")]
     style: String,
     /// Output HTML instead of plain text (only for bibliography format).
     #[arg(long)]
@@ -1275,10 +1275,14 @@ fn command_url(command: &Command) -> String {
 }
 
 fn run_ocr_command(command: OcrCommand, client: &mut impl RpcCaller) -> Result<String, String> {
+    if let OcrCommand::Providers = &command {
+        return format_json(
+            &serde_json::json!({ "providers": ocr_provider_specs() }),
+            JsonStyle::Pretty,
+        );
+    }
     let value = match command {
-        OcrCommand::Providers => serde_json::json!({
-            "providers": ocr_provider_specs(),
-        }),
+        OcrCommand::Providers => unreachable!(),
         OcrCommand::Run {
             provider,
             input,
@@ -1521,46 +1525,82 @@ fn run_ocr_process_sync(
 
     let pdf_bytes = fs::read(attachment_path)
         .map_err(|e| format!("READ_PDF_FAILED: {}: {e}", attachment_path.display()))?;
+
+    const MAX_PDF_SIZE: usize = 100 * 1024 * 1024; // 100 MB
+    if pdf_bytes.len() > MAX_PDF_SIZE {
+        return Err(format!(
+            "PDF_TOO_LARGE: {} is {} MB, max {} MB",
+            attachment_path.display(),
+            pdf_bytes.len() / (1024 * 1024),
+            MAX_PDF_SIZE / (1024 * 1024),
+        ));
+    }
+
     let base64_pdf = format!("data:application/pdf;base64,{}", base64_encode(&pdf_bytes));
 
-    let model = {
-        let settings = client.call("settings.getAll", None)?;
-        settings.get("ocr.model")
-            .and_then(Value::as_str)
-            .unwrap_or("glm-ocr")
-            .to_string()
+    let input = OcrRequestInput {
+        content_base64: base64_pdf,
+        file_name: attachment_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("document.pdf")
+            .to_string(),
+        mime_type: "application/pdf".to_string(),
+        item_key: options.parent.clone(),
+        attachment_key: attachment_key.to_string(),
+        source_url: None,
+        local_path: Some(attachment_path.to_string_lossy().to_string()),
+        output_dir: None,
     };
+    let request = build_ocr_provider_request(provider, &input)?;
 
-    let body = serde_json::json!({
-        "model": model,
-        "file": base64_pdf,
-    });
+    let payload = if request.command.is_empty() {
+        let method = request
+            .method
+            .ok_or_else(|| format!("OCR provider {provider} missing HTTP method"))?;
+        let spec = raw_ocr_provider_spec(provider)?;
 
-    let mut req = ureq::post(&api_url).set("Content-Type", "application/json");
-    if !api_key.is_empty() {
-        req = req.set("Authorization", &format!("Bearer {api_key}"));
-    }
-    let response = req.send_json(&body)
-        .map_err(|e| format!("OCR_REQUEST_FAILED: {provider}: {e}"))?;
-    let payload: Value = response.into_json()
-        .map_err(|e| format!("OCR_RESPONSE_PARSE_FAILED: {e}"))?;
+        let mut transport = if !api_key.is_empty() {
+            match spec.auth {
+                "bearer" => UreqProviderHttpTransport::with_bearer_token(&api_key),
+                "token" => UreqProviderHttpTransport::with_api_key(format!("token {api_key}")),
+                _ => UreqProviderHttpTransport::new(),
+            }
+        } else {
+            UreqProviderHttpTransport::new()
+        };
+
+        transport.post_json(&ProviderHttpInvocation {
+            provider: request.provider.to_string(),
+            style: request.style.to_string(),
+            method: method.to_string(),
+            url: Some(api_url),
+            auth_header_name: request.auth_header.map(ToString::to_string),
+            auth_header_value: None,
+            body: request.body,
+        })?
+    } else {
+        let mut runner = StdProviderCommandRunner;
+        runner.run_json(&request.command)?
+    };
 
     let blocks = parse_ocr_provider_response(provider, &payload, &options.parent, attachment_key)?;
     let chunks = zotron_types::chunks_from_blocks(&blocks, options.chunk_chars);
 
-    let mut artifacts = Vec::new();
-    artifacts.push(write_sidecar_json(
-        storage_dir, &options.parent, attachment_key,
-        MachineArtifactKind::OcrRaw, &payload,
-    )?);
-    artifacts.push(write_sidecar_jsonl(
-        storage_dir, &options.parent, attachment_key,
-        MachineArtifactKind::Blocks, &blocks,
-    )?);
-    artifacts.push(write_sidecar_jsonl(
-        storage_dir, &options.parent, attachment_key,
-        MachineArtifactKind::Chunks, &chunks,
-    )?);
+    let artifacts = vec![
+        write_sidecar_json(
+            storage_dir, &options.parent, attachment_key,
+            MachineArtifactKind::OcrRaw, &payload,
+        )?,
+        write_sidecar_jsonl(
+            storage_dir, &options.parent, attachment_key,
+            MachineArtifactKind::Blocks, &blocks,
+        )?,
+        write_sidecar_jsonl(
+            storage_dir, &options.parent, attachment_key,
+            MachineArtifactKind::Chunks, &chunks,
+        )?,
+    ];
 
     let embedding_count = embed_sidecar_chunks(client, storage_dir, &options.parent, attachment_key, &chunks);
 
@@ -1582,7 +1622,7 @@ fn embed_sidecar_chunks(
     client: &mut impl RpcCaller,
     storage_dir: &Path,
     item_key: &str,
-    attachment_key: &str,
+    _attachment_key: &str,
     chunks: &[zotron_types::StructureChunk],
 ) -> usize {
     let Ok((provider, model, api_url, api_key)) = fetch_embedding_settings(client) else {
@@ -3033,8 +3073,10 @@ fn run_rag_search_command(
     );
 
     // If sidecar resolution fails or returns empty, fall back to XPI.
+    // But propagate COLLECTION_NOT_FOUND errors directly instead of masking them.
     let sidecars = match sidecars {
         Ok(ref s) if !s.is_empty() => s,
+        Err(ref e) if e.contains("COLLECTION_NOT_FOUND") => return Err(e.clone()),
         _ => return run_rag_search_xpi_fallback(client, &options),
     };
 
@@ -3445,6 +3487,12 @@ fn run_push_command(
     };
     let item_json = serde_json::from_str::<Value>(&payload)
         .map_err(|err| format!("INVALID_JSON: Could not parse JSON: {err}"))?;
+
+    // Validate required fields
+    match item_json.get("itemType").and_then(Value::as_str) {
+        Some(s) if !s.is_empty() => {}
+        _ => return Err("INVALID_ARGS: input JSON must include a non-empty \"itemType\" field".to_string()),
+    }
 
     if dry_run {
         let collection_key = collection
@@ -4721,7 +4769,11 @@ fn run_annotations_command(
                 "annotations.list",
                 Some(serde_json::json!({"parentKey": parent})),
             )?;
-            (normalize_list_envelope(value, "items", None, 0), JsonStyle::Pretty)
+            let total = value
+                .get("items")
+                .and_then(Value::as_array)
+                .map_or(0, |a| a.len()) as u64;
+            (normalize_list_envelope(value, "items", Some(total), 0), JsonStyle::Pretty)
         }
         AnnotationsCommand::Create {
             parent,
