@@ -4,7 +4,6 @@
   "command": [
     "annotations",
     "create",
-    "--parent",
     "ATTACH1",
     "--type",
     "note",

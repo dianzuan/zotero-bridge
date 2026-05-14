@@ -846,17 +846,15 @@ struct ExportArgs {
 enum AnnotationsCommand {
     /// List annotations on a PDF attachment.
     List {
-        #[arg(long)]
         parent: String,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
     /// Create a new annotation on a PDF attachment.
     Create {
-        #[arg(long)]
         parent: String,
         #[arg(long = "type")]
-        annotation_type: String,
+        annotation_type: Option<String>,
         /// JSON annotation position, for example '{"pageIndex":0,"rects":[[10,20,30,40]]}'.
         /// Not required when --quote is given.
         #[arg(long)]
@@ -4796,6 +4794,7 @@ fn run_annotations_command(
             dry_run,
             ..
         } => {
+            let annotation_type = annotation_type.unwrap_or_else(|| "highlight".to_string());
             if !matches!(
                 annotation_type.as_str(),
                 "highlight" | "note" | "underline" | "image" | "ink"

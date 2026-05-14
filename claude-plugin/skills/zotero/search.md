@@ -102,7 +102,7 @@ zotron notes list --parent YR5BUGHG
 zotron notes get <note-key>
 
 # PDF annotations/highlights
-zotron annotations list --parent YR5BUGHG
+zotron annotations list YR5BUGHG
 ```
 
 Zotero automatically indexes PDFs. `items fulltext` finds the first PDF attachment and returns its cached text — no OCR needed for most papers. Use `zotron ocr ...` only for scanned PDFs or when fulltext is empty/garbled.
@@ -113,10 +113,13 @@ For searching relevant passages across a collection (not full text), see [rag.md
 
 ```bash
 # List annotations on a PDF attachment
-zotron annotations list --parent ATT_KEY
+zotron annotations list ATT_KEY
 
-# Create a highlight annotation
-zotron annotations create --parent ATT_KEY --type highlight --text "selected text" --color "#FFD400"
+# Create a highlight by quoting text (auto-locates in the PDF)
+zotron annotations create ATT_KEY --quote "要高亮的文字"
+
+# With explicit type/color/position (for non-text annotations)
+zotron annotations create ATT_KEY --type image --position '{"pageIndex":0,"rects":[[10,20,30,40]]}'
 ```
 
 ## Browse collections

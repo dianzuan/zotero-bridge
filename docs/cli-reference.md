@@ -224,6 +224,11 @@ Commands:
   list    List annotations on a PDF attachment
   create  Create a new annotation on a PDF attachment
   delete  Delete an annotation by key
+
+Examples:
+  zotron annotations list YR5BUGHG
+  zotron annotations create YR5BUGHG --quote "text to highlight"
+  zotron annotations create YR5BUGHG --type image --position '{"pageIndex":0,"rects":[[10,20,30,40]]}'
 ```
 
 ## zotron ocr

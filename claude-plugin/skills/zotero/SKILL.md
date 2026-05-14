@@ -40,7 +40,8 @@ zotron items get YR5BUGHG
 zotron items fulltext YR5BUGHG
 zotron notes list --parent YR5BUGHG
 zotron attachments list --parent YR5BUGHG
-zotron annotations list --parent YR5BUGHG
+zotron annotations list YR5BUGHG
+zotron annotations create YR5BUGHG --quote "要高亮的文字"
 zotron tags add YR5BUGHG --tag "已读"
 zotron collections tree
 zotron export YR5BUGHG

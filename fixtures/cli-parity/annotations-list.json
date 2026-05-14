@@ -4,7 +4,6 @@
   "command": [
     "annotations",
     "list",
-    "--parent",
     "ATTACH1"
   ],
   "rpc": {

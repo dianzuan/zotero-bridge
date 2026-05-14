@@ -4,7 +4,6 @@
   "command": [
     "annotations",
     "create",
-    "--parent",
     "ATTACH1",
     "--type",
     "highlight",
@@ -23,7 +22,17 @@
       "parentKey": "ATTACH1",
       "type": "highlight",
       "color": "#ff6666",
-      "position": {"pageIndex": 0, "rects": [[10, 20, 30, 40]]},
+      "position": {
+        "pageIndex": 0,
+        "rects": [
+          [
+            10,
+            20,
+            30,
+            40
+          ]
+        ]
+      },
       "text": "key finding",
       "comment": "revisit this"
     },

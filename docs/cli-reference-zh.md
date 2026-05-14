@@ -135,8 +135,9 @@ zotron search "就业" --collection "数字经济" --author "张三" --after 202
 
 | 命令 | 参数 | 说明 |
 |------|------|------|
-| `annotations list --parent <item/attachment key>` | — | 列出 PDF 上的批注（自动解析 item key） |
-| `annotations create --parent <item/attachment key> --type <类型>` | `--position` `--sort-index` `--text` `--comment` `--color` `--dry-run` | 创建批注。类型：highlight/note/underline/image/ink |
+| `annotations list <item/attachment key>` | — | 列出 PDF 上的批注（自动解析 item key） |
+| `annotations create <item/attachment key> --quote "文字"` | `--page` `--comment` `--color` | 按引用文字自动定位并高亮（默认 type=highlight） |
+| `annotations create <item/attachment key> --type <类型> --position <JSON>` | `--sort-index` `--text` `--comment` `--color` `--dry-run` | 手动指定位置创建批注 |
 | `annotations delete <annotation key>` | `--dry-run` | 删除批注 |
 
 ---
