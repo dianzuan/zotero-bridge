@@ -67,10 +67,11 @@ async function resolveQuotePosition(
     };
   }
 
-  const pageCount = Array.isArray(pdfPages) ? pdfPages.length : Object.keys(pdfPages).length;
   const pagesToSearch = pageIndex !== undefined
     ? [pageIndex]
-    : Array.from({ length: pageCount }, (_, i) => i);
+    : (Array.isArray(pdfPages)
+        ? Array.from({ length: pdfPages.length }, (_, i) => i)
+        : Object.keys(pdfPages).map(Number).filter(n => !isNaN(n)).sort((a, b) => a - b));
 
   for (const pi of pagesToSearch) {
     const pageData = pdfPages[pi];
