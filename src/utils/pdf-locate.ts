@@ -52,12 +52,8 @@ export function findQuoteInChars(chars: CharData[], quote: string): QuoteMatch |
   if (!quote || quote.trim().length === 0) return null;
   if (chars.length === 0) return null;
 
-  const normalizedQuote = normalizeWs(quote);
-  if (normalizedQuote.length === 0) return null;
-
-  // Build the text string and a mapping from text positions back to char indices.
-  // charIndexMap[textPos] = index into the chars array for that character.
-  // Space characters inserted by spaceAfter/lineBreakAfter get -1 (synthetic).
+  // Build text from chars with a position map back to char indices.
+  // charIndexMap[textPos] = index into chars array (-1 for synthetic spaces).
   const textParts: string[] = [];
   const charIndexMap: number[] = [];
 
@@ -68,56 +64,41 @@ export function findQuoteInChars(chars: CharData[], quote: string): QuoteMatch |
     charIndexMap.push(i);
     if (char.spaceAfter || char.lineBreakAfter) {
       textParts.push(" ");
-      charIndexMap.push(-1); // synthetic space
+      charIndexMap.push(-1);
     }
   }
 
   const fullText = textParts.join("");
-  const normalizedText = normalizeWs(fullText);
 
-  // Find the quote in normalized text
-  const matchPos = normalizedText.indexOf(normalizedQuote);
+  // Strip ALL whitespace for matching — handles cross-line CJK (where line
+  // breaks insert spaces into continuous text) and English word boundaries.
+  const strippedQuote = quote.replace(/\s/g, "");
+  if (strippedQuote.length === 0) return null;
+
+  const strippedText = fullText.replace(/\s/g, "");
+  const matchPos = strippedText.indexOf(strippedQuote);
   if (matchPos === -1) return null;
 
-  // Map normalized text positions back to original text positions.
-  // normalizeWs trims leading whitespace and collapses runs, so we need
-  // to walk both strings in sync.
-  const origToNorm = buildOrigToNormMap(fullText);
-
-  // Find the range in original text that corresponds to the normalized match
-  let origStart = -1;
-  let origEnd = -1;
-  for (let i = 0; i < origToNorm.length; i++) {
-    if (origToNorm[i] === matchPos && origStart === -1) {
-      origStart = i;
-    }
-    if (origToNorm[i] === matchPos + normalizedQuote.length - 1) {
-      origEnd = i;
-    }
+  // Map stripped-text positions back to fullText positions.
+  const strippedToFull: number[] = [];
+  for (let i = 0; i < fullText.length; i++) {
+    if (!/\s/.test(fullText[i])) strippedToFull.push(i);
   }
 
-  if (origStart === -1 || origEnd === -1) return null;
+  const fullStart = strippedToFull[matchPos];
+  const fullEnd = strippedToFull[matchPos + strippedQuote.length - 1];
 
-  // Map from original text positions to char indices, skipping synthetic spaces
+  // Map fullText positions to char indices, skipping synthetic spaces.
   let charStart = -1;
   let charEnd = -1;
-
-  for (let i = origStart; i >= 0; i--) {
-    if (charIndexMap[i] !== -1) {
-      charStart = charIndexMap[i];
-      break;
-    }
+  for (let i = fullStart; i >= 0; i--) {
+    if (charIndexMap[i] !== -1) { charStart = charIndexMap[i]; break; }
   }
-
-  for (let i = origEnd; i >= 0; i--) {
-    if (charIndexMap[i] !== -1) {
-      charEnd = charIndexMap[i];
-      break;
-    }
+  for (let i = fullEnd; i >= 0; i--) {
+    if (charIndexMap[i] !== -1) { charEnd = charIndexMap[i]; break; }
   }
 
   if (charStart === -1 || charEnd === -1) return null;
-
   return { offsetStart: charStart, offsetEnd: charEnd };
 }
 
@@ -164,55 +145,3 @@ export function getRangeRects(
   return rects;
 }
 
-// --- internal helpers ---
-
-function normalizeWs(s: string): string {
-  return s.replace(/\s+/g, " ").trim();
-}
-
-/**
- * Build a mapping from each position in the original string to its
- * corresponding position in the normalized (whitespace-collapsed, trimmed) string.
- */
-function buildOrigToNormMap(original: string): number[] {
-  const map: number[] = [];
-  const normalized = normalizeWs(original);
-
-  let normIdx = 0;
-  let inLeadingSpace = true;
-  let prevWasSpace = false;
-
-  for (let i = 0; i < original.length; i++) {
-    const c = original[i];
-    const isSpace = /\s/.test(c);
-
-    if (inLeadingSpace) {
-      if (isSpace) {
-        map.push(-1);
-        continue;
-      }
-      inLeadingSpace = false;
-    }
-
-    if (isSpace) {
-      if (!prevWasSpace) {
-        // This is the first space in a run — check if we're at trailing space
-        if (normIdx < normalized.length && normalized[normIdx] === " ") {
-          map.push(normIdx);
-          normIdx++;
-        } else {
-          map.push(-1); // trailing space
-        }
-      } else {
-        map.push(-1); // collapsed space
-      }
-      prevWasSpace = true;
-    } else {
-      map.push(normIdx);
-      normIdx++;
-      prevWasSpace = false;
-    }
-  }
-
-  return map;
-}

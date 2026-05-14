@@ -102,6 +102,20 @@ describe("findQuoteInChars", () => {
     expect(result!.offsetEnd).to.equal(2);
   });
 
+  it("matches CJK quote across a line break (no spaces in quote)", () => {
+    // CJK text where line break inserts a space: "显 著" in chars, "显著" in quote
+    const chars = [
+      ch("显", [300, 500, 310, 510], { lineBreakAfter: true }),
+      ch("著", [100, 488, 110, 498]),
+      ch("正", [110, 488, 120, 498]),
+    ];
+    // chars text = "显 著正", quote = "显著正" (no space) — should still match
+    const result = findQuoteInChars(chars, "显著正");
+    expect(result).to.not.be.null;
+    expect(result!.offsetStart).to.equal(0);
+    expect(result!.offsetEnd).to.equal(2);
+  });
+
   it("returns null when quote is not found", () => {
     const chars = [
       ch("A", [0, 0, 5, 10]),
