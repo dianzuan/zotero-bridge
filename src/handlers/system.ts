@@ -5,7 +5,7 @@ import { setPref } from "../utils/prefs";
 
 export const systemHandlers = {
   async ping() { return { status: "ok", timestamp: new Date().toISOString() }; },
-  async version() { return { zotero: Zotero.version, plugin: "0.2.0", methods: getRegisteredMethods().length }; },
+  async version() { return { zotero: Zotero.version, plugin: "0.1.1", methods: getRegisteredMethods().length }; },
   async libraries() {
     const libs = Zotero.Libraries.getAll();
     return libs.map((lib: any) => ({ id: lib.id, type: lib.libraryType, name: lib.name, editable: lib.editable }));

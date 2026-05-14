@@ -36,9 +36,6 @@ versions.set("package-lock.json", readJson("package-lock.json").version);
 versions.set("package-lock.json packages[\"\"]", readJson("package-lock.json").packages?.[""]?.version);
 versions.set("addon/manifest.json", readJson("addon/manifest.json").version);
 
-const pyproject = read("claude-plugin/python/pyproject.toml");
-versions.set("claude-plugin/python/pyproject.toml", pyproject.match(/^version = "([^"]+)"$/m)?.[1]);
-
 const systemHandler = read("src/handlers/system.ts");
 versions.set("src/handlers/system.ts", systemHandler.match(/plugin:\s*"([^"]+)"/)?.[1]);
 
