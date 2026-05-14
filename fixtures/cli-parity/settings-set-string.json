@@ -5,22 +5,22 @@
     "settings",
     "set",
     "extensions.zotero.openURL.resolver",
-    "https://libgen.rs"
+    "https://www.worldcat.org/search"
   ],
   "rpc": {
     "method": "settings.set",
     "params": {
       "key": "extensions.zotero.openURL.resolver",
-      "value": "https://libgen.rs"
+      "value": "https://www.worldcat.org/search"
     },
     "result": {
       "ok": true,
       "key": "extensions.zotero.openURL.resolver",
-      "value": "https://libgen.rs"
+      "value": "https://www.worldcat.org/search"
     }
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"ok\": true, \"key\": \"extensions.zotero.openURL.resolver\", \"value\": \"https://libgen.rs\"}\n"
+    "stdout": "{\"ok\": true, \"key\": \"extensions.zotero.openURL.resolver\", \"value\": \"https://www.worldcat.org/search\"}\n"
   }
 }

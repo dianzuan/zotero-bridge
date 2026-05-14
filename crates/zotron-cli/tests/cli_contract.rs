@@ -1676,7 +1676,7 @@ fn rag_search_with_zotero_flag_uses_xpi_directly() {
     // With --zotero, should go directly to rag.searchHits (first and only RPC call)
     assert_eq!(client.calls[0].0, "rag.searchHits");
     let payload: Value = serde_json::from_str(&out).expect("output is JSON");
-    assert!(payload["items"].as_array().unwrap().len() > 0);
+    assert!(!payload["items"].as_array().unwrap().is_empty());
 }
 
 #[test]
