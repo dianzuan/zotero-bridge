@@ -1,149 +1,213 @@
 import { expect } from "chai";
-import { mergeTextItems, locateQuote } from "../../src/utils/pdf-locate";
+import { getTextFromChars, findQuoteInChars, getRangeRects } from "../../src/utils/pdf-locate";
 
-describe("mergeTextItems", () => {
-  it("merges items sharing a baseline into a single line", () => {
-    const items = [
-      { str: "Hello", transform: [1, 0, 0, 1, 10, 100], width: 30, height: 12 },
-      { str: "world", transform: [1, 0, 0, 1, 42, 100], width: 28, height: 12 },
+/** Helper: build a char object with sensible defaults. */
+function ch(
+  c: string,
+  rect: [number, number, number, number],
+  opts?: { spaceAfter?: boolean; lineBreakAfter?: boolean; ignorable?: boolean; rotation?: number; inlineRect?: [number, number, number, number] },
+) {
+  return { c, rect, ...opts };
+}
+
+describe("getTextFromChars", () => {
+  it("concatenates character values into a string", () => {
+    const chars = [
+      ch("H", [0, 0, 5, 10]),
+      ch("i", [5, 0, 8, 10]),
     ];
-    const lines = mergeTextItems(items);
-    expect(lines).to.have.lengthOf(1);
-    expect(lines[0].text).to.include("Hello");
-    expect(lines[0].text).to.include("world");
-    expect(lines[0].y).to.equal(100);
+    expect(getTextFromChars(chars)).to.equal("Hi");
   });
 
-  it("separates items on different baselines into separate lines", () => {
-    const items = [
-      { str: "Line one", transform: [1, 0, 0, 1, 10, 200], width: 50, height: 12 },
-      { str: "Line two", transform: [1, 0, 0, 1, 10, 180], width: 50, height: 12 },
+  it("inserts space after chars with spaceAfter", () => {
+    const chars = [
+      ch("H", [0, 0, 5, 10]),
+      ch("i", [5, 0, 8, 10], { spaceAfter: true }),
+      ch("y", [12, 0, 17, 10]),
+      ch("o", [17, 0, 22, 10]),
     ];
-    const lines = mergeTextItems(items);
-    expect(lines).to.have.lengthOf(2);
-    expect(lines[0].text).to.include("Line one");
-    expect(lines[1].text).to.include("Line two");
+    expect(getTextFromChars(chars)).to.equal("Hi yo");
   });
 
-  it("handles superscript/subscript by merging overlapping baselines", () => {
-    const items = [
-      { str: "Main", transform: [1, 0, 0, 1, 10, 100], width: 30, height: 12 },
-      { str: "sup", transform: [1, 0, 0, 1, 42, 106], width: 15, height: 8 },
+  it("inserts space after chars with lineBreakAfter", () => {
+    const chars = [
+      ch("A", [0, 0, 5, 10]),
+      ch("B", [5, 0, 10, 10], { lineBreakAfter: true }),
+      ch("C", [0, 12, 5, 22]),
+      ch("D", [5, 12, 10, 22]),
     ];
-    const lines = mergeTextItems(items);
-    expect(lines).to.have.lengthOf(1);
-    expect(lines[0].text).to.include("Main");
-    expect(lines[0].text).to.include("sup");
+    expect(getTextFromChars(chars)).to.equal("AB CD");
   });
 
-  it("returns empty array for empty input", () => {
-    expect(mergeTextItems([])).to.deep.equal([]);
+  it("skips ignorable chars", () => {
+    const chars = [
+      ch("A", [0, 0, 5, 10]),
+      ch("​", [5, 0, 5, 10], { ignorable: true }),
+      ch("B", [5, 0, 10, 10]),
+    ];
+    expect(getTextFromChars(chars)).to.equal("AB");
   });
 
-  it("handles items with negative width by flipping x", () => {
-    const items = [
-      { str: "RTL", transform: [1, 0, 0, 1, 50, 100], width: -30, height: 12 },
-    ];
-    const lines = mergeTextItems(items);
-    expect(lines).to.have.lengthOf(1);
-    expect(lines[0].x).to.equal(20);
-    expect(lines[0].width).to.equal(30);
+  it("returns empty string for empty chars array", () => {
+    expect(getTextFromChars([])).to.equal("");
   });
 
-  it("computes line width spanning inter-item gaps", () => {
-    const items = [
-      { str: "Hello", transform: [1, 0, 0, 1, 10, 100], width: 30, height: 12 },
-      { str: "world", transform: [1, 0, 0, 1, 60, 100], width: 28, height: 12 },
+  it("handles all-ignorable chars", () => {
+    const chars = [
+      ch("​", [0, 0, 0, 0], { ignorable: true }),
+      ch("﻿", [0, 0, 0, 0], { ignorable: true }),
     ];
-    const lines = mergeTextItems(items);
-    expect(lines).to.have.lengthOf(1);
-    // Line should span from x=10 to x=60+28=88, so width = 78
-    expect(lines[0].x).to.equal(10);
-    expect(lines[0].width).to.equal(78);
-  });
-
-  it("filters out whitespace-only items", () => {
-    const items = [
-      { str: "Hello", transform: [1, 0, 0, 1, 10, 100], width: 30, height: 12 },
-      { str: "   ", transform: [1, 0, 0, 1, 42, 100], width: 10, height: 12 },
-      { str: "world", transform: [1, 0, 0, 1, 54, 100], width: 28, height: 12 },
-    ];
-    const lines = mergeTextItems(items);
-    expect(lines).to.have.lengthOf(1);
-    expect(lines[0].text).to.include("Hello");
-    expect(lines[0].text).to.include("world");
+    expect(getTextFromChars(chars)).to.equal("");
   });
 });
 
-describe("locateQuote", () => {
-  function makeLine(text: string, x: number, y: number, width: number, height: number) {
-    return { text, x, y, width, height };
-  }
-
-  const pageLines = [
-    makeLine("This is the first line of the document.", 10, 700, 300, 12),
-    makeLine("The second line continues the paragraph here.", 10, 685, 340, 12),
-    makeLine("A third line wraps up the content nicely.", 10, 670, 320, 12),
-  ];
-
-  it("finds a single-line quote and returns one rect", () => {
-    const result = locateQuote(pageLines, "first line of the document");
+describe("findQuoteInChars", () => {
+  it("finds an exact match and returns offsets", () => {
+    const chars = [
+      ch("H", [0, 0, 5, 10]),
+      ch("e", [5, 0, 10, 10]),
+      ch("l", [10, 0, 15, 10]),
+      ch("l", [15, 0, 20, 10]),
+      ch("o", [20, 0, 25, 10]),
+    ];
+    const result = findQuoteInChars(chars, "ello");
     expect(result).to.not.be.null;
-    expect(result!.rects).to.have.lengthOf(1);
-    expect(result!.matchedText).to.include("first line of the document");
-    const rect = result!.rects[0];
-    expect(rect).to.have.lengthOf(4);
-    // rect is [x1, y1, x2, y2] within the first line
-    expect(rect[1]).to.equal(700);
-    expect(rect[3]).to.equal(700 + 12);
-  });
-
-  it("finds a multi-line quote and returns one rect per line", () => {
-    const result = locateQuote(pageLines, "paragraph here. A third line wraps");
-    expect(result).to.not.be.null;
-    expect(result!.rects).to.have.lengthOf(2);
-    // first rect on line 2 (y=685), second on line 3 (y=670)
-    expect(result!.rects[0][1]).to.equal(685);
-    expect(result!.rects[1][1]).to.equal(670);
+    expect(result!.offsetStart).to.equal(1);
+    expect(result!.offsetEnd).to.equal(4);
   });
 
   it("matches whitespace-insensitively (collapsed spaces)", () => {
-    const result = locateQuote(pageLines, "first  line   of  the  document");
+    const chars = [
+      ch("a", [0, 0, 5, 10], { spaceAfter: true }),
+      ch("b", [10, 0, 15, 10]),
+    ];
+    // Text is "a b"; quote with extra spaces should still match
+    const result = findQuoteInChars(chars, "a   b");
     expect(result).to.not.be.null;
-    expect(result!.rects).to.have.lengthOf(1);
+    expect(result!.offsetStart).to.equal(0);
+    expect(result!.offsetEnd).to.equal(1);
+  });
+
+  it("finds a match spanning a lineBreakAfter boundary", () => {
+    // "AB CD" — quote "B C" spans across the line break
+    const chars = [
+      ch("A", [0, 90, 5, 100]),
+      ch("B", [5, 90, 10, 100], { lineBreakAfter: true }),
+      ch("C", [0, 78, 5, 88]),
+      ch("D", [5, 78, 10, 88]),
+    ];
+    const result = findQuoteInChars(chars, "B C");
+    expect(result).to.not.be.null;
+    expect(result!.offsetStart).to.equal(1);
+    expect(result!.offsetEnd).to.equal(2);
   });
 
   it("returns null when quote is not found", () => {
-    const result = locateQuote(pageLines, "this text does not exist anywhere");
-    expect(result).to.be.null;
+    const chars = [
+      ch("A", [0, 0, 5, 10]),
+      ch("B", [5, 0, 10, 10]),
+    ];
+    expect(findQuoteInChars(chars, "XYZ")).to.be.null;
   });
 
   it("returns null for empty quote", () => {
-    const result = locateQuote(pageLines, "");
-    expect(result).to.be.null;
+    const chars = [ch("A", [0, 0, 5, 10])];
+    expect(findQuoteInChars(chars, "")).to.be.null;
+    expect(findQuoteInChars(chars, "   ")).to.be.null;
   });
 
-  it("returns null for empty page lines", () => {
-    const result = locateQuote([], "some text");
-    expect(result).to.be.null;
+  it("returns null for empty chars array", () => {
+    expect(findQuoteInChars([], "hello")).to.be.null;
   });
 
-  it("handles a quote spanning all lines", () => {
-    const result = locateQuote(
-      pageLines,
-      "first line of the document. The second line continues the paragraph here. A third line",
-    );
+  it("skips ignorable chars when building text and adjusts offsets", () => {
+    const chars = [
+      ch("H", [0, 0, 5, 10]),
+      ch("​", [5, 0, 5, 10], { ignorable: true }),
+      ch("i", [5, 0, 10, 10]),
+    ];
+    // Text is "Hi" — ignorable char at index 1 is skipped
+    const result = findQuoteInChars(chars, "Hi");
     expect(result).to.not.be.null;
-    expect(result!.rects).to.have.lengthOf(3);
+    // offsetStart should point to char index 0 ("H"), offsetEnd to char index 2 ("i")
+    expect(result!.offsetStart).to.equal(0);
+    expect(result!.offsetEnd).to.equal(2);
+  });
+});
+
+describe("getRangeRects", () => {
+  it("returns a single rect for a single-line range", () => {
+    const chars = [
+      ch("A", [0, 90, 5, 100], { inlineRect: [0, 88, 200, 102] }),
+      ch("B", [5, 90, 10, 100], { inlineRect: [0, 88, 200, 102] }),
+      ch("C", [10, 90, 15, 100], { inlineRect: [0, 88, 200, 102], lineBreakAfter: true }),
+    ];
+    // Range covers chars 0..2 (entire line)
+    const rects = getRangeRects(chars, 0, 2);
+    expect(rects).to.have.lengthOf(1);
+    const r = rects[0];
+    // x from firstRect[0]=0, y from firstInline[1]=88, x2 from lastRect[2]=15, y2 from firstInline[3]=102
+    expect(r).to.deep.equal([0, 88, 15, 102]);
   });
 
-  it("computes sub-line x offsets for partial matches", () => {
-    const result = locateQuote(pageLines, "second line");
-    expect(result).to.not.be.null;
-    const rect = result!.rects[0];
-    // The "second line" starts partway into the second line text
-    // x1 should be > line start x (10), x2 should be < line end
-    expect(rect[0]).to.be.greaterThan(10);
-    expect(rect[2]).to.be.lessThan(10 + 340);
+  it("returns multiple rects for a multi-line range", () => {
+    const chars = [
+      ch("A", [0, 90, 5, 100], { inlineRect: [0, 88, 200, 102], lineBreakAfter: true }),
+      ch("B", [0, 70, 5, 80], { inlineRect: [0, 68, 200, 82], lineBreakAfter: true }),
+    ];
+    const rects = getRangeRects(chars, 0, 1);
+    expect(rects).to.have.lengthOf(2);
+    // First line rect
+    expect(rects[0]).to.deep.equal([0, 88, 5, 102]);
+    // Second line rect
+    expect(rects[1]).to.deep.equal([0, 68, 5, 82]);
+  });
+
+  it("handles partial line selection (starts mid-line)", () => {
+    const chars = [
+      ch("A", [0, 90, 5, 100], { inlineRect: [0, 88, 200, 102] }),
+      ch("B", [5, 90, 10, 100], { inlineRect: [0, 88, 200, 102] }),
+      ch("C", [10, 90, 15, 100], { inlineRect: [0, 88, 200, 102], lineBreakAfter: true }),
+    ];
+    // Select only B..C (indices 1..2)
+    const rects = getRangeRects(chars, 1, 2);
+    expect(rects).to.have.lengthOf(1);
+    // x from B's rect[0]=5, y from B's inlineRect[1]=88, x2 from C's rect[2]=15, y2 from B's inlineRect[3]=102
+    expect(rects[0]).to.deep.equal([5, 88, 15, 102]);
+  });
+
+  it("handles vertical text (rotation=90)", () => {
+    const chars = [
+      ch("A", [90, 0, 100, 5], { inlineRect: [88, 0, 102, 200], rotation: 90, lineBreakAfter: true }),
+      ch("B", [90, 5, 100, 10], { inlineRect: [88, 0, 102, 200], rotation: 90, lineBreakAfter: true }),
+    ];
+    const rects = getRangeRects(chars, 0, 1);
+    expect(rects).to.have.lengthOf(2);
+    // For vertical: rect = [firstInline[0], firstRect[1], firstInline[2], lastRect[3]]
+    expect(rects[0]).to.deep.equal([88, 0, 102, 5]);
+    expect(rects[1]).to.deep.equal([88, 5, 102, 10]);
+  });
+
+  it("normalizes rects with inverted coordinates", () => {
+    const chars = [
+      ch("A", [15, 100, 0, 90], { inlineRect: [200, 102, 0, 88], lineBreakAfter: true }),
+    ];
+    const rects = getRangeRects(chars, 0, 0);
+    expect(rects).to.have.lengthOf(1);
+    // After normalization: rect = [0, 88, 15, 102] for horizontal
+    // firstRect norm => [0, 90, 15, 100], firstInline norm => [0, 88, 200, 102]
+    // horizontal: [firstRect[0], firstInline[1], lastRect[2], firstInline[3]] = [0, 88, 15, 102]
+    expect(rects[0]).to.deep.equal([0, 88, 15, 102]);
+  });
+
+  it("falls back to char rect when inlineRect is absent", () => {
+    const chars = [
+      ch("A", [0, 90, 5, 100], { lineBreakAfter: true }),
+    ];
+    const rects = getRangeRects(chars, 0, 0);
+    expect(rects).to.have.lengthOf(1);
+    // inlineRect falls back to rect: [0, 90, 5, 100]
+    // horizontal: [firstRect[0], firstInline[1], lastRect[2], firstInline[3]] = [0, 90, 5, 100]
+    expect(rects[0]).to.deep.equal([0, 90, 5, 100]);
   });
 });

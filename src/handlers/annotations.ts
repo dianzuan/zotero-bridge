@@ -5,7 +5,7 @@ import { registerHandlers } from "../server";
 import { serializeItem } from "../utils/serialize";
 import { requireItem } from "../utils/guards";
 import { validateAnnotationParams } from "../utils/annotation";
-import { mergeTextItems, locateQuote } from "../utils/pdf-locate";
+import { findQuoteInChars, getRangeRects } from "../utils/pdf-locate";
 
 /**
  * Resolve a parentKey to the annotation-bearing attachment item.
@@ -29,8 +29,11 @@ async function resolveAnnotationParent(parentKey: number | string): Promise<Zote
 }
 
 /**
- * Resolve a text quote to PDF coordinates by reading the text layer
- * from an open (or newly opened) Zotero reader instance.
+ * Resolve a text quote to PDF coordinates using Zotero reader's per-char data.
+ *
+ * Access path: reader._internalReader._primaryView._pdfPages[pageIndex].chars
+ * Each char has { c, rect, spaceAfter, lineBreakAfter, ignorable, inlineRect, rotation }
+ * with precise glyph bounding boxes from font metrics.
  */
 async function resolveQuotePosition(
   attachment: Zotero.Item,
@@ -38,26 +41,48 @@ async function resolveQuotePosition(
   pageIndex?: number,
 ): Promise<{ pageIndex: number; rects: number[][] }> {
   const reader = await getReaderForAttachment(attachment);
-  const pdfApp = (reader as any)._iframeWindow.wrappedJSObject.PDFViewerApplication;
-  await pdfApp.pdfLoadingTask.promise;
-  await pdfApp.pdfViewer.pagesPromise;
 
-  const pages = pdfApp.pdfViewer._pages;
+  // Navigate to Zotero reader's internal per-char page data
+  const internalReader = (reader as any)._internalReader;
+  if (!internalReader) {
+    throw {
+      code: -32603,
+      message: "Reader missing _internalReader — Zotero reader structure may have changed",
+    };
+  }
+
+  const primaryView = internalReader._primaryView ?? internalReader._state;
+  if (!primaryView) {
+    throw {
+      code: -32603,
+      message: "Reader missing _primaryView and _state — cannot access per-char page data",
+    };
+  }
+
+  const pdfPages = primaryView._pdfPages;
+  if (!pdfPages) {
+    throw {
+      code: -32603,
+      message: "Reader missing _pdfPages — cannot access per-char page data",
+    };
+  }
+
+  const pageCount = Array.isArray(pdfPages) ? pdfPages.length : Object.keys(pdfPages).length;
   const pagesToSearch = pageIndex !== undefined
     ? [pageIndex]
-    : Array.from({ length: pages.length }, (_, i) => i);
+    : Array.from({ length: pageCount }, (_, i) => i);
 
   for (const pi of pagesToSearch) {
-    if (pi < 0 || pi >= pages.length) continue;
-    const pdfPage = pages[pi].pdfPage;
-    const textContent = await pdfPage.getTextContent();
-    const items = textContent.items.filter((item: any) => item.str.trim().length > 0);
-    if (items.length === 0) continue;
+    const pageData = pdfPages[pi];
+    if (!pageData) continue;
 
-    const lines = mergeTextItems(items);
-    const result = locateQuote(lines, quote);
-    if (result) {
-      return { pageIndex: pi, rects: result.rects };
+    const chars = pageData.chars;
+    if (!chars || chars.length === 0) continue;
+
+    const match = findQuoteInChars(chars, quote);
+    if (match) {
+      const rects = getRangeRects(chars, match.offsetStart, match.offsetEnd);
+      return { pageIndex: pi, rects };
     }
   }
 

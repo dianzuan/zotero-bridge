@@ -2,159 +2,217 @@
 // Copyright (C) 2026 diamondrill
 
 /**
- * Pure functions for locating text quotes in PDF.js text layer output.
+ * Pure functions for locating text quotes using Zotero reader's per-char data.
  * No Zotero global dependency — fully unit-testable.
+ *
+ * These operate on the `chars` array from:
+ *   reader._internalReader._primaryView._pdfPages[pageIndex].chars
+ * where each char has { c, rect, spaceAfter, lineBreakAfter, ignorable, inlineRect, rotation }.
  */
 
-export interface TextItem {
-  str: string;
-  transform: number[];
-  width: number;
-  height: number;
+export interface CharData {
+  c: string;
+  rect: [number, number, number, number];
+  spaceAfter?: boolean;
+  lineBreakAfter?: boolean;
+  ignorable?: boolean;
+  inlineRect?: [number, number, number, number];
+  rotation?: number;
 }
 
-export interface TextLine {
-  text: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-export interface LocateResult {
-  rects: number[][];
-  matchedText: string;
+export interface QuoteMatch {
+  offsetStart: number;  // index into the chars array (non-ignorable mapping)
+  offsetEnd: number;    // index into the chars array (inclusive)
 }
 
 /**
- * Merge PDF.js getTextContent().items into lines sharing a baseline.
- *
- * Items whose vertical position overlaps (accounting for super/subscript)
- * are merged into a single line. Whitespace-only items are filtered out.
+ * Build a searchable text string from the reader's chars array.
+ * Mirrors Zotero reader's own `getTextFromChars`.
  */
-export function mergeTextItems(items: TextItem[]): TextLine[] {
-  const filtered = items.filter((item) => item.str.trim().length > 0);
-  if (filtered.length === 0) return [];
-
-  function toLine(item: TextItem): TextLine & { _heights: number[] } {
-    let x = parseFloat(item.transform[4].toFixed(1));
-    let width = item.width;
-    if (width < 0) {
-      x += width;
-      width = -width;
-    }
-    return {
-      x,
-      y: parseFloat(item.transform[5].toFixed(1)),
-      text: item.str,
-      height: item.height,
-      width,
-      _heights: [item.height],
-    };
-  }
-
-  const lines: (TextLine & { _heights: number[] })[] = [toLine(filtered[0])];
-
-  for (let i = 1; i < filtered.length; i++) {
-    const cur = toLine(filtered[i]);
-    const last = lines[lines.length - 1];
-
-    const sameBaseline =
-      cur.y === last.y ||
-      (cur.y >= last.y && cur.y < last.y + last.height) ||
-      (cur.y + cur.height > last.y && cur.y + cur.height <= last.y + last.height);
-
-    if (sameBaseline) {
-      last.text += " " + cur.text;
-      const rightEdge = Math.max(last.x + last.width, cur.x + cur.width);
-      last.x = Math.min(last.x, cur.x);
-      last.width = rightEdge - last.x;
-      last._heights.push(cur.height);
-    } else {
-      // Finalize previous line height using the mode
-      last.height = modeHeight(last._heights);
-      lines.push(cur);
+export function getTextFromChars(chars: CharData[]): string {
+  const text: string[] = [];
+  for (const char of chars) {
+    if (!char.ignorable) {
+      text.push(char.c);
+      if (char.spaceAfter || char.lineBreakAfter) {
+        text.push(" ");
+      }
     }
   }
-
-  // Finalize last line
-  const last = lines[lines.length - 1];
-  last.height = modeHeight(last._heights);
-
-  return lines.map(({ _heights, ...line }) => line);
-}
-
-function modeHeight(heights: number[]): number {
-  const freq: Record<string, number> = {};
-  for (const h of heights) {
-    const key = String(h);
-    freq[key] = (freq[key] ?? 0) + 1;
-  }
-  return Number(
-    Object.keys(freq).sort((a, b) => freq[b] - freq[a])[0],
-  );
+  return text.join("");
 }
 
 /**
- * Locate a quote string within merged page lines.
+ * Find a quote substring within the chars-derived text.
+ * Whitespace is normalized in both the chars-text and the quote.
  *
- * Whitespace is normalized for matching: runs of spaces in both the page
- * text and the quote are collapsed to single spaces. The quote may span
- * multiple lines.
- *
- * Returns one [x1, y1, x2, y2] rect per line the quote spans, or null
- * if the quote is not found.
+ * Returns char-array indices (offsetStart, offsetEnd inclusive) or null.
  */
-export function locateQuote(pageLines: TextLine[], quote: string): LocateResult | null {
+export function findQuoteInChars(chars: CharData[], quote: string): QuoteMatch | null {
   if (!quote || quote.trim().length === 0) return null;
-  if (pageLines.length === 0) return null;
+  if (chars.length === 0) return null;
 
   const normalizedQuote = normalizeWs(quote);
+  if (normalizedQuote.length === 0) return null;
 
-  // Build concatenated text from all lines with line boundaries tracked
-  const segments: { lineIdx: number; startInConcat: number; text: string }[] = [];
-  let concat = "";
-  for (let i = 0; i < pageLines.length; i++) {
-    const text = normalizeWs(pageLines[i].text);
-    if (concat.length > 0) concat += " ";
-    segments.push({ lineIdx: i, startInConcat: concat.length, text });
-    concat += text;
+  // Build the text string and a mapping from text positions back to char indices.
+  // charIndexMap[textPos] = index into the chars array for that character.
+  // Space characters inserted by spaceAfter/lineBreakAfter get -1 (synthetic).
+  const textParts: string[] = [];
+  const charIndexMap: number[] = [];
+
+  for (let i = 0; i < chars.length; i++) {
+    const char = chars[i];
+    if (char.ignorable) continue;
+    textParts.push(char.c);
+    charIndexMap.push(i);
+    if (char.spaceAfter || char.lineBreakAfter) {
+      textParts.push(" ");
+      charIndexMap.push(-1); // synthetic space
+    }
   }
 
-  const matchStart = concat.indexOf(normalizedQuote);
-  if (matchStart === -1) return null;
-  const matchEnd = matchStart + normalizedQuote.length;
+  const fullText = textParts.join("");
+  const normalizedText = normalizeWs(fullText);
 
-  const rects: number[][] = [];
-  const matchedText = concat.slice(matchStart, matchEnd);
+  // Find the quote in normalized text
+  const matchPos = normalizedText.indexOf(normalizedQuote);
+  if (matchPos === -1) return null;
 
-  for (const seg of segments) {
-    const segStart = seg.startInConcat;
-    const segEnd = segStart + seg.text.length;
+  // Map normalized text positions back to original text positions.
+  // normalizeWs trims leading whitespace and collapses runs, so we need
+  // to walk both strings in sync.
+  const origToNorm = buildOrigToNormMap(fullText);
 
-    // Does this segment overlap with the match range?
-    const overlapStart = Math.max(matchStart, segStart);
-    const overlapEnd = Math.min(matchEnd, segEnd);
-    if (overlapStart >= overlapEnd) continue;
-
-    const line = pageLines[seg.lineIdx];
-    const charTotal = seg.text.length;
-
-    // Character-proportional x offset within the line
-    const fracStart = (overlapStart - segStart) / charTotal;
-    const fracEnd = (overlapEnd - segStart) / charTotal;
-
-    const x1 = line.x + fracStart * line.width;
-    const x2 = line.x + fracEnd * line.width;
-    const y1 = line.y;
-    const y2 = line.y + line.height;
-
-    rects.push([x1, y1, x2, y2]);
+  // Find the range in original text that corresponds to the normalized match
+  let origStart = -1;
+  let origEnd = -1;
+  for (let i = 0; i < origToNorm.length; i++) {
+    if (origToNorm[i] === matchPos && origStart === -1) {
+      origStart = i;
+    }
+    if (origToNorm[i] === matchPos + normalizedQuote.length - 1) {
+      origEnd = i;
+    }
   }
 
-  return rects.length > 0 ? { rects, matchedText } : null;
+  if (origStart === -1 || origEnd === -1) return null;
+
+  // Map from original text positions to char indices, skipping synthetic spaces
+  let charStart = -1;
+  let charEnd = -1;
+
+  for (let i = origStart; i >= 0; i--) {
+    if (charIndexMap[i] !== -1) {
+      charStart = charIndexMap[i];
+      break;
+    }
+  }
+
+  for (let i = origEnd; i >= 0; i--) {
+    if (charIndexMap[i] !== -1) {
+      charEnd = charIndexMap[i];
+      break;
+    }
+  }
+
+  if (charStart === -1 || charEnd === -1) return null;
+
+  return { offsetStart: charStart, offsetEnd: charEnd };
 }
+
+/**
+ * Build line-level rects from a range of chars.
+ * Mirrors Zotero reader's own `getRangeRects`.
+ */
+export function getRangeRects(
+  chars: CharData[],
+  offsetStart: number,
+  offsetEnd: number,
+): number[][] {
+  const rects: number[][] = [];
+  let start = offsetStart;
+
+  const norm = (r: [number, number, number, number]): [number, number, number, number] => {
+    const [x1, y1, x2, y2] = r;
+    return [Math.min(x1, x2), Math.min(y1, y2), Math.max(x1, x2), Math.max(y1, y2)];
+  };
+
+  for (let i = start; i <= offsetEnd; i++) {
+    const char = chars[i];
+    const isBreak = char.lineBreakAfter || i === offsetEnd;
+    if (!isBreak) continue;
+
+    const firstChar = chars[start];
+    const lastChar = char;
+    const firstRect = norm(firstChar.rect);
+    const lastRect = norm(lastChar.rect);
+    const firstInline = norm((firstChar.inlineRect || firstChar.rect) as [number, number, number, number]);
+    const rot = firstChar?.rotation ?? 0;
+    const isVertical = rot === 90 || rot === 270;
+
+    let rect: number[];
+    if (isVertical) {
+      rect = [firstInline[0], firstRect[1], firstInline[2], lastRect[3]];
+    } else {
+      rect = [firstRect[0], firstInline[1], lastRect[2], firstInline[3]];
+    }
+    rects.push(rect);
+    start = i + 1;
+  }
+
+  return rects;
+}
+
+// --- internal helpers ---
 
 function normalizeWs(s: string): string {
   return s.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Build a mapping from each position in the original string to its
+ * corresponding position in the normalized (whitespace-collapsed, trimmed) string.
+ */
+function buildOrigToNormMap(original: string): number[] {
+  const map: number[] = [];
+  const normalized = normalizeWs(original);
+
+  let normIdx = 0;
+  let inLeadingSpace = true;
+  let prevWasSpace = false;
+
+  for (let i = 0; i < original.length; i++) {
+    const c = original[i];
+    const isSpace = /\s/.test(c);
+
+    if (inLeadingSpace) {
+      if (isSpace) {
+        map.push(-1);
+        continue;
+      }
+      inLeadingSpace = false;
+    }
+
+    if (isSpace) {
+      if (!prevWasSpace) {
+        // This is the first space in a run — check if we're at trailing space
+        if (normIdx < normalized.length && normalized[normIdx] === " ") {
+          map.push(normIdx);
+          normIdx++;
+        } else {
+          map.push(-1); // trailing space
+        }
+      } else {
+        map.push(-1); // collapsed space
+      }
+      prevWasSpace = true;
+    } else {
+      map.push(normIdx);
+      normIdx++;
+      prevWasSpace = false;
+    }
+  }
+
+  return map;
 }

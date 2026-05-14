@@ -518,26 +518,29 @@ describe("annotations handler", () => {
 
     it("throws -32602 when quote is not found on any page (mocked reader)", async () => {
       const parent: any = { id: 5, key: "ATT05", libraryID: 1, isAttachment: () => true };
-      const mockTextContent = {
-        items: [
-          { str: "Hello world", transform: [1, 0, 0, 1, 10, 100], width: 60, height: 12 },
-          { str: "Second line", transform: [1, 0, 0, 1, 10, 85], width: 60, height: 12 },
-        ],
-      };
-      const mockPdfPage = {
-        getTextContent: sinon.stub().resolves(mockTextContent),
-      };
+      const mockChars = [
+        { c: "H", rect: [0, 90, 5, 100], spaceAfter: false, lineBreakAfter: false },
+        { c: "e", rect: [5, 90, 10, 100], spaceAfter: false, lineBreakAfter: false },
+        { c: "l", rect: [10, 90, 15, 100], spaceAfter: false, lineBreakAfter: false },
+        { c: "l", rect: [15, 90, 20, 100], spaceAfter: false, lineBreakAfter: false },
+        { c: "o", rect: [20, 90, 25, 100], spaceAfter: true, lineBreakAfter: false },
+        { c: "w", rect: [30, 90, 35, 100], spaceAfter: false, lineBreakAfter: false },
+        { c: "o", rect: [35, 90, 40, 100], spaceAfter: false, lineBreakAfter: false },
+        { c: "r", rect: [40, 90, 45, 100], spaceAfter: false, lineBreakAfter: false },
+        { c: "l", rect: [45, 90, 50, 100], spaceAfter: false, lineBreakAfter: false },
+        { c: "d", rect: [50, 90, 55, 100], spaceAfter: false, lineBreakAfter: true },
+        { c: "S", rect: [0, 78, 5, 88], spaceAfter: false, lineBreakAfter: false },
+        { c: "e", rect: [5, 78, 10, 88], spaceAfter: false, lineBreakAfter: false },
+        { c: "c", rect: [10, 78, 15, 88], spaceAfter: false, lineBreakAfter: false },
+        { c: "o", rect: [15, 78, 20, 88], spaceAfter: false, lineBreakAfter: false },
+        { c: "n", rect: [20, 78, 25, 88], spaceAfter: false, lineBreakAfter: false },
+        { c: "d", rect: [25, 78, 30, 88], spaceAfter: false, lineBreakAfter: true },
+      ];
       const mockReader = {
         itemID: 5,
-        _iframeWindow: {
-          wrappedJSObject: {
-            PDFViewerApplication: {
-              pdfLoadingTask: { promise: Promise.resolve() },
-              pdfViewer: {
-                pagesPromise: Promise.resolve(),
-                _pages: [{ pdfPage: mockPdfPage }],
-              },
-            },
+        _internalReader: {
+          _primaryView: {
+            _pdfPages: [{ chars: mockChars }],
           },
         },
       };
@@ -569,26 +572,41 @@ describe("annotations handler", () => {
       const parent: any = { id: 5, key: "ATT05", libraryID: 1, isAttachment: () => true };
       const saveTxStub = sinon.stub().resolves();
       let createdItem: any = null;
-      const mockTextContent = {
-        items: [
-          { str: "This is an important sentence in the PDF.", transform: [1, 0, 0, 1, 10, 100], width: 250, height: 12 },
-          { str: "And another line follows.", transform: [1, 0, 0, 1, 10, 85], width: 150, height: 12 },
-        ],
-      };
-      const mockPdfPage = {
-        getTextContent: sinon.stub().resolves(mockTextContent),
-      };
+      // Build chars for "This is an important sentence in the PDF."
+      const text1 = "This is an important sentence in the PDF.";
+      const text2 = "And another line follows.";
+      const mockChars: any[] = [];
+      let x = 10;
+      for (let i = 0; i < text1.length; i++) {
+        const c = text1[i];
+        const isSpace = c === " ";
+        const isLast = i === text1.length - 1;
+        mockChars.push({
+          c, rect: [x, 90, x + 6, 102],
+          inlineRect: [10, 88, 260, 104],
+          spaceAfter: isSpace,
+          lineBreakAfter: isLast,
+        });
+        x += 6;
+      }
+      x = 10;
+      for (let i = 0; i < text2.length; i++) {
+        const c = text2[i];
+        const isSpace = c === " ";
+        const isLast = i === text2.length - 1;
+        mockChars.push({
+          c, rect: [x, 70, x + 6, 82],
+          inlineRect: [10, 68, 160, 84],
+          spaceAfter: isSpace,
+          lineBreakAfter: isLast,
+        });
+        x += 6;
+      }
       const mockReader = {
         itemID: 5,
-        _iframeWindow: {
-          wrappedJSObject: {
-            PDFViewerApplication: {
-              pdfLoadingTask: { promise: Promise.resolve() },
-              pdfViewer: {
-                pagesPromise: Promise.resolve(),
-                _pages: [{ pdfPage: mockPdfPage }],
-              },
-            },
+        _internalReader: {
+          _primaryView: {
+            _pdfPages: [{ chars: mockChars }],
           },
         },
       };
