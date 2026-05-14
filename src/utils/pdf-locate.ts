@@ -66,7 +66,9 @@ export function mergeTextItems(items: TextItem[]): TextLine[] {
 
     if (sameBaseline) {
       last.text += " " + cur.text;
-      last.width += cur.width;
+      const rightEdge = Math.max(last.x + last.width, cur.x + cur.width);
+      last.x = Math.min(last.x, cur.x);
+      last.width = rightEdge - last.x;
       last._heights.push(cur.height);
     } else {
       // Finalize previous line height using the mode

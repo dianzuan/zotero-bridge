@@ -623,6 +623,7 @@ describe("annotations handler", () => {
       expect(result.key).to.equal("NEWANN04");
       expect(result.attachmentKey).to.equal("ATT05");
       expect(saveTxStub.calledOnce).to.equal(true);
+      expect(createdItem.annotationText).to.equal("important sentence");
       const pos = JSON.parse(createdItem.annotationPosition);
       expect(pos.pageIndex).to.equal(0);
       expect(pos.rects).to.have.lengthOf(1);

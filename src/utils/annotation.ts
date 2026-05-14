@@ -7,7 +7,6 @@ const VALID_TYPES: ReadonlySet<AnnotationType> = new Set([
 ]);
 
 const TEXT_TYPES: ReadonlySet<AnnotationType> = new Set(["highlight", "underline"]);
-const QUOTE_TYPES: ReadonlySet<AnnotationType> = new Set(["highlight", "underline"]);
 
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 const PDF_SORT_INDEX = /^\d{5}\|\d{6}\|\d{5}$/;
@@ -55,7 +54,7 @@ export function validateAnnotationParams(p: AnnotationParams): ValidationResult 
     };
   }
   if (p.quote !== undefined && p.quote !== "") {
-    if (!QUOTE_TYPES.has(p.type)) {
+    if (!TEXT_TYPES.has(p.type)) {
       return {
         ok: false,
         message: `quote-based locate is only valid for highlight or underline annotations (got type=${p.type})`,

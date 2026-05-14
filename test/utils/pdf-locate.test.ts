@@ -50,6 +50,18 @@ describe("mergeTextItems", () => {
     expect(lines[0].width).to.equal(30);
   });
 
+  it("computes line width spanning inter-item gaps", () => {
+    const items = [
+      { str: "Hello", transform: [1, 0, 0, 1, 10, 100], width: 30, height: 12 },
+      { str: "world", transform: [1, 0, 0, 1, 60, 100], width: 28, height: 12 },
+    ];
+    const lines = mergeTextItems(items);
+    expect(lines).to.have.lengthOf(1);
+    // Line should span from x=10 to x=60+28=88, so width = 78
+    expect(lines[0].x).to.equal(10);
+    expect(lines[0].width).to.equal(78);
+  });
+
   it("filters out whitespace-only items", () => {
     const items = [
       { str: "Hello", transform: [1, 0, 0, 1, 10, 100], width: 30, height: 12 },
