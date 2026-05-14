@@ -55,6 +55,55 @@ export const systemHandlers = {
     return getRegisteredMethods();
   },
 
+  async pdfRecognizerData(params: { key: number | string; maxChars?: number }) {
+    const { requireItem } = await import("../utils/guards");
+    const item = await requireItem(params.key);
+    let attachmentID: number;
+    if (item.isAttachment()) {
+      attachmentID = item.id;
+    } else {
+      const attIDs = item.getAttachments ? item.getAttachments() : [];
+      let found = false;
+      for (const id of attIDs) {
+        const att = await Zotero.Items.getAsync(id);
+        if (att && att.isAttachment() && (att as any).attachmentContentType === "application/pdf") {
+          attachmentID = att.id;
+          found = true;
+          break;
+        }
+      }
+      if (!found) throw { code: -32602, message: "No PDF attachment found" };
+    }
+    const data = await (Zotero as any).PDFWorker.getRecognizerData(attachmentID!);
+    // Return summary + first page sample to understand the format
+    const pages = data?.pages ?? [];
+    const pageSummaries = pages.map((page: any, i: number) => {
+      const [pw, ph, lineGroups] = [page[0], page[1], page[2] ?? []];
+      let charCount = 0;
+      let text = "";
+      for (const lg of lineGroups) {
+        for (const line of lg) {
+          for (const wg of line) {
+            for (const char of wg) {
+              if (Array.isArray(char) && char.length >= 14) {
+                charCount++;
+                text += String(char[13]);
+                if (char[5]) text += " "; // spaceAfter
+              }
+            }
+          }
+        }
+      }
+      return { page: i, width: pw, height: ph, chars: charCount, text: text.slice(0, 200) };
+    });
+    return {
+      totalPages: data?.totalPages ?? pages.length,
+      metadata: data?.metadata,
+      pages: pageSummaries,
+      charFieldOrder: "[xMin,yMin,xMax,yMax,fontSize,spaceAfter,baseline,rotation,underlined,bold,italic,colorIndex,fontType,text]",
+    };
+  },
+
   async describe(params: { method?: string }) {
     const methods = getRegisteredMethods();
     if (params.method) {

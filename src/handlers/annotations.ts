@@ -40,9 +40,9 @@ async function resolveQuotePosition(
   quote: string,
   pageIndex?: number,
 ): Promise<{ pageIndex: number; rects: number[][] }> {
-  // Path 1: try reader-based chars (most precise — needs PDF open in reader)
+  // Path 1: use reader chars IF the PDF is already open (don't force-open)
   try {
-    const reader = await getReaderForAttachment(attachment);
+    const reader = findOpenReaderForAttachment(attachment);
     const internalReader = (reader as any)?._internalReader;
     const primaryView = internalReader?._primaryView ?? internalReader?._state;
     const pdfPages = primaryView?._pdfPages ?? {};
@@ -116,6 +116,13 @@ async function getReaderForAttachment(attachment: Zotero.Item): Promise<any> {
     throw { code: -32602, message: `Could not open PDF reader for attachment ${attachment.key}` };
   }
   return reader;
+}
+
+function findOpenReaderForAttachment(attachment: Zotero.Item): any | null {
+  for (const reader of getAllReaders()) {
+    if (reader.itemID === attachment.id) return reader;
+  }
+  return null;
 }
 
 function getAllReaders(): any[] {

@@ -155,6 +155,7 @@ export function getRangeRects(
  *  underlined, bold, italic, colorIndex, fontType, text]
  */
 export function recognizerPageToChars(pageData: any): CharData[] {
+  const pageHeight = pageData?.[1] ?? 0;
   const lineGroups = pageData?.[2];
   if (!Array.isArray(lineGroups)) return [];
 
@@ -165,12 +166,16 @@ export function recognizerPageToChars(pageData: any): CharData[] {
   function collect(node: any): void {
     if (!Array.isArray(node)) return;
     if (node.length >= 14 && typeof node[13] === "string") {
+      // PDFWorker uses top-left origin; Zotero annotations use bottom-left.
+      // Flip Y: y_zotero = pageHeight - y_topLeft
+      const yMin = node[1];
+      const yMax = node[3];
       rawChars.push({
         c: node[13],
-        rect: [node[0], node[1], node[2], node[3]],
+        rect: [node[0], pageHeight - yMax, node[2], pageHeight - yMin],
         spaceAfter: !!node[5],
         rotation: node[7] || 0,
-        baseline: node[6] || 0,
+        baseline: pageHeight - (node[6] || 0),
       });
       return;
     }
