@@ -11,7 +11,7 @@ Let AI agents read, search, and annotate your Zotero library.
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 [![Zotero 8+](https://img.shields.io/badge/Zotero-8.0+-orange)](https://www.zotero.org/)
 
-[What it does](#what-it-does) · [Install](#install) · [For agents](#for-agents) · [CLI reference](#cli-reference) · [中文](README.zh-CN.md)
+[Why Zotron?](#why-zotron) · [What it does](#what-it-does) · [Install](#install) · [For agents](#for-agents) · [CLI reference](#cli-reference) · [FAQ](#faq) · [中文](README.zh-CN.md)
 
 </div>
 
@@ -25,30 +25,41 @@ Zotron is a local Rust CLI that talks directly to Zotero's internal JS API — f
 
 Once installed, your agent can:
 
-- **Search** papers by title, author, year, tag, DOI, or full PDF text
-- **Read** paper content, metadata, and notes
-- **Annotate** PDFs — highlight, underline, or mark regions by quoting text (no need to open the PDF)
-- **Export** citations as BibTeX, APA, or any CSL style
-- **OCR** scanned PDFs and run hybrid semantic search (BM25 + vector + RRF)
-- **Manage** collections, tags, and attachments
+- **Search** papers by title, author, year, tag, DOI, or full PDF text. Combine filters in one call: `--author "Li" --after 2020 --tag "core" --collection "Macro"`. Fulltext search (`--fulltext`) looks inside PDFs, not just metadata.
+
+- **Read** paper content, metadata, and notes. `items fulltext` returns the cached text of a PDF attachment. `items get` returns structured metadata (title, authors, date, journal, DOI, tags, collections). `notes list` includes OCR markdown when available.
+
+- **Annotate** PDFs by quoting text. Pass `--quote "the sentence you want"` and Zotron locates it in the PDF and creates a highlight at the correct position — without opening the PDF in Zotero's reader. Works for highlight and underline types. Supports Zotero's 8 built-in colors.
+
+- **Export** citations as BibTeX, APA, Chicago, or any CSL style. Export a single item, multiple items, or an entire collection. Output goes to stdout, redirect to a file as needed.
+
+- **OCR** scanned PDFs with pluggable providers (MinerU, GLM, PaddleOCR). OCR results are stored as sidecar files per attachment. After OCR, `rag search` runs hybrid retrieval: BM25 lexical matching + cosine vector similarity + Reciprocal Rank Fusion, all local.
+
+- **Manage** collections, tags, and attachments. Create collections, move items between them, add/remove tags in batch, attach files by URL or local path, find missing PDFs.
 
 ## Install
 
-### 1. Rust CLI
+### From crates.io (requires Rust)
 
 ```bash
 cargo install zotron
 ```
 
-### 2. Zotero plugin
+### From GitHub Releases (no Rust needed)
 
-Download the latest [zotron.xpi](https://github.com/dianzuan/zotron/releases/latest), then in Zotero: Tools → Plugins → Install Add-on From File. Restart Zotero.
+Download the prebuilt binary for your platform from the [latest release](https://github.com/dianzuan/zotron/releases/latest) and put it on your `PATH`.
 
-### 3. Verify
+### Zotero plugin
+
+Download [zotron.xpi](https://github.com/dianzuan/zotron/releases/latest) from the same release page. In Zotero: Tools → Plugins → Install Add-on From File. Restart Zotero.
+
+### Verify
 
 ```bash
 zotron ping   # should print {"status": "ok", ...}
 ```
+
+If `ping` fails, make sure Zotero is running and the Zotron plugin is enabled (Tools → Plugins).
 
 ## For agents
 
@@ -74,6 +85,8 @@ After setup, just ask:
 
 The agent calls `zotron` CLI commands directly.
 
+A typical agent workflow looks like this: search for papers → read fulltext → highlight relevant passages with `--quote` → export citations. Each step is one CLI call, and the agent chains them based on the JSON output of the previous step.
+
 ### Source plugins
 
 External sources are added through plugins — standalone binaries on `PATH` named `zotron-*`:
@@ -86,30 +99,79 @@ Plugins output JSON to stdout, piped to `zotron push` to write into Zotero.
 
 All output is JSON. Pipe to `jq` for filtering.
 
+### Search
+
 ```bash
-# Search
-zotron search "digital economy" --author "Zhang" --after 2020
-zotron search "regression discontinuity" --fulltext --collection "Macro"
+# Quick search by title/author/year
+zotron search "digital economy"
 
-# Read
+# Combine filters
+zotron search "digital economy" --author "Zhang" --after 2020 --collection "Macro"
+
+# Search inside PDF text
+zotron search "regression discontinuity" --fulltext
+
+# Search by DOI
+zotron search --doi 10.1038/nature12373
+```
+
+### Read
+
+```bash
+# Full metadata
 zotron items get YR5BUGHG
+
+# PDF fulltext (cached by Zotero)
 zotron items fulltext YR5BUGHG
+
+# List attachments
+zotron attachments list --parent YR5BUGHG
+
+# Collection tree
 zotron collections tree
+```
 
-# Annotate
+### Annotate
+
+```bash
+# Highlight by quoting text (locates automatically, no PDF viewer needed)
 zotron annotations create YR5BUGHG --quote "important finding" --color "#2ea8e5"
-zotron annotations list YR5BUGHG
 
-# Export
+# List existing annotations
+zotron annotations list YR5BUGHG
+```
+
+### Export
+
+```bash
+# BibTeX (default)
 zotron export --collection "Macro"
+
+# APA bibliography
 zotron export --format bibliography YR5BUGHG BF4I9QX4
 
-# OCR + RAG
-zotron ocr process --parent YR5BUGHG --provider mineru
-zotron rag search --collection "Macro" "labor market effects"
+# Redirect to file
+zotron export --collection "Macro" > refs.bib
+```
 
-# Pipe to jq
+### OCR + RAG
+
+```bash
+# OCR a scanned PDF
+zotron ocr process --parent YR5BUGHG --provider mineru
+
+# Hybrid semantic search (BM25 + vector + RRF)
+zotron rag search --collection "Macro" "labor market effects"
+```
+
+### Pipe to jq
+
+```bash
+# Extract key fields
 zotron search "employment" | jq '.items[] | {key, title, year}'
+
+# Count results
+zotron search "climate" | jq '.total'
 ```
 
 Run `zotron --help` for the full command list, `zotron <command> --help` for flags.
@@ -117,13 +179,28 @@ Run `zotron --help` for the full command list, `zotron <command> --help` for fla
 ## FAQ
 
 **Q: Does Zotero need to be running?**
-Yes. Zotron talks to a live Zotero instance via its XPI plugin. Run `zotron ping` to check.
+Yes. Zotron communicates with Zotero through the XPI plugin on `localhost:23119`. Run `zotron ping` to check the connection.
 
 **Q: Does it work with Zotero 6?**
 No. Zotron requires Zotero 7+ (tested on Zotero 8).
 
 **Q: Can I use it without Claude Code or Codex?**
-Yes. The CLI works standalone — any shell-capable agent or script can call `zotron` commands.
+Yes. The CLI works standalone. Any shell-capable agent, script, or human can call `zotron` commands.
+
+**Q: What platforms are supported?**
+Windows, macOS, and Linux. The CLI is a single Rust binary. The XPI plugin runs inside Zotero on all platforms Zotero supports.
+
+**Q: Can I use it with multiple Zotero libraries?**
+Yes. `zotron system libraries` lists available libraries. `zotron system switchLibrary --id 2` switches the active library.
+
+**Q: `zotron ping` fails — what do I check?**
+1. Is Zotero running?
+2. Is the Zotron plugin enabled? (Tools → Plugins)
+3. Is something else using port 23119?
+4. On Windows, check that your firewall allows localhost connections.
+
+**Q: How does `--quote` highlighting work without opening the PDF?**
+Zotron opens the PDF in a background reader tab (invisible to the user), extracts per-character position data, locates the quoted text, creates the annotation, and closes the background tab.
 
 ## Contributing
 
