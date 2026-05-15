@@ -10,7 +10,7 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 [![Zotero 8+](https://img.shields.io/badge/Zotero-8.0+-orange)](https://www.zotero.org/)
 
-[功能](#功能) · [安装](#安装) · [Agent 集成](#agent-集成) · [CLI 参考](#cli-参考) · [开发](#开发)
+[功能](#功能) · [安装](#安装) · [Agent 集成](#agent-集成) · [CLI 参考](#cli-参考)
 
 </div>
 
@@ -71,16 +71,6 @@ Zotron 支持通过数据源插件扩展——`PATH` 上以 `zotron-*` 命名的
 
 插件输出 JSON 到 stdout，通过管道传给 `zotron push` 写入 Zotero。
 
-## 工作原理
-
-三层架构：
-
-1. **XPI 插件**（TypeScript）——运行在 Zotero 8 内，通过 `localhost:23119/zotron/rpc` 暴露 86 个 JSON-RPC 2.0 方法，涵盖 11 个命名空间
-2. **Rust CLI**——名词-动词子命令（`zotron items get`、`zotron search "query"`），发布在 [crates.io](https://crates.io/crates/zotron)
-3. **Agent 插件**——Claude Code 和 Codex 的 skills，让 AI agent 通过 CLI 驱动 Zotero
-
-CLI 对接的是 Zotero 的内部 JS API——插件自己用的那套。覆盖了官方 [Local API](https://www.zotero.org/support/dev/web_api/v3/start) 做不到的事：按 DOI/URL/ISBN 添加、全文缓存、CiteProc 参考文献、重复合并、批量操作。
-
 ## CLI 参考
 
 输出是 JSON，用 `jq` 过滤：
@@ -96,20 +86,6 @@ zotron rag search --collection "宏观因子" "就业弹性"
 ```
 
 `zotron --help` 看完整命令列表，`zotron <命令> --help` 看参数。详见：[CLI 参考 (中文)](docs/cli-reference-zh.md) · [CLI reference (en)](docs/cli-reference.md)
-
-## 开发
-
-```bash
-npm install && npm test     # XPI 单元测试
-npm run build               # → .scaffold/build/zotron.xpi
-cargo test                  # CLI + types 测试
-```
-
-## 发布
-
-推送 `v*` tag 会自动触发 [release workflow](.github/workflows/release.yml)：构建 XPI → 创建 GitHub Release → 发布到 crates.io。
-
-查看[最新版本](https://github.com/dianzuan/zotron/releases/latest)。
 
 ## 许可证
 

@@ -10,7 +10,7 @@ Let AI agents read, search, and annotate your Zotero library.
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 [![Zotero 8+](https://img.shields.io/badge/Zotero-8.0+-orange)](https://www.zotero.org/)
 
-[What it does](#what-it-does) · [Install](#install) · [For agents](#for-agents) · [CLI reference](#cli-reference) · [Development](#development)
+[What it does](#what-it-does) · [Install](#install) · [For agents](#for-agents) · [CLI reference](#cli-reference)
 
 </div>
 
@@ -71,16 +71,6 @@ Zotron is extensible via source plugins — standalone binaries on `PATH` named 
 
 Plugins output JSON to stdout, piped to `zotron push` to write into Zotero.
 
-## How it works
-
-Three layers:
-
-1. **XPI plugin** (TypeScript) — runs inside Zotero 8, exposes 86 JSON-RPC 2.0 methods across 11 namespaces at `localhost:23119/zotron/rpc`
-2. **Rust CLI** — noun-verb subcommands (`zotron items get`, `zotron search "query"`) published on [crates.io](https://crates.io/crates/zotron)
-3. **Agent plugin** — skills for Claude Code and Codex that let AI agents drive Zotero through the CLI
-
-The CLI talks to Zotero's internal JS API — the same surface plugins use. This covers things the official [Local API](https://www.zotero.org/support/dev/web_api/v3/start) doesn't: add by DOI/URL/ISBN, fulltext cache, CiteProc bibliography, duplicate merging, batch operations.
-
 ## CLI reference
 
 All output is JSON. Pipe to `jq` for filtering.
@@ -96,20 +86,6 @@ zotron rag search --collection "Macro" "labor market effects"
 ```
 
 Run `zotron --help` for the full command list, `zotron <command> --help` for flags. See also: [CLI reference (en)](docs/cli-reference.md) · [CLI 参考 (中文)](docs/cli-reference-zh.md)
-
-## Development
-
-```bash
-npm install && npm test     # XPI unit tests
-npm run build               # → .scaffold/build/zotron.xpi
-cargo test                  # CLI + types tests
-```
-
-## Release
-
-Pushing a `v*` tag triggers the [release workflow](.github/workflows/release.yml): builds the XPI, creates a GitHub Release, and publishes to crates.io.
-
-See the [latest release](https://github.com/dianzuan/zotron/releases/latest).
 
 ## License
 
