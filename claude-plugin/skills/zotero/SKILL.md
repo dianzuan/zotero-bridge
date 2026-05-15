@@ -5,7 +5,7 @@ description: Manage the user's Zotero library — search papers, add/organize it
 
 # Zotero
 
-Read-write bridge to the user's local Zotero library via the Rust `zotron` CLI and Zotero-side XPI plugin. There is no Python version — use the Rust CLI only.
+Read-write bridge to the user's local Zotero library via the `zotron` CLI and Zotero-side XPI plugin.
 
 **Dependency:** Zotero desktop must be running with the `zotron` XPI plugin installed. Verify with `zotron ping`. If it fails, ask the user to start Zotero — or, if the XPI was never installed, run `/zotron:setup`. Do not curl HTTP endpoints directly; always use the `zotron` CLI.
 
@@ -60,7 +60,7 @@ zotron system list-methods
 - `zotron collections get-items "集合名"` lists items in a collection; use this when the user asks "这个集合里有什么".
 - `zotron collections items "集合名"` is an alias for `get-items`.
 
-**Filtering output:** Rust `zotron` stays JSON-first and does not embed libjq. Pipe to external `jq`. Many list/search commands return an envelope such as `{"items":[...],"total":N}`, so filter through `.items[]`:
+**Filtering output:** `zotron` outputs JSON. Pipe to `jq` for filtering. Many list/search commands return an envelope such as `{"items":[...],"total":N}`, so filter through `.items[]`:
 
 ```bash
 zotron search "数字经济" | jq '.items[].title'
@@ -68,7 +68,7 @@ zotron collections get-items "宏观因子" | jq '.items[].title'
 zotron collections tree | jq '.[] | {key, name}'
 ```
 
-Do not assume Python-only conveniences such as built-in `--jq` exist in the Rust CLI.
+The CLI does not have built-in `--jq`; use external `jq`.
 
 **Discovery:**
 - `zotron --help` — list all namespaces
