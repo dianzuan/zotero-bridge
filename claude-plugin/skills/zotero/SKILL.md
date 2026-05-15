@@ -1,13 +1,13 @@
 ---
 name: zotero
-description: Manage the user's Zotero library — search papers, add/organize items, export citations, OCR PDFs, and run semantic search (RAG). Use whenever the user mentions Zotero, "我的文献库", finding/adding/citing papers, "参考文献", "文献综述", or wants to read/extract content from their PDFs. Requires Zotero desktop running with the zotron plugin on localhost:23119.
+description: Manage the user's Zotero library — search papers, add/organize items, export citations, OCR PDFs, and run semantic search (RAG). Use whenever the user mentions Zotero, "我的文献库", finding/adding/citing papers, "参考文献", "文献综述", or wants to read/extract content from their PDFs. Requires Zotero desktop running with the zotron XPI plugin. Check with `zotron ping`.
 ---
 
 # Zotero
 
 Read-write bridge to the user's local Zotero library via the Rust `zotron` CLI and Zotero-side JS/XPI RPC bridge. Python code in this repo is legacy reference material for migration parity, not the target implementation surface.
 
-**Dependency:** Zotero desktop must be running with the `zotron` XPI plugin installed and listening on `localhost:23119`. If a CLI call fails with a connection error, ask the user to start Zotero — or, if the XPI was never installed, run the bundled `/zotron:setup` slash command to bootstrap it.
+**Dependency:** Zotero desktop must be running with the `zotron` XPI plugin installed. Verify with `zotron ping`. If it fails, ask the user to start Zotero — or, if the XPI was never installed, run `/zotron:setup`. Do not curl HTTP endpoints directly; always use the `zotron` CLI.
 
 ## Pick a workflow
 

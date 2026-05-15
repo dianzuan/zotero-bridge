@@ -1,6 +1,6 @@
 ---
 name: setup
-description: Set up Zotron — verify the XPI plugin is reachable on localhost:23119; if missing, download the release XPI to Downloads and guide Zotero's native install dialog. Use when the user asks to install, configure, bootstrap, or verify Zotron.
+description: Set up Zotron — verify `zotron ping` works; if missing, download the release XPI to Downloads and guide Zotero's native install dialog. Use when the user asks to install, configure, bootstrap, or verify Zotron.
 ---
 
 # Zotron Setup
