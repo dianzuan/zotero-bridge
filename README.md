@@ -7,10 +7,19 @@
 Let AI agents read, search, and annotate your Zotero library.
 
 [![crates.io](https://img.shields.io/crates/v/zotron)](https://crates.io/crates/zotron)
+[![CI](https://github.com/dianzuan/zotron/actions/workflows/ci.yml/badge.svg)](https://github.com/dianzuan/zotron/actions/workflows/ci.yml)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 [![Zotero 8+](https://img.shields.io/badge/Zotero-8.0+-orange)](https://www.zotero.org/)
 
-[What it does](#what-it-does) · [Install](#install) · [For agents](#for-agents) · [CLI reference](#cli-reference)
+[What it does](#what-it-does) · [Install](#install) · [For agents](#for-agents) · [CLI reference](#cli-reference) · [中文](README.zh-CN.md)
+
+<a href="https://star-history.com/#dianzuan/zotron&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=dianzuan/zotron&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=dianzuan/zotron&type=Date" />
+    <img alt="Star History" src="https://api.star-history.com/svg?repos=dianzuan/zotron&type=Date" width="500" />
+  </picture>
+</a>
 
 </div>
 
@@ -29,11 +38,17 @@ You talk to your agent in natural language. The agent uses Zotron under the hood
 
 ## Install
 
+### 1. Rust CLI
+
 ```bash
 cargo install zotron
 ```
 
-Then install the [Zotero plugin](https://github.com/dianzuan/zotron/releases/latest) (Tools → Plugins → Install Add-on From File) and restart Zotero.
+### 2. Zotero plugin
+
+Download the latest [zotron.xpi](https://github.com/dianzuan/zotron/releases/latest), then in Zotero: Tools → Plugins → Install Add-on From File. Restart Zotero.
+
+### 3. Verify
 
 ```bash
 zotron ping   # should print {"status": "ok", ...}
@@ -76,16 +91,34 @@ Plugins output JSON to stdout, piped to `zotron push` to write into Zotero.
 All output is JSON. Pipe to `jq` for filtering.
 
 ```bash
+# Search
 zotron search "digital economy" --author "Zhang" --after 2020
 zotron search "regression discontinuity" --fulltext --collection "Macro"
+
+# Read
+zotron items get YR5BUGHG
 zotron items fulltext YR5BUGHG
-zotron annotations create ITEM_KEY --quote "important finding" --color "#2ea8e5"
+zotron collections tree
+
+# Annotate
+zotron annotations create YR5BUGHG --quote "important finding" --color "#2ea8e5"
+zotron annotations list YR5BUGHG
+
+# Export
 zotron export --collection "Macro"
+zotron export --format bibliography YR5BUGHG BF4I9QX4
+
+# OCR + RAG
 zotron ocr process --parent YR5BUGHG --provider mineru
 zotron rag search --collection "Macro" "labor market effects"
+
+# Pipe to jq
+zotron search "employment" | jq '.items[] | {key, title, year}'
 ```
 
-Run `zotron --help` for the full command list, `zotron <command> --help` for flags. See also: [CLI reference (en)](docs/cli-reference.md) · [CLI 参考 (中文)](docs/cli-reference-zh.md)
+Run `zotron --help` for the full command list, `zotron <command> --help` for flags.
+
+Full reference: [CLI reference (en)](docs/cli-reference.md) · [CLI 参考 (中文)](docs/cli-reference-zh.md)
 
 ## License
 
