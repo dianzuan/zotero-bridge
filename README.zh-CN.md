@@ -137,7 +137,7 @@ zotron search "就业" | jq '.items[] | {key, title, year}'
 
 ## 贡献
 
-欢迎 PR。项目使用 one-branch-per-feature 工作流——详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+欢迎 PR。Fork、建分支、提 pull request——CI 通过后即可合并。
 
 ## Star History
 

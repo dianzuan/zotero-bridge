@@ -137,7 +137,7 @@ Yes. The CLI works standalone — any shell-capable agent or script can call `zo
 
 ## Contributing
 
-PRs welcome. The project uses a one-branch-per-feature workflow — see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+PRs welcome. Fork, branch, and open a pull request — CI must pass before merging.
 
 ## Star History
 
