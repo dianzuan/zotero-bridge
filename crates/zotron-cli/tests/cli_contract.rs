@@ -1852,7 +1852,7 @@ fn default_package_exposes_only_zotron_binary() {
 
 #[test]
 fn plugin_zotron_wrapper_forwards_ocr_and_rag_to_rust_binary() {
-    let plugin_root = repo_root().join("claude-plugin");
+    let plugin_root = repo_root().join("plugin");
     let wrapper = plugin_root.join("bin/zotron");
     let rust_bin = env!("CARGO_BIN_EXE_zotron");
 

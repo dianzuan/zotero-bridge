@@ -39,14 +39,14 @@ versions.set("addon/manifest.json", readJson("addon/manifest.json").version);
 const systemHandler = read("src/handlers/system.ts");
 versions.set("src/handlers/system.ts", systemHandler.match(/plugin:\s*"([^"]+)"/)?.[1]);
 
-const setupScript = read("claude-plugin/scripts/setup-zotron.sh");
+const setupScript = read("plugin/scripts/setup-zotron.sh");
 versions.set(
-  "claude-plugin/scripts/setup-zotron.sh",
+  "plugin/scripts/setup-zotron.sh",
   setupScript.match(/REQUIRED_VERSION="\$\{ZOTRON_REQUIRED_VERSION:-([^}]+)\}"/)?.[1],
 );
 
-versions.set("claude-plugin/.claude-plugin/plugin.json", readJson("claude-plugin/.claude-plugin/plugin.json").version);
-versions.set("claude-plugin/.codex-plugin/plugin.json", readJson("claude-plugin/.codex-plugin/plugin.json").version);
+versions.set("plugin/.claude-plugin/plugin.json", readJson("plugin/.claude-plugin/plugin.json").version);
+versions.set("plugin/.codex-plugin/plugin.json", readJson("plugin/.codex-plugin/plugin.json").version);
 
 for (const [label, version] of versions) {
   requireVersion(label, version);

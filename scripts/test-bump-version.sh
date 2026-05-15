@@ -19,9 +19,9 @@ setup_fixture() {
   # Recreate just the files the bump script touches, seeded at 0.1.1
   mkdir -p "${tmpdir}/addon"
   mkdir -p "${tmpdir}/src/handlers"
-  mkdir -p "${tmpdir}/claude-plugin/.claude-plugin"
-  mkdir -p "${tmpdir}/claude-plugin/.codex-plugin"
-  mkdir -p "${tmpdir}/claude-plugin/scripts"
+  mkdir -p "${tmpdir}/plugin/.claude-plugin"
+  mkdir -p "${tmpdir}/plugin/.codex-plugin"
+  mkdir -p "${tmpdir}/plugin/scripts"
   mkdir -p "${tmpdir}/crates/zotron-cli"
   mkdir -p "${tmpdir}/crates/zotron-rpc"
   mkdir -p "${tmpdir}/crates/zotron-types"
@@ -30,9 +30,9 @@ setup_fixture() {
   # Copy real files from repo, then normalize to 0.1.1 via sed
   for f in package.json package-lock.json addon/manifest.json \
            src/handlers/system.ts update.json update-beta.json \
-           claude-plugin/.claude-plugin/plugin.json \
-           claude-plugin/.codex-plugin/plugin.json \
-           claude-plugin/scripts/setup-zotron.sh \
+           plugin/.claude-plugin/plugin.json \
+           plugin/.codex-plugin/plugin.json \
+           plugin/scripts/setup-zotron.sh \
            crates/zotron-cli/Cargo.toml \
            crates/zotron-rpc/Cargo.toml \
            crates/zotron-types/Cargo.toml; do
@@ -81,9 +81,9 @@ check_all_locations() {
   assert_version_in "${dir}/update.json" "download/v${ver}/zotron.xpi" "update.json link" || ok=false
   assert_version_in "${dir}/update-beta.json" "\"version\": \"${ver}\"" "update-beta.json version" || ok=false
   assert_version_in "${dir}/update-beta.json" "download/v${ver}/zotron.xpi" "update-beta.json link" || ok=false
-  assert_version_in "${dir}/claude-plugin/.claude-plugin/plugin.json" "\"version\": \"${ver}\"" "claude-plugin" || ok=false
-  assert_version_in "${dir}/claude-plugin/.codex-plugin/plugin.json" "\"version\": \"${ver}\"" "codex-plugin" || ok=false
-  assert_version_in "${dir}/claude-plugin/scripts/setup-zotron.sh" "REQUIRED_VERSION:-${ver}}" "setup-zotron.sh" || ok=false
+  assert_version_in "${dir}/plugin/.claude-plugin/plugin.json" "\"version\": \"${ver}\"" "claude-plugin" || ok=false
+  assert_version_in "${dir}/plugin/.codex-plugin/plugin.json" "\"version\": \"${ver}\"" "codex-plugin" || ok=false
+  assert_version_in "${dir}/plugin/scripts/setup-zotron.sh" "REQUIRED_VERSION:-${ver}}" "setup-zotron.sh" || ok=false
 
   # Cargo.toml: package version
   assert_version_in "${dir}/crates/zotron-cli/Cargo.toml" "version = \"${ver}\"" "zotron-cli version" || ok=false

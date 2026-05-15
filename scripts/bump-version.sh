@@ -96,16 +96,16 @@ check "update-beta.json link" \
   "${ROOT}/update-beta.json" \
   "download/v${CURRENT}/zotron.xpi"
 
-check "claude-plugin plugin.json" \
-  "${ROOT}/claude-plugin/.claude-plugin/plugin.json" \
+check "plugin .claude-plugin/plugin.json" \
+  "${ROOT}/plugin/.claude-plugin/plugin.json" \
   "\"version\": \"${CURRENT}\""
 
 check "codex-plugin plugin.json" \
-  "${ROOT}/claude-plugin/.codex-plugin/plugin.json" \
+  "${ROOT}/plugin/.codex-plugin/plugin.json" \
   "\"version\": \"${CURRENT}\""
 
 check "setup-zotron.sh" \
-  "${ROOT}/claude-plugin/scripts/setup-zotron.sh" \
+  "${ROOT}/plugin/scripts/setup-zotron.sh" \
   "REQUIRED_VERSION:-${CURRENT}}"
 
 check "zotron-cli Cargo.toml" \
@@ -160,8 +160,8 @@ sedi() {
 
 # JSON files: replace version string
 for f in package.json package-lock.json addon/manifest.json \
-         claude-plugin/.claude-plugin/plugin.json \
-         claude-plugin/.codex-plugin/plugin.json; do
+         plugin/.claude-plugin/plugin.json \
+         plugin/.codex-plugin/plugin.json; do
   sedi "s/\"version\": \"${CURRENT}\"/\"version\": \"${NEW}\"/g" "${ROOT}/${f}"
 done
 
@@ -175,7 +175,7 @@ for f in update.json update-beta.json; do
 done
 
 # setup-zotron.sh
-sedi "s/REQUIRED_VERSION:-${CURRENT}}/REQUIRED_VERSION:-${NEW}}/" "${ROOT}/claude-plugin/scripts/setup-zotron.sh"
+sedi "s/REQUIRED_VERSION:-${CURRENT}}/REQUIRED_VERSION:-${NEW}}/" "${ROOT}/plugin/scripts/setup-zotron.sh"
 
 # Cargo.toml: package versions AND dependency versions
 for f in crates/zotron-cli/Cargo.toml crates/zotron-rpc/Cargo.toml crates/zotron-types/Cargo.toml; do
