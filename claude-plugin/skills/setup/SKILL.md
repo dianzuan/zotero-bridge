@@ -63,13 +63,13 @@ In Zotero:
 ```bash
 zotron ping
 zotron system version
-zotron --help  # should show all 14 command groups
+zotron --help  # should show all command groups
 ```
 
 ## Mirror Controls
 
 ```bash
-ZOTRON_XPI_URLS='https://mirror.example/zotron.xpi https://github.com/dianzuan/zotron/releases/download/v0.1.5/zotron.xpi' \
+ZOTRON_XPI_URLS='https://mirror.example/zotron.xpi https://github.com/dianzuan/zotron/releases/download/v0.1.1/zotron.xpi' \
   bash "$PLUGIN_ROOT/scripts/setup-zotron.sh"
 ```
 
