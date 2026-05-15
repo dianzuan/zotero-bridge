@@ -5,7 +5,7 @@ description: Manage the user's Zotero library — search papers, add/organize it
 
 # Zotero
 
-Read-write bridge to the user's local Zotero library via the Rust `zotron` CLI and Zotero-side JS/XPI RPC bridge. Python code in this repo is legacy reference material for migration parity, not the target implementation surface.
+Read-write bridge to the user's local Zotero library via the Rust `zotron` CLI and Zotero-side XPI plugin. There is no Python version — use the Rust CLI only.
 
 **Dependency:** Zotero desktop must be running with the `zotron` XPI plugin installed. Verify with `zotron ping`. If it fails, ask the user to start Zotero — or, if the XPI was never installed, run `/zotron:setup`. Do not curl HTTP endpoints directly; always use the `zotron` CLI.
 
