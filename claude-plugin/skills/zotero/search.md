@@ -115,7 +115,7 @@ For searching relevant passages across a collection (not full text), see [rag.md
 # List annotations on a PDF attachment
 zotron annotations list ATT_KEY
 
-# Create a highlight by quoting text (auto-locates in the PDF)
+# Create a highlight by quoting text (auto-locates in the PDF, works without opening it)
 zotron annotations create ATT_KEY --quote "要高亮的文字"
 
 # With color for a specific dimension

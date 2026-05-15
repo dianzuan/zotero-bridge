@@ -145,3 +145,54 @@ export function getRangeRects(
   return rects;
 }
 
+/**
+ * Convert PDFWorker.getRecognizerData page data into a flat CharData array.
+ * Used by system.pdfRecognizerData diagnostic RPC. Not used for annotation
+ * creation (which uses background reader for correct coordinates).
+ */
+export function recognizerPageToChars(pageData: any): CharData[] {
+  const pageHeight = pageData?.[1] ?? 0;
+  const lineGroups = pageData?.[2];
+  if (!Array.isArray(lineGroups)) return [];
+
+  const allChars: CharData[] = [];
+  const rawChars: { c: string; rect: [number, number, number, number]; spaceAfter: boolean; rotation: number; baseline: number }[] = [];
+
+  // Recursively collect all char arrays (14+ elements, last is string)
+  function collect(node: any): void {
+    if (!Array.isArray(node)) return;
+    if (node.length >= 14 && typeof node[13] === "string") {
+      // PDFWorker uses top-left origin; Zotero annotations use bottom-left.
+      // Flip Y: y_zotero = pageHeight - y_topLeft
+      const yMin = node[1];
+      const yMax = node[3];
+      rawChars.push({
+        c: node[13],
+        rect: [node[0], pageHeight - yMax, node[2], pageHeight - yMin],
+        spaceAfter: !!node[5],
+        rotation: node[7] || 0,
+        baseline: pageHeight - (node[6] || 0),
+      });
+      return;
+    }
+    for (const child of node) collect(child);
+  }
+  collect(lineGroups);
+
+  // Detect line breaks: when baseline changes significantly between consecutive chars
+  for (let i = 0; i < rawChars.length; i++) {
+    const rc = rawChars[i];
+    const next = rawChars[i + 1];
+    const lineBreak = next ? Math.abs(rc.baseline - next.baseline) > rc.rect[3] - rc.rect[1] : false;
+    allChars.push({
+      c: rc.c,
+      rect: rc.rect,
+      spaceAfter: rc.spaceAfter,
+      lineBreakAfter: lineBreak,
+      rotation: rc.rotation,
+    });
+  }
+
+  return allChars;
+}
+
