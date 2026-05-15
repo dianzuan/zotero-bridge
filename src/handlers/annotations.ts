@@ -5,7 +5,7 @@ import { registerHandlers } from "../server";
 import { serializeItem } from "../utils/serialize";
 import { requireItem } from "../utils/guards";
 import { validateAnnotationParams } from "../utils/annotation";
-import { findQuoteInChars, getRangeRects, recognizerPageToChars } from "../utils/pdf-locate";
+import { findQuoteInChars, getRangeRects } from "../utils/pdf-locate";
 
 /**
  * Resolve a parentKey to the annotation-bearing attachment item.
@@ -28,72 +28,98 @@ async function resolveAnnotationParent(parentKey: number | string): Promise<Zote
   throw { code: -32602, message: `No PDF attachment found for item ${item.key ?? parentKey}` };
 }
 
-/**
- * Resolve a text quote to PDF coordinates using Zotero reader's per-char data.
- *
- * Access path: reader._internalReader._primaryView._pdfPages[pageIndex].chars
- * Each char has { c, rect, spaceAfter, lineBreakAfter, ignorable, inlineRect, rotation }
- * with precise glyph bounding boxes from font metrics.
- */
+async function searchReaderForQuote(
+  reader: any,
+  quote: string,
+  pageIndex?: number,
+): Promise<{ pageIndex: number; rects: number[][] } | null> {
+  const internalReader = reader?._internalReader;
+  const primaryView = internalReader?._primaryView ?? internalReader?._state;
+  if (!internalReader || !primaryView) return null;
+
+  const pdfPages = primaryView._pdfPages ?? {};
+  const pdfDocument = primaryView._pdfDocument;
+  const totalPages: number = pdfDocument?.pagesCount
+    ?? pdfDocument?.numPages
+    ?? (Array.isArray(pdfPages) ? pdfPages.length : Object.keys(pdfPages).length);
+
+  const pagesToSearch = pageIndex !== undefined
+    ? [pageIndex]
+    : Array.from({ length: totalPages }, (_, i) => i);
+
+  for (const pi of pagesToSearch) {
+    let chars = pdfPages[pi]?.chars;
+    if ((!chars || chars.length === 0) && pdfDocument?.getPageData) {
+      try {
+        const loaded = await pdfDocument.getPageData({ pageIndex: pi });
+        chars = loaded?.chars;
+      } catch { /* skip */ }
+    }
+    if (!chars || chars.length === 0) continue;
+
+    const match = findQuoteInChars(chars, quote);
+    if (match) {
+      return { pageIndex: pi, rects: getRangeRects(chars, match.offsetStart, match.offsetEnd) };
+    }
+  }
+  return null;
+}
+
+async function waitForReaderReady(reader: any, timeoutMs = 15000): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const ir = reader._internalReader;
+    const pv = ir?._primaryView ?? ir?._state;
+    if (pv?._pdfDocument) return;
+    await new Promise(r => setTimeout(r, 250));
+  }
+}
+
+function closeBackgroundReader(reader: any): void {
+  try {
+    const tabID = reader._tabID ?? reader.tabID ?? (reader as any)._options?.tabID;
+    if (!tabID) return;
+    const windows = (Zotero as any).getMainWindows?.() ?? [];
+    for (const win of windows) {
+      if (win?.Zotero_Tabs?.close) {
+        win.Zotero_Tabs.close(tabID);
+        return;
+      }
+    }
+  } catch { /* ignore */ }
+}
+
 async function resolveQuotePosition(
   attachment: Zotero.Item,
   quote: string,
   pageIndex?: number,
 ): Promise<{ pageIndex: number; rects: number[][] }> {
-  // Path 1: use reader chars IF the PDF is already open (don't force-open)
-  try {
-    const reader = findOpenReaderForAttachment(attachment);
-    const internalReader = (reader as any)?._internalReader;
-    const primaryView = internalReader?._primaryView ?? internalReader?._state;
-    const pdfPages = primaryView?._pdfPages ?? {};
-    const pdfDocument = primaryView?._pdfDocument;
+  // Path 1: use already-open reader (no side effects)
+  const existingReader = findOpenReaderForAttachment(attachment);
+  if (existingReader) {
+    try {
+      const result = await searchReaderForQuote(existingReader, quote, pageIndex);
+      if (result) return result;
+    } catch { /* fall through */ }
+  }
 
-    if (internalReader && primaryView) {
-      const totalPages: number = pdfDocument?.pagesCount
-        ?? pdfDocument?.numPages
-        ?? (Array.isArray(pdfPages) ? pdfPages.length : Object.keys(pdfPages).length);
-
-      const pagesToSearch = pageIndex !== undefined
-        ? [pageIndex]
-        : Array.from({ length: totalPages }, (_, i) => i);
-
-      for (const pi of pagesToSearch) {
-        let chars = pdfPages[pi]?.chars;
-        if ((!chars || chars.length === 0) && pdfDocument?.getPageData) {
-          try {
-            const loaded = await pdfDocument.getPageData({ pageIndex: pi });
-            chars = loaded?.chars;
-          } catch { /* skip */ }
-        }
-        if (!chars || chars.length === 0) continue;
-
-        const match = findQuoteInChars(chars, quote);
-        if (match) {
-          return { pageIndex: pi, rects: getRangeRects(chars, match.offsetStart, match.offsetEnd) };
-        }
+  // Path 2: open reader in background (user won't see it), search, then close
+  if (!existingReader) {
+    let bgReader: any = null;
+    try {
+      bgReader = await (Zotero as any).Reader.open(
+        attachment.id, null, { openInBackground: true },
+      );
+      if (bgReader) {
+        await waitForReaderReady(bgReader);
+        const result = await searchReaderForQuote(bgReader, quote, pageIndex);
+        if (result) return result;
       }
+    } catch { /* background open failed */ }
+    finally {
+      if (bgReader) closeBackgroundReader(bgReader);
     }
-  } catch { /* reader not available — fall through to PDFWorker */ }
-
-  // Path 2: headless via PDFWorker.getRecognizerData (no reader needed)
-  try {
-    const recognizerData = await (Zotero as any).PDFWorker.getRecognizerData(attachment.id);
-    const recognizerPages = recognizerData?.pages ?? [];
-    const rpagesToSearch = pageIndex !== undefined
-      ? [pageIndex]
-      : Array.from({ length: recognizerPages.length }, (_, i) => i);
-
-    for (const pi of rpagesToSearch) {
-      const rchars = recognizerPageToChars(recognizerPages[pi]);
-      if (rchars.length === 0) continue;
-
-      const match = findQuoteInChars(rchars, quote);
-      if (match) {
-        const rects = getRangeRects(rchars, match.offsetStart, match.offsetEnd);
-        return { pageIndex: pi, rects };
-      }
-    }
-  } catch { /* PDFWorker fallback failed — report the original not-found error */ }
+  }
 
   const scope = pageIndex !== undefined ? `page ${pageIndex}` : "any page";
   throw {
@@ -102,21 +128,6 @@ async function resolveQuotePosition(
   };
 }
 
-async function getReaderForAttachment(attachment: Zotero.Item): Promise<any> {
-  // Try to find an already-open reader tab for this attachment
-  const readers: any[] = (Zotero as any).Reader?.getByTabID
-    ? getAllReaders()
-    : [];
-  for (const reader of readers) {
-    if (reader.itemID === attachment.id) return reader;
-  }
-  // Open the attachment in a new reader tab
-  const reader = await (Zotero as any).Reader.open(attachment.id);
-  if (!reader) {
-    throw { code: -32602, message: `Could not open PDF reader for attachment ${attachment.key}` };
-  }
-  return reader;
-}
 
 function findOpenReaderForAttachment(attachment: Zotero.Item): any | null {
   for (const reader of getAllReaders()) {

@@ -147,12 +147,8 @@ export function getRangeRects(
 
 /**
  * Convert PDFWorker.getRecognizerData page data into a flat CharData array.
- * This enables headless quote matching without an open reader.
- *
- * Recognizer data format per page: [pageWidth, pageHeight, lineGroups]
- * where lineGroups is deeply nested arrays. Each char element is:
- * [xMin, yMin, xMax, yMax, fontSize, spaceAfter, baseline, rotation,
- *  underlined, bold, italic, colorIndex, fontType, text]
+ * Used by system.pdfRecognizerData diagnostic RPC. Not used for annotation
+ * creation (which uses background reader for correct coordinates).
  */
 export function recognizerPageToChars(pageData: any): CharData[] {
   const pageHeight = pageData?.[1] ?? 0;
