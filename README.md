@@ -19,7 +19,7 @@ Let AI agents read, search, and annotate your Zotero library.
 
 ## Why Zotron?
 
-Zotero is great for managing papers, but it doesn't have an interface designed for AI agents. Zotron bridges that gap: a local Rust CLI that gives agents full read-write access to your library — search, read, annotate, export — through simple shell commands that return JSON.
+Zotero's official API is read-only HTTP — not built for agents. MCP servers add latency and token overhead per tool call. Zotron takes a different approach: a local Rust CLI that talks directly to Zotero's internal JS API, returning structured JSON that agents can pipe through `jq` or consume directly. One binary, zero network hops, full read-write access.
 
 ## What it does
 
