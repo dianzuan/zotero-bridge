@@ -25,7 +25,7 @@ Zotron 是一个本地 Rust CLI，直接对接 Zotero 内部 JS API——完整�
 
 安装后，你的 agent 可以：
 
-- **搜索**论文——按标题、作者、年份、标签、DOI 或 PDF 全文。多个条件可以组合：`--author "李" --after 2020 --tag "核心" --collection "宏观"`。全文搜索（`--fulltext`）查的是 PDF 内容，不只是元数据。
+- **搜索**论文——按标题、作者、年份、标签、DOI 或 PDF 全文。多个条件可以组合：`--author "李四" --after 2020 --tag "核心" --collection "宏观"`。全文搜索（`--fulltext`）查的是 PDF 内容，不只是元数据。
 
 - **阅读**论文内容、元数据和笔记。`items fulltext` 返回 PDF 附件的缓存文本。`items get` 返回结构化元数据（标题、作者、日期、期刊、DOI、标签、集合）。`notes list` 在有 OCR 结果时包含 OCR markdown。
 
