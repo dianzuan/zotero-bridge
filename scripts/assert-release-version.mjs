@@ -45,6 +45,9 @@ versions.set(
   setupScript.match(/REQUIRED_VERSION="\$\{ZOTRON_REQUIRED_VERSION:-([^}]+)\}"/)?.[1],
 );
 
+versions.set("claude-plugin/.claude-plugin/plugin.json", readJson("claude-plugin/.claude-plugin/plugin.json").version);
+versions.set("claude-plugin/.codex-plugin/plugin.json", readJson("claude-plugin/.codex-plugin/plugin.json").version);
+
 for (const [label, version] of versions) {
   requireVersion(label, version);
 }

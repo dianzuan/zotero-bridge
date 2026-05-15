@@ -9,8 +9,8 @@ Search and browse the user's Zotero library — find papers by keywords, read PD
 | Find by title/author/year | `zotron search "query"` | Most common, start here |
 | Find by title/author/year inside a collection | `zotron search "query" --collection X` | User gives both keyword and collection |
 | Search inside PDF text | `zotron search "query" --fulltext` | User asks "which paper mentions X" |
-| Multiple filters | `zotron search advanced` | Author + date range + journal |
-| Papers with a tag | `zotron search by-tag` | User mentions a specific tag |
+| Multiple filters | `zotron search --author X --after Y` | Author + date range + journal |
+| Papers with a tag | `zotron search --tag "标签"` | User mentions a specific tag |
 | Browse a collection | `zotron collections get-items` | User asks "what's in my X collection" |
 
 ## Quick search (default)
@@ -34,29 +34,29 @@ zotron search "regression discontinuity" --fulltext --limit 10
 
 ## Advanced multi-field search
 
-Combine conditions with `--condition "field operator value"`:
+Combine flags on `zotron search` to filter by multiple criteria:
 
 ```bash
-zotron search advanced --condition "creator contains 张三" --condition "date isAfter 2020"
+zotron search --author "张三" --after 2020
+zotron search "经济" --author "张三" --journal "经济研究" --after 2020
+zotron search --tag "核心期刊" --after 2020 --limit 20
 ```
 
-Common fields: `title`, `creator`, `date`, `publicationTitle` (journal), `DOI`, `tag`.
-Operators: `is`, `isNot`, `contains`, `doesNotContain`, `isAfter`, `isBefore`.
-
-Use `--operator or` to match any condition (default is `and`).
+Available filter flags: `--author`, `--after`, `--before`, `--journal`, `--tag`.
+These are combined with AND logic internally.
 
 ## Search by tag
 
 ```bash
-zotron search by-tag "核心期刊" --limit 20
+zotron search --tag "核心期刊" --limit 20
 ```
 
 ## Search by identifier (DOI / ISBN / ISSN)
 
 ```bash
-zotron search by-identifier --doi 10.1038/nature12373
-zotron search by-identifier --isbn 9780262035613
-zotron search by-identifier --issn 0028-0836
+zotron search --doi 10.1038/nature12373
+zotron search --isbn 9780262035613
+zotron search --issn 0028-0836
 ```
 
 ## Saved searches

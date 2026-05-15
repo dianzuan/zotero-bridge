@@ -860,6 +860,7 @@ enum AnnotationsCommand {
         #[arg(long)]
         position: Option<String>,
         /// Text to locate in the PDF and highlight. Resolves to rects automatically.
+        /// Locates text headlessly (no PDF viewer required).
         /// Use with --dry-run for locate-only mode.
         #[arg(long)]
         quote: Option<String>,

@@ -227,7 +227,7 @@ Commands:
 
 Examples:
   zotron annotations list YR5BUGHG
-  zotron annotations create YR5BUGHG --quote "text to highlight"
+  zotron annotations create YR5BUGHG --quote "text to highlight"  # locates text headlessly, no PDF viewer required
   zotron annotations create YR5BUGHG --type image --position '{"pageIndex":0,"rects":[[10,20,30,40]]}'
 ```
 
