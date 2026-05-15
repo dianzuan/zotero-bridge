@@ -19,15 +19,7 @@
 
 ## 为什么选 Zotron？
 
-Zotero 官方 API 是只读的 HTTP 接口——不是为 agent 设计的。MCP server 每次调用都有延迟和 token 开销。Zotron 走了另一条路：本地 Rust CLI 直接对接 Zotero 内部 JS API，返回结构化 JSON，agent 可以管道给 `jq` 或直接消费。一个二进制，零网络跳转，完整读写权限。
-
-|  | Zotron CLI | Zotero Web API | MCP server |
-|---|---|---|---|
-| 读 + 写 | 支持 | 仅读 | 不一定 |
-| 延迟 | ~5ms（本地 IPC） | 100ms+（HTTP） | 200ms+（tool call） |
-| Agent 就绪 | Claude Code 和 Codex 原生插件 | 需手动集成 | 每个 server 单独配置 |
-| PDF 标注 | 无头 `--quote` 高亮 | 不支持 | 不支持 |
-| 可组合 | JSON 输出，管道给 `jq` | JSON 但分页 | 结构化但不透明 |
+Zotero 管文献很好用，但它没有一个为 AI agent 设计的接口。Zotron 补上了这个缺口：一个本地 Rust CLI，让 agent 通过简单的 shell 命令完整读写你的文献库——搜索、阅读、标注、导出——返回 JSON。
 
 ## 功能
 
