@@ -71,6 +71,8 @@ async function waitForReaderReady(reader: any, timeoutMs = 15000): Promise<void>
     const ir = reader._internalReader;
     const pv = ir?._primaryView ?? ir?._state;
     if (pv?._pdfDocument) return;
+    const pages = pv?._pdfPages;
+    if (pages && (Array.isArray(pages) ? pages.some((p: any) => p?.chars?.length) : Object.values(pages).some((p: any) => (p as any)?.chars?.length))) return;
     await new Promise(r => setTimeout(r, 250));
   }
 }
