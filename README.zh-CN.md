@@ -19,7 +19,7 @@
 
 ## 为什么选 Zotron？
 
-Zotero 官方 API 是只读的 HTTP 接口。MCP server 每次调用都有延迟和 token 开销。Zotron 是一个本地 Rust CLI，直接对接 Zotero 内部 JS API——完整读写权限，结构化 JSON 输出，管道给 `jq` 即可。
+Zotron 是一个本地 Rust CLI，直接对接 Zotero 内部 JS API——完整读写权限，结构化 JSON 输出，管道给 `jq` 即可。Zotero 官方 API 是只读的 HTTP 接口；MCP server 每次调用都有延迟和 token 开销。
 
 ## 功能
 

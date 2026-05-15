@@ -19,7 +19,7 @@ Let AI agents read, search, and annotate your Zotero library.
 
 ## Why Zotron?
 
-Zotero's official API is read-only and HTTP-based. MCP servers add latency and token overhead per tool call. Zotron is a local Rust CLI that talks directly to Zotero's internal JS API — full read-write access, structured JSON output, pipes to `jq`.
+Zotron is a local Rust CLI that talks directly to Zotero's internal JS API — full read-write access, structured JSON output, pipes to `jq`. Zotero's official API is read-only and HTTP-based; MCP servers add latency and token overhead per tool call.
 
 ## What it does
 
