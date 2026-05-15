@@ -13,14 +13,6 @@ Let AI agents read, search, and annotate your Zotero library.
 
 [What it does](#what-it-does) · [Install](#install) · [For agents](#for-agents) · [CLI reference](#cli-reference) · [中文](README.zh-CN.md)
 
-<a href="https://star-history.com/#dianzuan/zotron&Date">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=dianzuan/zotron&type=Date&theme=dark" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=dianzuan/zotron&type=Date" />
-    <img alt="Star History" src="https://api.star-history.com/svg?repos=dianzuan/zotron&type=Date" width="500" />
-  </picture>
-</a>
-
 </div>
 
 ## What it does
@@ -117,6 +109,16 @@ zotron search "employment" | jq '.items[] | {key, title, year}'
 ```
 
 Run `zotron --help` for the full command list, `zotron <command> --help` for flags.
+
+## Star History
+
+<a href="https://star-history.com/#dianzuan/zotron&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=dianzuan/zotron&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=dianzuan/zotron&type=Date" />
+    <img alt="Star History" src="https://api.star-history.com/svg?repos=dianzuan/zotron&type=Date" width="500" />
+  </picture>
+</a>
 
 ## License
 
