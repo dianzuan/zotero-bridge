@@ -19,11 +19,11 @@ Let AI agents read, search, and annotate your Zotero library.
 
 ## Why Zotron?
 
-Zotero's official API is read-only HTTP — not built for agents. MCP servers add latency and token overhead per tool call. Zotron takes a different approach: a local Rust CLI that talks directly to Zotero's internal JS API, returning structured JSON that agents can pipe through `jq` or consume directly. One binary, zero network hops, full read-write access.
+Zotero's official API is read-only and HTTP-based. MCP servers add latency and token overhead per tool call. Zotron is a local Rust CLI that talks directly to Zotero's internal JS API — full read-write access, structured JSON output, pipes to `jq`.
 
 ## What it does
 
-Zotron gives AI agents full access to your Zotero library. Once installed, your agent can:
+Once installed, your agent can:
 
 - **Search** papers by title, author, year, tag, DOI, or full PDF text
 - **Read** paper content, metadata, and notes
@@ -31,8 +31,6 @@ Zotron gives AI agents full access to your Zotero library. Once installed, your 
 - **Export** citations as BibTeX, APA, or any CSL style
 - **OCR** scanned PDFs and run hybrid semantic search (BM25 + vector + RRF)
 - **Manage** collections, tags, and attachments
-
-You talk to your agent in natural language. The agent uses Zotron under the hood.
 
 ## Install
 
@@ -74,11 +72,11 @@ After setup, just ask:
 >
 > "Which of my papers discusses regression discontinuity?"
 
-The agent calls `zotron` CLI commands internally — no MCP, no tool schema overhead.
+The agent calls `zotron` CLI commands directly.
 
 ### Source plugins
 
-Zotron is extensible via source plugins — standalone binaries on `PATH` named `zotron-*`:
+External sources are added through plugins — standalone binaries on `PATH` named `zotron-*`:
 
 - **[zotron-scholar](https://github.com/dianzuan/zotron-scholar)** — OpenAlex, CrossRef, Semantic Scholar, Unpaywall, arXiv
 

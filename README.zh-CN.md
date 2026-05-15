@@ -19,11 +19,11 @@
 
 ## 为什么选 Zotron？
 
-Zotero 官方 API 是只读的 HTTP 接口——不是为 agent 设计的。MCP server 每次调用都有延迟和 token 开销。Zotron 走了另一条路：本地 Rust CLI 直接对接 Zotero 内部 JS API，返回结构化 JSON，agent 可以管道给 `jq` 或直接消费。一个二进制，零网络跳转，完整读写权限。
+Zotero 官方 API 是只读的 HTTP 接口。MCP server 每次调用都有延迟和 token 开销。Zotron 是一个本地 Rust CLI，直接对接 Zotero 内部 JS API——完整读写权限，结构化 JSON 输出，管道给 `jq` 即可。
 
 ## 功能
 
-安装 Zotron 后，你的 AI agent 可以：
+安装后，你的 agent 可以：
 
 - **搜索**论文——按标题、作者、年份、标签、DOI 或 PDF 全文
 - **阅读**论文内容、元数据和笔记
@@ -31,8 +31,6 @@ Zotero 官方 API 是只读的 HTTP 接口——不是为 agent 设计的。MCP 
 - **导出**引用——BibTeX、APA 或任何 CSL 样式
 - **OCR** 扫描件，运行混合语义检索（BM25 + 向量 + RRF）
 - **管理**集合、标签和附件
-
-你用自然语言跟 agent 说话，agent 在后台调用 Zotron。
 
 ## 安装
 
@@ -74,11 +72,11 @@ codex plugin marketplace add dianzuan/zotron && $zotron-setup
 >
 > "我哪篇论文讨论了回归不连续？"
 
-Agent 内部调用 `zotron` CLI 命令——不走 MCP，没有 tool schema 开销。
+Agent 直接调用 `zotron` CLI 命令。
 
 ### 数据源插件
 
-Zotron 支持通过数据源插件扩展——`PATH` 上以 `zotron-*` 命名的独立二进制：
+外部数据源通过插件接入——`PATH` 上以 `zotron-*` 命名的独立二进制：
 
 - **[zotron-scholar](https://github.com/dianzuan/zotron-scholar)** — OpenAlex、CrossRef、Semantic Scholar、Unpaywall、arXiv
 
