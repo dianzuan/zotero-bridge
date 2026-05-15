@@ -15,6 +15,20 @@ Let AI agents read, search, and annotate your Zotero library.
 
 </div>
 
+<!-- TODO: add demo GIF here — record a terminal session showing search → annotate → export -->
+
+## Why Zotron?
+
+Zotero's official API is read-only and HTTP-based — not designed for agents. MCP servers add latency and token overhead per tool call. Zotron takes a different approach: a local Rust CLI that talks directly to Zotero's internal JS API, returning structured JSON that agents can pipe through `jq` or consume directly. One binary, zero network hops, full read-write access.
+
+|  | Zotron CLI | Zotero Web API | MCP server |
+|---|---|---|---|
+| Read + write | Yes | Read only | Varies |
+| Latency | ~5ms (local IPC) | 100ms+ (HTTP) | 200ms+ (tool call) |
+| Agent-ready | Native plugin for Claude Code & Codex | Manual integration | Per-server setup |
+| PDF annotation | Headless `--quote` highlighting | No | No |
+| Composable | JSON output, pipes to `jq` | JSON but paginated | Structured but opaque |
+
 ## What it does
 
 Zotron gives AI agents full access to your Zotero library. Once installed, your agent can:
@@ -109,6 +123,21 @@ zotron search "employment" | jq '.items[] | {key, title, year}'
 ```
 
 Run `zotron --help` for the full command list, `zotron <command> --help` for flags.
+
+## FAQ
+
+**Q: Does Zotero need to be running?**
+Yes. Zotron talks to a live Zotero instance via its XPI plugin. Run `zotron ping` to check.
+
+**Q: Does it work with Zotero 6?**
+No. Zotron requires Zotero 7+ (tested on Zotero 8).
+
+**Q: Can I use it without Claude Code or Codex?**
+Yes. The CLI works standalone — any shell-capable agent or script can call `zotron` commands.
+
+## Contributing
+
+PRs welcome. The project uses a one-branch-per-feature workflow — see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ## Star History
 
