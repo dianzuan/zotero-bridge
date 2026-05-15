@@ -85,7 +85,7 @@ zotron ocr process --parent YR5BUGHG --provider mineru
 zotron rag search --collection "宏观因子" "就业弹性"
 ```
 
-`zotron --help` 看完整命令列表，`zotron <命令> --help` 看参数。详见：[CLI 参考 (中文)](docs/cli-reference-zh.md) · [CLI reference (en)](docs/cli-reference.md)
+`zotron --help` 看完整命令列表，`zotron <命令> --help` 看参数。
 
 ## 许可证
 

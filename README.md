@@ -118,8 +118,6 @@ zotron search "employment" | jq '.items[] | {key, title, year}'
 
 Run `zotron --help` for the full command list, `zotron <command> --help` for flags.
 
-Full reference: [CLI reference (en)](docs/cli-reference.md) · [CLI 参考 (中文)](docs/cli-reference-zh.md)
-
 ## License
 
 [AGPL-3.0-or-later](LICENSE)
