@@ -175,4 +175,15 @@ for f in crates/zotron-cli/Cargo.toml crates/zotron-rpc/Cargo.toml crates/zotron
   sedi "s/version = \"${CURRENT}\"/version = \"${NEW}\"/g" "${ROOT}/${f}"
 done
 
+# Regenerate Cargo.lock to match new versions
+cd "${ROOT}" && cargo generate-lockfile 2>/dev/null
+
 echo "Done. All locations updated to ${NEW}."
+echo ""
+echo "Next steps:"
+echo "  git add -u && git commit -m 'Bump version to ${NEW}'"
+echo "  git push -u origin release/v${NEW}"
+echo "  gh pr create --base main"
+echo "  # After PR merges:"
+echo "  git checkout main && git pull"
+echo "  git tag v${NEW} && git push --tags"
