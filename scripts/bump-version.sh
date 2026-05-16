@@ -161,7 +161,8 @@ sedi() {
 # JSON files: replace version string
 for f in package.json package-lock.json addon/manifest.json \
          plugin/.claude-plugin/plugin.json \
-         plugin/.codex-plugin/plugin.json; do
+         plugin/.codex-plugin/plugin.json \
+         .claude-plugin/marketplace.json; do
   sedi "s/\"version\": \"${CURRENT}\"/\"version\": \"${NEW}\"/g" "${ROOT}/${f}"
 done
 

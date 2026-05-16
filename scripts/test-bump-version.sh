@@ -19,6 +19,7 @@ setup_fixture() {
   # Recreate just the files the bump script touches, seeded at 0.1.1
   mkdir -p "${tmpdir}/addon"
   mkdir -p "${tmpdir}/src/handlers"
+  mkdir -p "${tmpdir}/.claude-plugin"
   mkdir -p "${tmpdir}/plugin/.claude-plugin"
   mkdir -p "${tmpdir}/plugin/.codex-plugin"
   mkdir -p "${tmpdir}/plugin/scripts"
@@ -30,6 +31,7 @@ setup_fixture() {
   # Copy real files from repo, then normalize to 0.1.1 via sed
   for f in package.json package-lock.json addon/manifest.json \
            src/handlers/system.ts update.json update-beta.json \
+           .claude-plugin/marketplace.json \
            plugin/.claude-plugin/plugin.json \
            plugin/.codex-plugin/plugin.json \
            plugin/scripts/setup-zotron.sh \

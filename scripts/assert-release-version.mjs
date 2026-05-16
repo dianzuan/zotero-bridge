@@ -47,6 +47,7 @@ versions.set(
 
 versions.set("plugin/.claude-plugin/plugin.json", readJson("plugin/.claude-plugin/plugin.json").version);
 versions.set("plugin/.codex-plugin/plugin.json", readJson("plugin/.codex-plugin/plugin.json").version);
+versions.set(".claude-plugin/marketplace.json", readJson(".claude-plugin/marketplace.json").plugins?.[0]?.version);
 
 for (const [label, version] of versions) {
   requireVersion(label, version);
