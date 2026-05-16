@@ -35,6 +35,7 @@ jobs:
     name: Build ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - name: linux-amd64
@@ -76,11 +77,11 @@ jobs:
 
       - name: Build (native)
         if: ${{ !matrix.cross }}
-        run: cargo build --release --target ${{ matrix.target }} -p zotron
+        run: cargo build --locked --release --target ${{ matrix.target }} -p zotron
 
       - name: Build (cross)
         if: matrix.cross
-        run: cross build --release --target ${{ matrix.target }} -p zotron
+        run: cross build --locked --release --target ${{ matrix.target }} -p zotron
 
       - name: Rename binary
         shell: bash
@@ -103,6 +104,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Assert release versions match
+        run: node scripts/assert-release-version.mjs
 
       - name: Collect release assets
         run: |
@@ -130,7 +138,7 @@ jobs:
       - name: Publish zotron-types
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish -p zotron-types
+        run: cargo publish --locked -p zotron-types
 
       - name: Wait for crates.io to index
         run: sleep 30
@@ -138,7 +146,7 @@ jobs:
       - name: Publish zotron-rpc
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish -p zotron-rpc
+        run: cargo publish --locked -p zotron-rpc
 
       - name: Wait for crates.io to index
         run: sleep 30
@@ -146,4 +154,4 @@ jobs:
       - name: Publish zotron
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish -p zotron
+        run: cargo publish --locked -p zotron

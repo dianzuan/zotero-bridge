@@ -41,11 +41,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Check
-        run: cargo check --workspace
+        run: cargo check --locked --workspace
 
       - name: Test
-        run: cargo test --workspace
+        run: cargo test --locked --workspace
 
       - name: Clippy
-        run: cargo clippy --workspace -- -D warnings
-        continue-on-error: true
+        run: cargo clippy --locked --workspace -- -D warnings
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Assert release versions match
+        run: node scripts/assert-release-version.mjs
+        env:
+          SKIP_TAG_CHECK: "1"
