@@ -7,7 +7,13 @@ description: Manage the user's Zotero library — search papers, add/organize it
 
 Read-write bridge to the user's local Zotero library via the `zotron` CLI and Zotero-side XPI plugin.
 
-**Dependency:** Zotero desktop must be running with the `zotron` XPI plugin installed. Verify with `zotron ping`. If it fails, ask the user to start Zotero — or, if the XPI was never installed, run `/zotron:setup`. Do not curl HTTP endpoints directly; always use the `zotron` CLI.
+**Dependency:** The `zotron` CLI must be on PATH, and Zotero desktop must be running with the XPI plugin installed.
+
+Before your first CLI call, check:
+1. `command -v zotron` — if missing, run `cargo install zotron` (requires Rust toolchain)
+2. `zotron ping` — if it fails, ask the user to start Zotero; if the XPI was never installed, run `/zotron:setup`
+
+Do not curl HTTP endpoints directly; always use the `zotron` CLI. Do not look for alternative installers (pip, npm, etc.) — `cargo install zotron` is the only install method.
 
 ## Pick a workflow
 
@@ -29,7 +35,7 @@ All commands use the `zotron` CLI with noun-verb structure:
 zotron <namespace> <verb> [args] [--flags]
 ```
 
-**Typed Rust subcommands** cover normal operations — always prefer these over raw RPC:
+**Typed subcommands** cover normal operations — always prefer these over raw RPC:
 
 ```bash
 zotron ping                        # check connectivity
