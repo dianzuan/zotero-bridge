@@ -88,14 +88,6 @@ check "update.json link" \
   "${ROOT}/update.json" \
   "download/v${CURRENT}/zotron.xpi"
 
-check "update-beta.json version" \
-  "${ROOT}/update-beta.json" \
-  "\"version\": \"${CURRENT}\""
-
-check "update-beta.json link" \
-  "${ROOT}/update-beta.json" \
-  "download/v${CURRENT}/zotron.xpi"
-
 check "plugin .claude-plugin/plugin.json" \
   "${ROOT}/plugin/.claude-plugin/plugin.json" \
   "\"version\": \"${CURRENT}\""
@@ -169,8 +161,8 @@ done
 # system.ts
 sedi "s/plugin: \"${CURRENT}\"/plugin: \"${NEW}\"/" "${ROOT}/src/handlers/system.ts"
 
-# update.json + update-beta.json: version AND update_link
-for f in update.json update-beta.json; do
+# update.json: version AND update_link
+for f in update.json; do
   sedi "s/\"version\": \"${CURRENT}\"/\"version\": \"${NEW}\"/g" "${ROOT}/${f}"
   sedi "s|download/v${CURRENT}/zotron.xpi|download/v${NEW}/zotron.xpi|g" "${ROOT}/${f}"
 done
