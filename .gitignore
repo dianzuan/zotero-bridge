@@ -4,7 +4,6 @@ node_modules/
 target/
 
 # Rust
-Cargo.lock
 
 # Python (legacy, removed but keep ignores)
 __pycache__/
