@@ -18,20 +18,19 @@ REPO_ROOT="$(cd -- "${PLUGIN_ROOT}/.." && pwd)"
 if [ -f "${REPO_ROOT}/crates/zotron-cli/Cargo.toml" ]; then
   if ! command -v cargo >/dev/null 2>&1; then
     echo "MISSING_CARGO"
-    echo "Install Rust/Cargo first, or set ZOTRON_RUST_BIN to an existing Rust zotron binary."
+    echo "Install the Cargo toolchain first, or set ZOTRON_RUST_BIN to an existing zotron binary."
     exit 1
   fi
   cargo install --path "${REPO_ROOT}/crates/zotron-cli" --root "${BIN_DIR}/.." --force
-  echo "Rust Zotron CLI installed in ${BIN_DIR}."
+  echo "Zotron CLI installed in ${BIN_DIR}."
 else
   if [ -n "${ZOTRON_RUST_BIN:-}" ] && [ -x "${ZOTRON_RUST_BIN}" ]; then
     ln -sfn "${PLUGIN_ROOT}/bin/zotron" "${BIN_DIR}/zotron"
-    echo "Rust Zotron CLI wrapper linked in ${BIN_DIR}; ZOTRON_RUST_BIN=${ZOTRON_RUST_BIN}."
+    echo "Zotron CLI wrapper linked in ${BIN_DIR}; ZOTRON_RUST_BIN=${ZOTRON_RUST_BIN}."
   elif command -v zotron >/dev/null 2>&1; then
-    echo "Rust Zotron CLI already available at $(command -v zotron)."
+    echo "Zotron CLI already available at $(command -v zotron)."
   else
-    echo "MISSING_RUST_ZOTRON"
-    echo "This plugin package does not include the Rust source tree. Install the Rust zotron binary or set ZOTRON_RUST_BIN."
+    echo "MISSING_ZOTRON: run 'cargo install zotron' to install the CLI."
     exit 1
   fi
 fi
