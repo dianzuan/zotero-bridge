@@ -30,7 +30,7 @@ setup_fixture() {
 
   # Copy real files from repo, then normalize to 0.1.1 via sed
   for f in package.json package-lock.json addon/manifest.json \
-           src/handlers/system.ts update.json update-beta.json \
+           src/handlers/system.ts update.json \
            .claude-plugin/marketplace.json \
            plugin/.claude-plugin/plugin.json \
            plugin/.codex-plugin/plugin.json \
@@ -81,8 +81,6 @@ check_all_locations() {
   assert_version_in "${dir}/src/handlers/system.ts" "plugin: \"${ver}\"" "system.ts" || ok=false
   assert_version_in "${dir}/update.json" "\"version\": \"${ver}\"" "update.json version" || ok=false
   assert_version_in "${dir}/update.json" "download/v${ver}/zotron.xpi" "update.json link" || ok=false
-  assert_version_in "${dir}/update-beta.json" "\"version\": \"${ver}\"" "update-beta.json version" || ok=false
-  assert_version_in "${dir}/update-beta.json" "download/v${ver}/zotron.xpi" "update-beta.json link" || ok=false
   assert_version_in "${dir}/plugin/.claude-plugin/plugin.json" "\"version\": \"${ver}\"" "claude-plugin" || ok=false
   assert_version_in "${dir}/plugin/.codex-plugin/plugin.json" "\"version\": \"${ver}\"" "codex-plugin" || ok=false
   assert_version_in "${dir}/plugin/scripts/setup-zotron.sh" "REQUIRED_VERSION:-${ver}}" "setup-zotron.sh" || ok=false

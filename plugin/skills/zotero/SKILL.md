@@ -7,7 +7,13 @@ description: Manage the user's Zotero library — search papers, add/organize it
 
 Read-write bridge to the user's local Zotero library via the `zotron` CLI and Zotero-side XPI plugin.
 
-**Dependency:** Zotero desktop must be running with the `zotron` XPI plugin installed. Verify with `zotron ping`. If it fails, ask the user to start Zotero — or, if the XPI was never installed, run `/zotron:setup`. Do not curl HTTP endpoints directly; always use the `zotron` CLI.
+**Dependency:** The `zotron` CLI must be on PATH, and Zotero desktop must be running with the XPI plugin installed.
+
+Before your first CLI call, check:
+1. `command -v zotron` — if missing, download the prebuilt binary from https://github.com/dianzuan/zotron/releases/latest (pick the file matching the user's OS/arch, put it on PATH, chmod +x). Fallback: `cargo install zotron` if the user has a toolchain.
+2. `zotron ping` — if it fails, ask the user to start Zotero; if the XPI was never installed, run `/zotron:setup`
+
+Do not curl HTTP endpoints directly; always use the `zotron` CLI.
 
 ## Pick a workflow
 
