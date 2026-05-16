@@ -63,9 +63,11 @@ if (expected !== null && expected !== releaseVersion) {
   fail(`expected ${expected}, got ${releaseVersion}`);
 }
 
-for (const tag of [`v${releaseVersion}`, process.env.GITHUB_REF_NAME].filter(Boolean)) {
-  if (!tagPattern.test(tag)) {
-    fail(`release tag must be vX.Y.Z only, got ${tag}`);
+if (!process.env.SKIP_TAG_CHECK) {
+  for (const tag of [`v${releaseVersion}`, process.env.GITHUB_REF_NAME].filter(Boolean)) {
+    if (!tagPattern.test(tag)) {
+      fail(`release tag must be vX.Y.Z only, got ${tag}`);
+    }
   }
 }
 

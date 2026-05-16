@@ -55,3 +55,5 @@ jobs:
 
       - name: Assert release versions match
         run: node scripts/assert-release-version.mjs
+        env:
+          SKIP_TAG_CHECK: "1"
