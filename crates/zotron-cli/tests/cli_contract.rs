@@ -1856,6 +1856,9 @@ fn plugin_zotron_wrapper_forwards_ocr_and_rag_to_rust_binary() {
     let wrapper = plugin_root.join("bin/zotron");
     let rust_bin = env!("CARGO_BIN_EXE_zotron");
 
+    let rust_bin_dir = std::path::Path::new(rust_bin).parent().unwrap();
+    let path_with_bin = format!("{}:{}", rust_bin_dir.display(), std::env::var("PATH").unwrap_or_default());
+
     for (args, expected) in [
         (&["ocr", "providers"][..], "mineru"),
         (&["rag", "providers"][..], "doubao"),
@@ -1863,8 +1866,7 @@ fn plugin_zotron_wrapper_forwards_ocr_and_rag_to_rust_binary() {
         let output = ProcessCommand::new("bash")
             .arg(&wrapper)
             .args(args)
-            .env("CODEX_PLUGIN_ROOT", &plugin_root)
-            .env("ZOTRON_RUST_BIN", rust_bin)
+            .env("PATH", &path_with_bin)
             .output()
             .unwrap_or_else(|err| panic!("run plugin zotron wrapper {args:?}: {err}"));
 
