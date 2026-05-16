@@ -1,41 +1,18 @@
 #!/usr/bin/env bash
-# Zotron CLI wrapper — finds and delegates to the installed zotron binary
+# Zotron CLI wrapper — delegates to the installed zotron binary, or prints install help.
 set -euo pipefail
-PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-${CODEX_PLUGIN_ROOT:-}}"
-if [ -z "${PLUGIN_ROOT}" ]; then
-  PLUGIN_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-fi
 
-resolve_path() {
-  local path="$1"
-  if command -v readlink >/dev/null 2>&1; then
-    readlink -f "${path}" 2>/dev/null && return 0
-  fi
-  local dir
-  dir="$(cd -- "$(dirname -- "${path}")" && pwd)"
-  printf '%s/%s\n' "${dir}" "$(basename -- "${path}")"
-}
+SELF="$(cd -- "$(dirname -- "$0")" && pwd)/$(basename -- "$0")"
 
-SELF="$(resolve_path "$0")"
-
-if [ -n "${ZOTRON_RUST_BIN:-}" ]; then
-  exec "${ZOTRON_RUST_BIN}" "$@"
-fi
-
-REPO_ROOT="$(cd -- "${PLUGIN_ROOT}/.." && pwd)"
-for candidate in \
-  "${REPO_ROOT}/target/release/zotron" \
-  "${REPO_ROOT}/target/debug/zotron"
-do
-  if [ -x "${candidate}" ]; then
-    exec "${candidate}" "$@"
-  fi
+# Find the real binary on PATH (skip this wrapper)
+for dir in $(echo "$PATH" | tr ':' '\n'); do
+  for name in zotron zotron.exe; do
+    candidate="${dir}/${name}"
+    [ -x "${candidate}" ] && [ "$(cd -- "$(dirname -- "${candidate}")" && pwd)/$(basename -- "${candidate}")" != "${SELF}" ] && exec "${candidate}" "$@"
+  done
 done
 
-PATH_ZOTRON="$(command -v zotron 2>/dev/null || true)"
-if [ -n "${PATH_ZOTRON}" ] && [ "$(resolve_path "${PATH_ZOTRON}")" != "${SELF}" ]; then
-  exec "${PATH_ZOTRON}" "$@"
-fi
-
-echo "MISSING_ZOTRON: run 'cargo install zotron' to install the CLI." >&2
+echo "zotron CLI not found. Install it:" >&2
+echo "  Download: https://github.com/dianzuan/zotron/releases/latest" >&2
+echo "  Or run: /zotron:setup" >&2
 exit 127
