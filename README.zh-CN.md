@@ -39,17 +39,21 @@ Zotron 是一个本地 Rust CLI，直接对接 Zotero 内部 JS API——完整�
 
 ## 安装
 
-### 从 crates.io 安装（需要 Rust）
+### 1. CLI
 
-```bash
-cargo install zotron
-```
+从[最新 release](https://github.com/dianzuan/zotron/releases/latest) 下载你平台的预编译二进制，放到 `PATH` 上：
 
-### 从 GitHub Releases 下载（不需要 Rust）
+| 平台 | 文件 |
+|------|------|
+| Linux x86_64 | `zotron-linux-amd64` |
+| Linux ARM64 | `zotron-linux-arm64` |
+| macOS Intel | `zotron-macos-amd64` |
+| macOS Apple Silicon | `zotron-macos-arm64` |
+| Windows x86_64 | `zotron-windows-amd64.exe` |
 
-从[最新 release](https://github.com/dianzuan/zotron/releases/latest) 下载你平台的预编译二进制，放到 `PATH` 上即可。
+或从源码编译：`cargo install zotron`
 
-### Zotero 插件
+### 2. Zotero 插件
 
 从同一个 release 页面下载 [zotron.xpi](https://github.com/dianzuan/zotron/releases/latest)。在 Zotero 里：工具 → 插件 → 从文件安装附加组件。重启 Zotero。
 

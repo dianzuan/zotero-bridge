@@ -39,17 +39,21 @@ Once installed, your agent can:
 
 ## Install
 
-### From crates.io (requires Rust)
+### 1. CLI
 
-```bash
-cargo install zotron
-```
+Download the prebuilt binary for your platform from the [latest release](https://github.com/dianzuan/zotron/releases/latest) and put it on your `PATH`:
 
-### From GitHub Releases (no Rust needed)
+| Platform | File |
+|----------|------|
+| Linux x86_64 | `zotron-linux-amd64` |
+| Linux ARM64 | `zotron-linux-arm64` |
+| macOS Intel | `zotron-macos-amd64` |
+| macOS Apple Silicon | `zotron-macos-arm64` |
+| Windows x86_64 | `zotron-windows-amd64.exe` |
 
-Download the prebuilt binary for your platform from the [latest release](https://github.com/dianzuan/zotron/releases/latest) and put it on your `PATH`.
+Or build from source: `cargo install zotron`
 
-### Zotero plugin
+### 2. Zotero plugin
 
 Download [zotron.xpi](https://github.com/dianzuan/zotron/releases/latest) from the same release page. In Zotero: Tools → Plugins → Install Add-on From File. Restart Zotero.
 

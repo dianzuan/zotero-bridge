@@ -29,11 +29,19 @@ Tools -> Plugins -> Zotron -> gear icon -> Check for Updates -> restart Zotero
 command -v zotron >/dev/null || echo "MISSING_ZOTRON"
 ```
 
-If missing, install from crates.io:
+If missing, download the prebuilt binary from GitHub Releases:
 
 ```bash
-cargo install zotron
+# Detect platform and download
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m)
+case "$ARCH" in aarch64|arm64) ARCH=arm64 ;; x86_64|amd64) ARCH=amd64 ;; esac
+case "$OS" in linux) ASSET="zotron-linux-${ARCH}" ;; darwin) ASSET="zotron-macos-${ARCH}" ;; *) ASSET="zotron-windows-amd64.exe" ;; esac
+curl -fL -o ~/.local/bin/zotron "https://github.com/dianzuan/zotron/releases/latest/download/${ASSET}"
+chmod +x ~/.local/bin/zotron
 ```
+
+Fallback if the user has a Rust toolchain: `cargo install zotron`
 
 2. Run the setup script to verify and bootstrap the XPI.
 
