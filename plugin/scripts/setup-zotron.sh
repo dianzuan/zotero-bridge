@@ -7,32 +7,15 @@ if [ -z "${PLUGIN_ROOT}" ]; then
   PLUGIN_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 fi
 
-if [ ! -x "${PLUGIN_ROOT}/bin/zotron" ]; then
-  echo "BROKEN_PLUGIN: missing executable ${PLUGIN_ROOT}/bin/zotron"
-  exit 1
-fi
-
 BIN_DIR="${HOME}/.local/bin"
 mkdir -p "${BIN_DIR}"
-REPO_ROOT="$(cd -- "${PLUGIN_ROOT}/.." && pwd)"
-if [ -f "${REPO_ROOT}/crates/zotron-cli/Cargo.toml" ]; then
-  if ! command -v cargo >/dev/null 2>&1; then
-    echo "MISSING_CARGO"
-    echo "Install the Cargo toolchain first, or set ZOTRON_RUST_BIN to an existing zotron binary."
-    exit 1
-  fi
-  cargo install --path "${REPO_ROOT}/crates/zotron-cli" --root "${BIN_DIR}/.." --force
-  echo "Zotron CLI installed in ${BIN_DIR}."
-else
-  if [ -n "${ZOTRON_RUST_BIN:-}" ] && [ -x "${ZOTRON_RUST_BIN}" ]; then
-    ln -sfn "${PLUGIN_ROOT}/bin/zotron" "${BIN_DIR}/zotron"
-    echo "Zotron CLI wrapper linked in ${BIN_DIR}; ZOTRON_RUST_BIN=${ZOTRON_RUST_BIN}."
-  elif command -v zotron >/dev/null 2>&1; then
-    echo "Zotron CLI already available at $(command -v zotron)."
-  else
-    echo "MISSING_ZOTRON: run 'cargo install zotron' to install the CLI."
-    exit 1
-  fi
+
+# CLI check — this script only handles the XPI. CLI install is in the setup SKILL.md cascade.
+if ! command -v zotron >/dev/null 2>&1; then
+  echo "MISSING_ZOTRON"
+  echo "The zotron CLI is not installed. Run /zotron:setup to install it, or download from:"
+  echo "  https://github.com/dianzuan/zotron/releases/latest"
+  exit 1
 fi
 
 case ":${PATH}:" in

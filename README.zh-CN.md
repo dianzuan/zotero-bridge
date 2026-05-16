@@ -41,7 +41,7 @@ Zotron 是一个本地 Rust CLI，直接对接 Zotero 内部 JS API——完整�
 
 ### 1. CLI（推荐）
 
-从[最新 release](https://github.com/dianzuan/zotron/releases/latest) 下载你平台的预编译二进制，放到 `PATH` 上：
+从[最新 release](https://github.com/dianzuan/zotron/releases/latest) 下载你平台的预编译二进制，放到 `~/.local/bin/`（或 `PATH` 上的任意位置），赋予执行权限：
 
 | 平台 | 文件 |
 |------|------|
@@ -50,6 +50,11 @@ Zotron 是一个本地 Rust CLI，直接对接 Zotero 内部 JS API——完整�
 | macOS Intel | `zotron-macos-amd64` |
 | macOS Apple Silicon | `zotron-macos-arm64` |
 | Windows x86_64 | `zotron-windows-amd64.exe` |
+
+```bash
+chmod +x zotron-linux-amd64
+mv zotron-linux-amd64 ~/.local/bin/zotron
+```
 
 或从源码编译：`cargo install zotron`
 
@@ -205,6 +210,12 @@ Windows、macOS、Linux。CLI 是单个 Rust 二进制。XPI 插件在 Zotero �
 
 **Q: `--quote` 高亮不打开 PDF 怎么做到的？**
 Zotron 在后台打开一个不可见的 reader 标签页，提取逐字符位置数据，定位引用文本，创建标注，然后关闭后台标签页。
+
+**Q: 下载了二进制但提示"permission denied"？**
+运行 `chmod +x zotron-*`，确保文件在 `PATH` 上的目录里（如 `~/.local/bin/`）。
+
+**Q: GitHub 下载不了（网络问题）？**
+`/zotron:setup` 会自动尝试镜像站。也可以手动下载：把下载 URL 里的 `https://github.com/` 替换为 `https://gh-proxy.com/https://github.com/`。
 
 ## 贡献
 

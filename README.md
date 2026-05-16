@@ -41,7 +41,7 @@ Once installed, your agent can:
 
 ### 1. CLI (recommended)
 
-Download the prebuilt binary for your platform from the [latest release](https://github.com/dianzuan/zotron/releases/latest) and put it on your `PATH`:
+Download the prebuilt binary for your platform from the [latest release](https://github.com/dianzuan/zotron/releases/latest), put it in `~/.local/bin/` (or anywhere on your `PATH`), and make it executable:
 
 | Platform | File |
 |----------|------|
@@ -50,6 +50,11 @@ Download the prebuilt binary for your platform from the [latest release](https:/
 | macOS Intel | `zotron-macos-amd64` |
 | macOS Apple Silicon | `zotron-macos-arm64` |
 | Windows x86_64 | `zotron-windows-amd64.exe` |
+
+```bash
+chmod +x zotron-linux-amd64
+mv zotron-linux-amd64 ~/.local/bin/zotron
+```
 
 Or build from source: `cargo install zotron`
 
@@ -205,6 +210,12 @@ Yes. `zotron system libraries` lists available libraries. `zotron system switchL
 
 **Q: How does `--quote` highlighting work without opening the PDF?**
 Zotron opens the PDF in a background reader tab (invisible to the user), extracts per-character position data, locates the quoted text, creates the annotation, and closes the background tab.
+
+**Q: Downloaded the binary but "permission denied"?**
+Run `chmod +x zotron-*` and make sure it's in a directory on your `PATH` (e.g., `~/.local/bin/`).
+
+**Q: Can't download from GitHub (network issues)?**
+The `/zotron:setup` skill tries mirror sites automatically. You can also manually download from a mirror: replace `https://github.com/` with `https://gh-proxy.com/https://github.com/` in the download URL.
 
 ## Contributing
 
