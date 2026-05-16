@@ -37,7 +37,7 @@
     "@types/sinon": "^21.0.1",
     "chai": "^6.2.1",
     "mocha": "^11.7.5",
-    "sinon": "^21.1.2",
+    "sinon": "^22.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "zotero-plugin-scaffold": "latest",
