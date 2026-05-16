@@ -10,7 +10,7 @@ Read-write bridge to the user's local Zotero library via the `zotron` CLI and Zo
 **Dependency:** The `zotron` CLI must be on PATH, and Zotero desktop must be running with the XPI plugin installed.
 
 Before your first CLI call, check:
-1. `command -v zotron` — if missing, download the prebuilt binary from https://github.com/dianzuan/zotron/releases/latest (pick the file matching the user's OS/arch, put it on PATH, chmod +x). Fallback: `cargo install zotron` if the user has a toolchain.
+1. `command -v zotron` — if missing, run `/zotron:setup` which handles the full install chain (cargo-binstall → GitHub Releases → mirror fallback → cargo install from source).
 2. `zotron ping` — if it fails, ask the user to start Zotero; if the XPI was never installed, run `/zotron:setup`
 
 Do not curl HTTP endpoints directly; always use the `zotron` CLI.

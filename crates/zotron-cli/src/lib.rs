@@ -1156,6 +1156,11 @@ fn split_error_code(message: &str) -> Option<(&str, &str)> {
 pub fn run(
     args: impl IntoIterator<Item = impl Into<std::ffi::OsString> + Clone>,
 ) -> Result<String, String> {
+    // Emit plugin hint for Claude Code discovery
+    if std::env::var("CLAUDECODE").as_deref() == Ok("1") {
+        eprintln!(r#"<claude-code-hint v="1" type="plugin" value="zotron@dianzuan/zotron" />"#);
+    }
+
     let cli = match parse_cli::<Cli>(args)? {
         ParseOutcome::Command(cli) => cli,
         ParseOutcome::Display(output) => return Ok(output),
