@@ -3,8 +3,8 @@
     "zotron@diamondrill": {
       "updates": [
         {
-          "version": "0.1.1",
-          "update_link": "https://github.com/dianzuan/zotron/releases/download/v0.1.1/zotron.xpi",
+          "version": "0.1.2",
+          "update_link": "https://github.com/dianzuan/zotron/releases/download/v0.1.2/zotron.xpi",
           "update_hash": "sha512:2cbc9be50af825980c1daf0b00a2492e233f5ee97876241662ce5c4a6c72048589052a7a282642cfbbafc44cfd5793982b6bbe709b846f589749e8a9589246b1",
           "applications": {
             "zotero": {
