@@ -1,6 +1,6 @@
 # OCR
 
-Use Zotron's OCR provider utilities and sidecar status checks for PDFs that Zotero cannot parse cleanly. Use `zotron ocr ...`; do not call standalone `zotron-ocr`.
+Use Zotron's OCR provider utilities and sidecar status checks for PDFs that Zotero cannot parse cleanly. The supported Rust CLI surface is `zotron ocr ...`; do not call standalone `zotron-ocr`.
 
 ## When to use OCR
 

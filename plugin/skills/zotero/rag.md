@@ -1,6 +1,6 @@
 # RAG / Retrieval Hits
 
-Find relevant spans across papers in a Zotero collection and return provenance-rich hits for literature review or `academic-zh`. Use `zotron rag ...`; do not call standalone `zotron-rag`.
+Find relevant spans across papers in a Zotero collection and return provenance-rich hits for literature review or `academic-zh`. Use the single Rust CLI surface `zotron rag ...`; do not call standalone `zotron-rag`.
 
 Uses hybrid BM25 + vector + RRF retrieval by default. Falls back to keyword matching when no vector index exists.
 
@@ -47,7 +47,7 @@ zotron rag search \
   "贸易中心性 金融风险 识别策略"
 ```
 
-Hybrid search runs BM25 + vector + RRF fusion locally, then calls the XPI for metadata enrichment. Callers do not need to know where hidden per-PDF `.zotron/chunks/chunks.v1.jsonl` sidecars live. The output is one `academic-zh` retrieval hit per line with span provenance:
+Hybrid search runs BM25 + vector + RRF fusion locally in the Rust CLI, then calls the XPI for metadata enrichment. Callers do not need to know where hidden per-PDF `.zotron/chunks/chunks.v1.jsonl` sidecars live. The output is one `academic-zh` retrieval hit per line with span provenance:
 
 ```json
 {

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Zotron CLI wrapper — finds and delegates to the installed zotron binary
+# Zotron CLI — Rust RPC client for the Zotron XPI
+# Usage: zotron ping | zotron search "..." | zotron ocr status | zotron rag search
 set -euo pipefail
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-${CODEX_PLUGIN_ROOT:-}}"
 if [ -z "${PLUGIN_ROOT}" ]; then
@@ -37,5 +38,12 @@ if [ -n "${PATH_ZOTRON}" ] && [ "$(resolve_path "${PATH_ZOTRON}")" != "${SELF}" 
   exec "${PATH_ZOTRON}" "$@"
 fi
 
-echo "MISSING_ZOTRON: run 'cargo install zotron' to install the CLI." >&2
+case "${1:-}" in
+  ocr|rag)
+    echo "MISSING_RUST_ZOTRON: install the Rust CLI with 'cargo install --path crates/zotron-cli --root ~/.local --force'." >&2
+    exit 127
+    ;;
+esac
+
+echo "MISSING_RUST_ZOTRON: install the Rust CLI with 'cargo install --path crates/zotron-cli --root ~/.local --force'." >&2
 exit 127
