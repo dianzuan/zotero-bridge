@@ -39,7 +39,7 @@
     "mocha": "^11.7.5",
     "sinon": "^21.1.2",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3",
+    "typescript": "^6.0.3",
     "zotero-plugin-scaffold": "latest",
     "zotero-types": "latest"
   }
