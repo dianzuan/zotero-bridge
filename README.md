@@ -39,7 +39,7 @@ Once installed, your agent can:
 
 ## Install
 
-### 1. CLI
+### 1. CLI (recommended)
 
 Download the prebuilt binary for your platform from the [latest release](https://github.com/dianzuan/zotron/releases/latest) and put it on your `PATH`:
 

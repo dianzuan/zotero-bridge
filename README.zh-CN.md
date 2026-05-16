@@ -39,7 +39,7 @@ Zotron 是一个本地 Rust CLI，直接对接 Zotero 内部 JS API——完整�
 
 ## 安装
 
-### 1. CLI
+### 1. CLI（推荐）
 
 从[最新 release](https://github.com/dianzuan/zotron/releases/latest) 下载你平台的预编译二进制，放到 `PATH` 上：
 
