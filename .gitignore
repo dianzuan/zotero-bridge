@@ -5,6 +5,7 @@ target/
 
 # Rust
 
+
 # Python (legacy, removed but keep ignores)
 __pycache__/
 *.py[cod]
@@ -37,4 +38,11 @@ docs/*-command-surface-lessons.md
 
 # Generated at build time
 docs/2026-05-01-p2-rpc-normalization.md
-C:\\
+
+# OS / editor artifacts
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
