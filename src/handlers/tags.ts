@@ -6,7 +6,7 @@ import { requireItem } from "../utils/guards";
 
 export const tagsHandlers = {
   async list(params: { limit?: number; offset?: number; libraryId?: number }) {
-    const limit = params.limit || 200;
+    const limit = params.limit ?? 200;
     const offset = params.offset ?? 0;
     const libraryID = params.libraryId ?? Zotero.Libraries.userLibraryID;
     const tags = await Zotero.Tags.getAll(libraryID);

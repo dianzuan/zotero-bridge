@@ -828,7 +828,7 @@ checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
 
 [[package]]
 name = "zotron"
-version = "0.1.2"
+version = "0.2.1"
 dependencies = [
  "clap",
  "libc",
@@ -841,7 +841,7 @@ dependencies = [
 
 [[package]]
 name = "zotron-rpc"
-version = "0.1.2"
+version = "0.2.1"
 dependencies = [
  "serde_json",
  "ureq",
@@ -850,7 +850,7 @@ dependencies = [
 
 [[package]]
 name = "zotron-types"
-version = "0.1.2"
+version = "0.2.1"
 dependencies = [
  "serde",
  "serde_json",

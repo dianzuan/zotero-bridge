@@ -244,6 +244,7 @@ fn top_level_help_returns_text_without_rpc_calls() {
 fn zotron_binary_help_exits_successfully() {
     let output = ProcessCommand::new(env!("CARGO_BIN_EXE_zotron"))
         .arg("--help")
+        .env_remove("CLAUDECODE")
         .output()
         .expect("run zotron --help");
 
@@ -260,6 +261,7 @@ fn zotron_binary_help_exits_successfully() {
 fn zotron_binary_runtime_errors_are_structured_json_on_stderr() {
     let output = ProcessCommand::new(env!("CARGO_BIN_EXE_zotron"))
         .args(["rpc", "items.get", "not-json"])
+        .env_remove("CLAUDECODE")
         .output()
         .expect("run zotron invalid json");
 

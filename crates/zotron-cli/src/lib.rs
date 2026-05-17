@@ -1686,7 +1686,10 @@ fn embed_sidecar_chunks(
     if count > 0 {
         let filename = embedding_vector_filename(&provider, &model);
         let vectors_dir = storage_dir.join(".zotron").join("embeddings");
-        let _ = fs::create_dir_all(&vectors_dir);
+        fs::create_dir_all(&vectors_dir).map_err(|e| {
+            eprintln!("warning: cannot create embeddings dir {}: {e}", vectors_dir.display());
+            e
+        }).ok();
         let vectors_path = vectors_dir.join(&filename);
         let mut out = String::new();
         for v in &all_vectors {
@@ -1695,7 +1698,9 @@ fn embed_sidecar_chunks(
                 out.push('\n');
             }
         }
-        let _ = fs::write(&vectors_path, &out);
+        if let Err(e) = fs::write(&vectors_path, &out) {
+            eprintln!("warning: failed to persist embeddings to {}: {e}", vectors_path.display());
+        }
     }
     count
 }
@@ -3634,7 +3639,7 @@ fn push_item(
 
 fn validate_pdf_magic(path: &str) -> Result<u64, String> {
     let bytes = fs::read(path)
-        .map_err(|_| format!("INVALID_PDF: {path} does not start with %PDF- magic bytes"))?;
+        .map_err(|e| format!("INVALID_PDF: cannot read {path}: {e}"))?;
     if !bytes.starts_with(b"%PDF-") {
         return Err(format!(
             "INVALID_PDF: {path} does not start with %PDF- magic bytes"

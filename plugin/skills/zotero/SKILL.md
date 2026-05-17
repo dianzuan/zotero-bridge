@@ -35,7 +35,7 @@ All commands use the `zotron` CLI with noun-verb structure:
 zotron <namespace> <verb> [args] [--flags]
 ```
 
-**Typed Rust subcommands** cover normal operations — always prefer these over raw RPC:
+**Typed subcommands** cover normal operations — always prefer these over raw RPC:
 
 ```bash
 zotron ping                        # check connectivity
