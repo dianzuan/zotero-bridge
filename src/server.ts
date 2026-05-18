@@ -10,9 +10,10 @@ export function registerHandlers(namespace: string, methods: Record<string, Hand
   }
 }
 
+import { INTERNAL_ERROR } from "./utils/errors";
+
 const INVALID_REQUEST = -32600;
 const METHOD_NOT_FOUND = -32601;
-const INTERNAL_ERROR = -32603;
 
 function levenshtein(a: string, b: string): number {
   const m = a.length, n = b.length;

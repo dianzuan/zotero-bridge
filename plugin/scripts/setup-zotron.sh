@@ -32,11 +32,13 @@ https://gh-proxy.com/${GITHUB_XPI_URL}
 https://gh.llkk.cc/${GITHUB_XPI_URL}
 https://hub.gitmirror.com/${GITHUB_XPI_URL}"
 
-ZOTRON_CLI="${ZOTRON_RUST_BIN:-${BIN_DIR}/zotron}"
-if "${ZOTRON_CLI}" ping >/tmp/zotron-ping.json 2>/tmp/zotron-ping.err; then
-  cat /tmp/zotron-ping.json
-  if "${ZOTRON_CLI}" system version >/tmp/zotron-version.json 2>/tmp/zotron-version.err; then
-    INSTALLED_VERSION="$(sed -n 's/.*"plugin"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' /tmp/zotron-version.json | head -n 1)"
+ZOTRON_CLI="$(command -v zotron)"
+TMPDIR_SETUP="$(mktemp -d)"
+trap 'rm -rf "${TMPDIR_SETUP}"' EXIT
+if "${ZOTRON_CLI}" ping >"${TMPDIR_SETUP}/ping.json" 2>"${TMPDIR_SETUP}/ping.err"; then
+  cat "${TMPDIR_SETUP}/ping.json"
+  if "${ZOTRON_CLI}" system version >"${TMPDIR_SETUP}/version.json" 2>"${TMPDIR_SETUP}/version.err"; then
+    INSTALLED_VERSION="$(sed -n 's/.*"plugin"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${TMPDIR_SETUP}/version.json" | head -n 1)"
     if [ "${INSTALLED_VERSION}" = "${REQUIRED_VERSION}" ]; then
       echo "Zotron bridge is live at version ${INSTALLED_VERSION}."
       exit 0
@@ -138,9 +140,9 @@ mkdir -p "${DOWNLOADS}"
 stage_xpi "${DOWNLOADS}/zotron.xpi"
 
 echo "Zotron bridge is not live yet."
-if [ -s /tmp/zotron-ping.err ]; then
+if [ -s "${TMPDIR_SETUP}/ping.err" ]; then
   echo "Last ping error:"
-  sed -n '1,12p' /tmp/zotron-ping.err
+  sed -n '1,12p' "${TMPDIR_SETUP}/ping.err"
 fi
 echo
 echo "XPI placed at:"

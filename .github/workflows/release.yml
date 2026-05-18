@@ -71,6 +71,10 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+
       - name: Install cross (Linux ARM64)
         if: matrix.cross
         run: cargo install cross --git https://github.com/cross-rs/cross --tag v0.2.5

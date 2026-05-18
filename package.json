@@ -28,9 +28,6 @@
     "test": "mocha",
     "release:check": "node scripts/assert-release-version.mjs"
   },
-  "dependencies": {
-    "zotero-plugin-toolkit": "^5.1.0"
-  },
   "devDependencies": {
     "@types/chai": "^4.3.20",
     "@types/mocha": "^10.0.10",
@@ -40,7 +37,7 @@
     "sinon": "^21.1.2",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "zotero-plugin-scaffold": "latest",
-    "zotero-types": "latest"
+    "zotero-plugin-scaffold": "^0.8.6",
+    "zotero-types": "^4.1.2"
   }
 }

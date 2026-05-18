@@ -2,7 +2,7 @@ use serde_json::json;
 use std::fs;
 use zotron_types::{
     blocks_from_provider_payload, chunks_from_blocks, embedding_provider_spec,
-    find_machine_artifact, is_zotron_artifact_title, machine_artifact_exists_in_sidecar,
+    find_machine_artifact, is_zotron_evidence_artifact, machine_artifact_exists_in_sidecar,
     machine_artifact_persist_plan, machine_artifact_relative_path, ocr_provider_spec,
     read_machine_artifact, write_machine_artifact, write_machine_artifact_sidecar,
     MachineArtifactKind, MachineArtifactStorage,
@@ -186,13 +186,13 @@ fn chunks_split_before_section_boundaries_even_when_max_chars_has_room() {
 
 #[test]
 fn artifact_titles_are_detected_for_search_pollution_guards() {
-    assert!(is_zotron_artifact_title("ITEM.zotron-ocr.raw.zip"));
-    assert!(is_zotron_artifact_title("ITEM.zotron-blocks.jsonl"));
-    assert!(is_zotron_artifact_title("ITEM.zotron-chunks.jsonl"));
-    assert!(is_zotron_artifact_title("ITEM.zotron-embed.npz"));
-    assert!(is_zotron_artifact_title("chunks.v1.jsonl"));
-    assert!(is_zotron_artifact_title("vectors.jsonl"));
-    assert!(!is_zotron_artifact_title("Normal paper title"));
+    assert!(is_zotron_evidence_artifact("ITEM.zotron-ocr.raw.zip"));
+    assert!(is_zotron_evidence_artifact("ITEM.zotron-blocks.jsonl"));
+    assert!(is_zotron_evidence_artifact("ITEM.zotron-chunks.jsonl"));
+    assert!(is_zotron_evidence_artifact("ITEM.zotron-embed.npz"));
+    assert!(is_zotron_evidence_artifact("chunks.v1.jsonl"));
+    assert!(is_zotron_evidence_artifact("vectors.jsonl"));
+    assert!(!is_zotron_evidence_artifact("Normal paper title"));
 }
 
 #[test]
