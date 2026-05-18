@@ -932,10 +932,6 @@ pub fn is_zotron_evidence_artifact(title: &str) -> bool {
     SUFFIXES.iter().any(|suffix| title.ends_with(suffix))
 }
 
-pub fn is_zotron_artifact_title(title: &str) -> bool {
-    is_zotron_evidence_artifact(title)
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MachineArtifactKind {
@@ -1329,21 +1325,6 @@ pub fn machine_artifact_absolute_path(
     ))
 }
 
-pub fn legacy_machine_artifact_absolute_path(
-    store_root: impl AsRef<Path>,
-    item_key: &str,
-    attachment_key: &str,
-    kind: MachineArtifactKind,
-) -> PathBuf {
-    store_root
-        .as_ref()
-        .join(legacy_machine_artifact_relative_path(
-            item_key,
-            attachment_key,
-            kind,
-        ))
-}
-
 pub fn machine_artifact_sidecar_absolute_path(
     attachment_storage_dir: impl AsRef<Path>,
     kind: MachineArtifactKind,
@@ -1448,20 +1429,6 @@ pub fn read_machine_artifact(
         attachment_key,
         kind,
     ))
-}
-
-pub fn delete_machine_artifact(
-    store_root: impl AsRef<Path>,
-    item_key: &str,
-    attachment_key: &str,
-    kind: MachineArtifactKind,
-) -> io::Result<bool> {
-    let path = machine_artifact_absolute_path(store_root, item_key, attachment_key, kind);
-    match fs::remove_file(path) {
-        Ok(()) => Ok(true),
-        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(false),
-        Err(err) => Err(err),
-    }
 }
 
 pub fn find_machine_artifact(

@@ -15,8 +15,6 @@
 
 </div>
 
-<!-- TODO: 加 demo GIF —— 录一个终端 session 展示 search → annotate → export -->
-
 ## 为什么选 Zotron？
 
 Zotron 是一个本地 Rust CLI，直接对接 Zotero 内部 JS API——完整读写权限，结构化 JSON 输出，管道给 `jq` 即可。Zotero 官方 API 是只读的 HTTP 接口；MCP server 每次调用都有延迟和 token 开销。

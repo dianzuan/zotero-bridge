@@ -1,22 +1,22 @@
-export const ADDON_PREF_PREFIX = "zotron.";
+const ADDON_PREF_PREFIX = "zotron.";
 
 export const PREF_DEFAULTS: Record<string, string | number> = {
   "ui.language": "en-US",
-  "ocr.provider": "glm",
+  "ocr.provider": "",
   "ocr.apiKey": "",
-  "ocr.apiUrl": "https://open.bigmodel.cn/api/paas/v4/layout_parsing",
-  "ocr.model": "glm-ocr",
-  "embedding.provider": "volcengine",
-  "embedding.model": "doubao-embedding-text-240715",
+  "ocr.apiUrl": "",
+  "ocr.model": "",
+  "embedding.provider": "",
+  "embedding.model": "",
   "embedding.apiKey": "",
-  "embedding.apiUrl": "https://ark.cn-beijing.volces.com/api/v3/embeddings",
+  "embedding.apiUrl": "",
   "rag.chunkSize": 512,
   "rag.chunkOverlap": 64,
   "rag.topK": 5,
   "rag.retrievalMode": "hybrid",
 };
 
-export function prefKey(key: string): string {
+function prefKey(key: string): string {
   return `${ADDON_PREF_PREFIX}${key}`;
 }
 
@@ -33,6 +33,3 @@ export function setPref(key: string, value: any): void {
   Zotero.Prefs.set(prefKey(key), value);
 }
 
-export function clearPref(key: string): void {
-  Zotero.Prefs.clear(prefKey(key));
-}

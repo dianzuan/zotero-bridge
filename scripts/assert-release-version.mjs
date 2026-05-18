@@ -80,7 +80,7 @@ if (!process.env.SKIP_TAG_CHECK) {
   }
 }
 
-for (const relativePath of ["update.json", "update-beta.json"]) {
+for (const relativePath of ["update.json"]) {
   if (!fs.existsSync(path.join(root, relativePath))) {
     continue;
   }

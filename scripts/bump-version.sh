@@ -162,10 +162,8 @@ done
 sedi "s/plugin: \"${CURRENT}\"/plugin: \"${NEW}\"/" "${ROOT}/src/handlers/system.ts"
 
 # update.json: version AND update_link
-for f in update.json; do
-  sedi "s/\"version\": \"${CURRENT}\"/\"version\": \"${NEW}\"/g" "${ROOT}/${f}"
-  sedi "s|download/v${CURRENT}/zotron.xpi|download/v${NEW}/zotron.xpi|g" "${ROOT}/${f}"
-done
+sedi "s/\"version\": \"${CURRENT}\"/\"version\": \"${NEW}\"/g" "${ROOT}/update.json"
+sedi "s|download/v${CURRENT}/zotron.xpi|download/v${NEW}/zotron.xpi|g" "${ROOT}/update.json"
 
 # setup-zotron.sh
 sedi "s/REQUIRED_VERSION:-${CURRENT}}/REQUIRED_VERSION:-${NEW}}/" "${ROOT}/plugin/scripts/setup-zotron.sh"
@@ -176,7 +174,7 @@ for f in crates/zotron-cli/Cargo.toml crates/zotron-rpc/Cargo.toml crates/zotron
 done
 
 # Regenerate Cargo.lock to match new versions
-cd "${ROOT}" && cargo generate-lockfile 2>/dev/null
+cd "${ROOT}" && cargo generate-lockfile || echo "warning: cargo generate-lockfile failed (is cargo installed?)" >&2
 
 echo "Done. All locations updated to ${NEW}."
 echo ""
