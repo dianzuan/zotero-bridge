@@ -49,6 +49,12 @@ versions.set("plugin/.claude-plugin/plugin.json", readJson("plugin/.claude-plugi
 versions.set("plugin/.codex-plugin/plugin.json", readJson("plugin/.codex-plugin/plugin.json").version);
 versions.set(".claude-plugin/marketplace.json", readJson(".claude-plugin/marketplace.json").plugins?.[0]?.version);
 
+for (const crateDir of ["zotron-cli", "zotron-rpc", "zotron-types"]) {
+  const cargo = read(`crates/${crateDir}/Cargo.toml`);
+  const match = cargo.match(/^version\s*=\s*"([^"]+)"/m);
+  versions.set(`crates/${crateDir}/Cargo.toml`, match?.[1]);
+}
+
 for (const [label, version] of versions) {
   requireVersion(label, version);
 }
@@ -68,6 +74,9 @@ if (!process.env.SKIP_TAG_CHECK) {
     if (!tagPattern.test(tag)) {
       fail(`release tag must be vX.Y.Z only, got ${tag}`);
     }
+  }
+  if (process.env.GITHUB_REF_NAME && process.env.GITHUB_REF_NAME !== `v${releaseVersion}`) {
+    fail(`tag ${process.env.GITHUB_REF_NAME} does not match code version v${releaseVersion}`);
   }
 }
 

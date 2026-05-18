@@ -104,6 +104,7 @@ export const searchHandlers = {
     if (params.doi) s.addCondition("DOI", "is", params.doi);
     if (params.isbn) s.addCondition("ISBN", "is", params.isbn);
     if (params.issn) s.addCondition("ISSN", "is", params.issn);
+    if (params.pmid) s.addCondition("extra", "contains", `PMID: ${params.pmid}`);
     s.addCondition("noChildren", "true");
     const ids = await s.search();
     const sliced = params.limit !== undefined ? ids.slice(0, params.limit) : ids;

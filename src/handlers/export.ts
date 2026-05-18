@@ -15,7 +15,11 @@ async function exportItems(idsOrKeys: (number | string)[], translatorID: string,
       if (status) resolve(translate.string);
       else reject(wrapTranslatorError(format, new Error("translator returned failure status")));
     });
-    translate.translate();
+    try {
+      translate.translate();
+    } catch (e) {
+      reject(wrapTranslatorError(format, e instanceof Error ? e : new Error(String(e))));
+    }
   });
 }
 
