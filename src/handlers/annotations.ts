@@ -7,13 +7,6 @@ import { requireItem } from "../utils/guards";
 import { validateAnnotationParams } from "../utils/annotation";
 import { findQuoteInChars, getRangeRects } from "../utils/pdf-locate";
 
-/**
- * Resolve a parentKey to the annotation-bearing attachment item.
- *
- * If the item is already an attachment, return it directly.
- * If the item is a regular item, find its first PDF attachment and return that.
- * Throws -32602 if the item has no PDF attachments.
- */
 async function resolveAnnotationParent(parentKey: number | string): Promise<Zotero.Item> {
   const item = await requireItem(parentKey);
   if (item.isAttachment()) return item;
@@ -34,7 +27,8 @@ function searchReaderChars(
   pageIndex?: number,
 ): { pageIndex: number; rects: number[][] } | null {
   const primaryView = reader?._internalReader?._primaryView
-    ?? reader?._internalReader?._state;
+    ?? reader?._internalReader?._state
+    ?? null;
   const pdfPages = primaryView?._pdfPages;
   if (!pdfPages) return null;
 
@@ -61,27 +55,28 @@ async function resolveQuotePosition(
   quote: string,
   pageIndex?: number,
 ): Promise<{ pageIndex: number; rects: number[][] }> {
-  // Path 1: check already-open reader (free, no I/O)
+  // Fast path: if Reader is open, use its cached chars
   const existingReader = findOpenReaderForAttachment(attachment);
   if (existingReader) {
-    const result = searchReaderChars(existingReader, quote, pageIndex);
-    if (result) return result;
+    const cached = searchReaderChars(existingReader, quote, pageIndex);
+    if (cached) return cached;
   }
 
-  // Path 2: extract chars via pdf.js worker (no reader tab needed)
+  // Primary path: extract all pages in parallel, cache, then search
   // @ts-expect-error — lazy require for test mockability; esbuild resolves at bundle time
   const pdfExtract: typeof import("../utils/pdf-extract") = require("../utils/pdf-extract");
-  const totalPages = pageIndex !== undefined ? pageIndex + 1 : await pdfExtract.getPageCount(attachment);
-  const pagesToSearch = pageIndex !== undefined
-    ? [pageIndex]
-    : Array.from({ length: totalPages }, (_, i) => i);
+  const allChars = await pdfExtract.extractAllPagesChars(attachment);
 
-  for (const pi of pagesToSearch) {
-    const chars = await pdfExtract.extractPageChars(attachment, pi);
-    if (chars.length === 0) continue;
+  const pages = pageIndex !== undefined ? [pageIndex] : allChars.map((_, i) => i);
+  for (const pi of pages) {
+    const chars = allChars[pi];
+    if (!chars || chars.length === 0) continue;
     const match = findQuoteInChars(chars, quote);
     if (match) {
-      return { pageIndex: pi, rects: getRangeRects(chars, match.offsetStart, match.offsetEnd) };
+      return {
+        pageIndex: pi,
+        rects: getRangeRects(chars, match.offsetStart, match.offsetEnd),
+      };
     }
   }
 
@@ -91,7 +86,6 @@ async function resolveQuotePosition(
     message: `Quote not found on ${scope}: ${quote.slice(0, 80)}${quote.length > 80 ? "..." : ""}`,
   };
 }
-
 
 function findOpenReaderForAttachment(attachment: Zotero.Item): any | null {
   for (const reader of getAllReaders()) {
