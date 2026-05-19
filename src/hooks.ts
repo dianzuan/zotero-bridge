@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 diamondrill
 import { registerEndpoint, unregisterEndpoint } from "./server";
+import { shutdown as shutdownPdfExtract } from "./utils/pdf-extract";
 import "./handlers/system";
 import "./handlers/items";
 import "./handlers/search";
@@ -102,7 +103,10 @@ export async function onStartup() {
     });
   }
 }
-export function onShutdown() { unregisterEndpoint(); }
+export function onShutdown() {
+  shutdownPdfExtract();
+  unregisterEndpoint();
+}
 export function onMainWindowLoad(_win: Window) {}
 export function onMainWindowUnload(_win: Window) {}
 
