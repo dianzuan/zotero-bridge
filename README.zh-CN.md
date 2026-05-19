@@ -207,7 +207,7 @@ Windows、macOS、Linux。CLI 是单个 Rust 二进制。XPI 插件在 Zotero �
 4. Windows 上检查防火墙是否允许 localhost 连接。
 
 **Q: `--quote` 高亮不打开 PDF 怎么做到的？**
-Zotron 在后台打开一个不可见的 reader 标签页，提取逐字符位置数据，定位引用文本，创建标注，然后关闭后台标签页。
+Zotron 通过 pdf.js 直接加载 PDF 文件，提取逐字符位置数据，定位引用文本并创建标注——无需打开后台 reader 标签页。如果已有打开的 reader 标签页，则作为快速缓存路径使用。
 
 **Q: 下载了二进制但提示"permission denied"？**
 运行 `chmod +x zotron-*`，确保文件在 `PATH` 上的目录里（如 `~/.local/bin/`）。
