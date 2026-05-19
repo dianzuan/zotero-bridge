@@ -6,7 +6,7 @@
     {
       "name": "zotron",
       "description": "Zotero library skill for Claude Code — search, manage, export, OCR, and RAG over your Zotero papers",
-      "version": "0.2.1",
+      "version": "0.2.2",
       "source": {
         "source": "git-subdir",
         "url": "dianzuan/zotron",
