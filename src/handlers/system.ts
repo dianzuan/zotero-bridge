@@ -2,7 +2,7 @@
 // Copyright (C) 2026 diamondrill
 import { registerHandlers, getRegisteredMethods } from "../server";
 import { setPref } from "../utils/prefs";
-import { requireItem } from "../utils/guards";
+import { requirePdfAttachment } from "../utils/guards";
 
 export const systemHandlers = {
   async ping() { return { status: "ok", timestamp: new Date().toISOString() }; },
@@ -57,25 +57,8 @@ export const systemHandlers = {
   },
 
   async pdfRecognizerData(params: { key: number | string; maxChars?: number }) {
-    const { requireItem } = await import("../utils/guards");
-    const item = await requireItem(params.key);
-    let attachmentID: number;
-    if (item.isAttachment()) {
-      attachmentID = item.id;
-    } else {
-      const attIDs = item.getAttachments ? item.getAttachments() : [];
-      let found = false;
-      for (const id of attIDs) {
-        const att = await Zotero.Items.getAsync(id);
-        if (att && att.isAttachment() && (att as any).attachmentContentType === "application/pdf") {
-          attachmentID = att.id;
-          found = true;
-          break;
-        }
-      }
-      if (!found) throw { code: -32602, message: "No PDF attachment found" };
-    }
-    const data = await (Zotero as any).PDFWorker.getRecognizerData(attachmentID!);
+    const attachment = await requirePdfAttachment(params.key);
+    const data = await (Zotero as any).PDFWorker.getRecognizerData(attachment.id);
     // Return summary + first page sample to understand the format
     const pages = data?.pages ?? [];
     const pageSummaries = pages.map((page: any, i: number) => {
@@ -117,52 +100,26 @@ export const systemHandlers = {
   },
 
   async openPDF(params: { key: number | string }) {
-    const item = await requireItem(params.key);
-    let attachment: Zotero.Item;
-    if (item.isAttachment()) {
-      attachment = item;
-    } else {
-      const attIDs = item.getAttachments ? item.getAttachments() : [];
-      for (const id of attIDs) {
-        const att = await Zotero.Items.getAsync(id);
-        if (att && att.isAttachment() && (att as any).attachmentContentType === "application/pdf") {
-          attachment = att; break;
-        }
-      }
-      if (!attachment!) throw { code: -32602, message: "No PDF attachment" };
-    }
+    const attachment = await requirePdfAttachment(params.key);
     const win = (Zotero as any).getMainWindow?.();
     if (!win) throw { code: -32603, message: "No main window" };
     const zp = win.ZoteroPane;
     if (!zp) throw { code: -32603, message: "No ZoteroPane" };
-    await zp.viewAttachment(attachment!.id);
-    return { ok: true, attachmentKey: attachment!.key, attachmentID: attachment!.id };
+    await zp.viewAttachment(attachment.id);
+    return { ok: true, attachmentKey: attachment.key, attachmentID: attachment.id };
   },
 
   async closePDF(params: { key: number | string }) {
-    const item = await requireItem(params.key);
-    let attachment: Zotero.Item;
-    if (item.isAttachment()) {
-      attachment = item;
-    } else {
-      const attIDs = item.getAttachments ? item.getAttachments() : [];
-      for (const id of attIDs) {
-        const att = await Zotero.Items.getAsync(id);
-        if (att && att.isAttachment() && (att as any).attachmentContentType === "application/pdf") {
-          attachment = att; break;
-        }
-      }
-      if (!attachment!) throw { code: -32602, message: "No PDF attachment" };
-    }
+    const attachment = await requirePdfAttachment(params.key);
     const win = (Zotero as any).getMainWindow?.();
     if (!win) throw { code: -32603, message: "No main window" };
     const tabs = win.Zotero_Tabs?._tabs ?? [];
     for (const tab of tabs) {
       if (tab.id) {
         const reader = (Zotero as any).Reader.getByTabID(tab.id);
-        if (reader && reader.itemID === attachment!.id) {
+        if (reader && reader.itemID === attachment.id) {
           win.Zotero_Tabs.close(tab.id);
-          return { ok: true, closed: true, attachmentKey: attachment!.key };
+          return { ok: true, closed: true, attachmentKey: attachment.key };
         }
       }
     }
