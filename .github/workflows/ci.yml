@@ -60,3 +60,16 @@ jobs:
         run: node scripts/assert-release-version.mjs
         env:
           SKIP_TAG_CHECK: "1"
+
+  ci:
+    name: CI
+    if: ${{ !cancelled() }}
+    needs: [xpi, rust]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        run: |
+          if [[ "${{ needs.xpi.result }}" == "failure" || "${{ needs.rust.result }}" == "failure" ]]; then
+            echo "::error::One or more CI jobs failed"
+            exit 1
+          fi
