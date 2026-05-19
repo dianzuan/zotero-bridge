@@ -116,6 +116,53 @@ describe("findQuoteInChars", () => {
     expect(result!.offsetEnd).to.equal(2);
   });
 
+  it("preserves English word boundaries in CJK-aware mode", () => {
+    // "data analysis" should match "data analysis" but not "dataanalysis" as a substring
+    const chars = "data analysis method".split("").map((c, i) => {
+      const x = i * 5;
+      return ch(c, [x, 0, x + 5, 10], c === " " ? { spaceAfter: false } : undefined);
+    });
+    // Fix: spaces should come from spaceAfter on preceding char, not be char entries
+    const spacedChars = [
+      ...("data".split("").map((c, i) => ch(c, [i * 5, 0, i * 5 + 5, 10]))),
+      ch("a", [15, 0, 20, 10], { spaceAfter: true }), // replace last 'a' of "data"
+    ];
+    // Simpler approach: build chars properly
+    const properChars = [
+      ch("d", [0, 0, 5, 10]),
+      ch("a", [5, 0, 10, 10]),
+      ch("t", [10, 0, 15, 10]),
+      ch("a", [15, 0, 20, 10], { spaceAfter: true }),
+      ch("a", [25, 0, 30, 10]),
+      ch("n", [30, 0, 35, 10]),
+      ch("a", [35, 0, 40, 10]),
+      ch("l", [40, 0, 45, 10]),
+      ch("y", [45, 0, 50, 10]),
+      ch("s", [50, 0, 55, 10]),
+      ch("i", [55, 0, 60, 10]),
+      ch("s", [60, 0, 65, 10]),
+    ];
+    // "data analysis" with word boundary — should match
+    const result = findQuoteInChars(properChars, "data analysis");
+    expect(result).to.not.be.null;
+    expect(result!.offsetStart).to.equal(0);
+    expect(result!.offsetEnd).to.equal(11);
+  });
+
+  it("matches CJK with scattered spaces (PDF artifact)", () => {
+    // PDF renders "创新困境" as "创 新 困 境" with spaces between each char
+    const chars = [
+      ch("创", [0, 0, 10, 10], { spaceAfter: true }),
+      ch("新", [15, 0, 25, 10], { spaceAfter: true }),
+      ch("困", [30, 0, 40, 10], { spaceAfter: true }),
+      ch("境", [45, 0, 55, 10]),
+    ];
+    const result = findQuoteInChars(chars, "创新困境");
+    expect(result).to.not.be.null;
+    expect(result!.offsetStart).to.equal(0);
+    expect(result!.offsetEnd).to.equal(3);
+  });
+
   it("returns null when quote is not found", () => {
     const chars = [
       ch("A", [0, 0, 5, 10]),
