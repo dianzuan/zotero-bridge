@@ -6,23 +6,48 @@ type ExtractFn = (attachment: Zotero.Item, pageIndex: number) => Promise<CharDat
 type AllCharsFn = (attachment: Zotero.Item) => Promise<CharData[][]>;
 type CountFn = (attachment: Zotero.Item) => Promise<number>;
 
+const MAX_CACHED = 5;
+
 let pdfJs: any = null;
+let pdfJsPromise: Promise<any> | null = null;
 const docCache = new Map<number, any>();
 const allCharsCache = new Map<number, CharData[][]>();
+
+function evictAttachment(id: number): void {
+  const doc = docCache.get(id);
+  if (doc) {
+    try { doc.destroy(); } catch { /* ignore */ }
+    docCache.delete(id);
+  }
+  allCharsCache.delete(id);
+}
+
+function evictOldest(): void {
+  if (docCache.size >= MAX_CACHED) {
+    const oldest = docCache.keys().next().value;
+    if (oldest !== undefined) evictAttachment(oldest);
+  }
+}
 
 // Load pdf.js in the main window's module graph — the window context
 // provides navigator, fetch(), canvas, and font services needed for
 // CJK font decoding in PDFs without ToUnicode maps.
 async function ensurePdfJs(): Promise<any> {
   if (pdfJs) return pdfJs;
-  const win = (Zotero as any).getMainWindow?.();
-  if (!win) throw { code: -32603, message: "No main window available" };
-  pdfJs = await win.eval('import("resource://zotero/reader/pdf/build/pdf.mjs")');
-  if (pdfJs?.GlobalWorkerOptions && !pdfJs.GlobalWorkerOptions.workerSrc) {
-    pdfJs.GlobalWorkerOptions.workerSrc =
-      "resource://zotero/reader/pdf/build/pdf.worker.mjs";
+  if (!pdfJsPromise) {
+    pdfJsPromise = (async () => {
+      const win = (Zotero as any).getMainWindow?.();
+      if (!win) throw { code: -32603, message: "No main window available" };
+      const mod = await win.eval('import("resource://zotero/reader/pdf/build/pdf.mjs")');
+      if (mod?.GlobalWorkerOptions && !mod.GlobalWorkerOptions.workerSrc) {
+        mod.GlobalWorkerOptions.workerSrc =
+          "resource://zotero/reader/pdf/build/pdf.worker.mjs";
+      }
+      pdfJs = mod;
+      return mod;
+    })();
   }
-  return pdfJs;
+  return pdfJsPromise;
 }
 
 async function loadDocument(attachment: Zotero.Item): Promise<any> {
@@ -31,6 +56,8 @@ async function loadDocument(attachment: Zotero.Item): Promise<any> {
 
   const path = await attachment.getFilePathAsync();
   if (!path) throw { code: -32602, message: "Attachment has no file" };
+
+  evictOldest();
 
   const buf = await (globalThis as any).IOUtils.read(path);
   const { getDocument } = await ensurePdfJs();
@@ -49,6 +76,8 @@ async function defaultExtractPageChars(
   attachment: Zotero.Item,
   pageIndex: number,
 ): Promise<CharData[]> {
+  const cached = allCharsCache.get(attachment.id);
+  if (cached && pageIndex < cached.length) return cached[pageIndex];
   const doc = await loadDocument(attachment);
   const pageData = await doc.getPageData({ pageIndex });
   return pageData?.chars ?? [];
@@ -58,11 +87,12 @@ async function defaultExtractAllPagesChars(attachment: Zotero.Item): Promise<Cha
   const cached = allCharsCache.get(attachment.id);
   if (cached) return cached;
   const doc = await loadDocument(attachment);
-  const pages = await Promise.all(
+  const results = await Promise.allSettled(
     Array.from({ length: doc.numPages }, (_, i) =>
       doc.getPageData({ pageIndex: i }).then((pd: any) => pd?.chars ?? []),
     ),
   );
+  const pages = results.map((r) => r.status === "fulfilled" ? r.value : []);
   allCharsCache.set(attachment.id, pages);
   return pages;
 }
@@ -96,12 +126,9 @@ export async function getPageCount(
 }
 
 export function shutdown(): void {
-  for (const doc of docCache.values()) {
-    try { doc.destroy(); } catch { /* ignore */ }
-  }
-  docCache.clear();
-  allCharsCache.clear();
+  for (const id of [...docCache.keys()]) evictAttachment(id);
   pdfJs = null;
+  pdfJsPromise = null;
 }
 
 export const __test__ = {

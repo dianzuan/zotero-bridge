@@ -51,6 +51,24 @@ export async function requireCollection(idOrKey: number | string): Promise<Zoter
 }
 
 /**
+ * Resolve an item key to its first PDF attachment.
+ * If the item itself is an attachment, returns it directly.
+ * Otherwise iterates child attachments looking for application/pdf.
+ */
+export async function requirePdfAttachment(idOrKey: number | string): Promise<Zotero.Item> {
+  const item = await requireItem(idOrKey);
+  if (item.isAttachment()) return item;
+  const attIDs = item.getAttachments ? item.getAttachments() : [];
+  for (const attID of attIDs) {
+    const att = await Zotero.Items.getAsync(attID);
+    if (att && att.isAttachment() && (att as any).attachmentContentType === "application/pdf") {
+      return att;
+    }
+  }
+  throw rpcError(INVALID_PARAMS, `No PDF attachment found for item ${item.key ?? idOrKey}`);
+}
+
+/**
  * Resolve item keys to Items. Numeric IDs are accepted only for internal Zotero calls.
  * Delegates to `requireItem` for each entry, so callers can freely pass
  * `[42, "YR5BUGHG", 7]` and get back `Zotero.Item[]`.

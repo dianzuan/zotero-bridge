@@ -3,7 +3,7 @@
 // zotron/src/handlers/attachments.ts
 import { registerHandlers } from "../server";
 import { serializeItem } from "../utils/serialize";
-import { requireItem } from "../utils/guards";
+import { requireItem, requirePdfAttachment } from "../utils/guards";
 import { sanitizePath } from "../utils/safe-path";
 
 async function serializeAttachment(item: Zotero.Item): Promise<Record<string, any>> {
@@ -70,23 +70,7 @@ export const attachmentsHandlers = {
   },
 
   async getFulltextByPage(params: { key: number | string }) {
-    const item = await requireItem(params.key);
-    let attachment: Zotero.Item;
-    if (item.isAttachment()) {
-      attachment = item;
-    } else {
-      const attIDs = item.getAttachments ? item.getAttachments() : [];
-      let found: Zotero.Item | null = null;
-      for (const attID of attIDs) {
-        const att = await Zotero.Items.getAsync(attID);
-        if (att && att.isAttachment() && (att as any).attachmentContentType === "application/pdf") {
-          found = att;
-          break;
-        }
-      }
-      if (!found) throw { code: -32602, message: `No PDF attachment found for item ${item.key ?? params.key}` };
-      attachment = found;
-    }
+    const attachment = await requirePdfAttachment(params.key);
 
     const result = await (Zotero as any).PDFWorker.getFullText(attachment.id);
     const fullText: string = result?.text ?? "";
