@@ -69,6 +69,38 @@ export const attachmentsHandlers = {
     };
   },
 
+  async getFulltextByPage(params: { key: number | string }) {
+    const item = await requireItem(params.key);
+    let attachment: Zotero.Item;
+    if (item.isAttachment()) {
+      attachment = item;
+    } else {
+      const attIDs = item.getAttachments ? item.getAttachments() : [];
+      let found: Zotero.Item | null = null;
+      for (const attID of attIDs) {
+        const att = await Zotero.Items.getAsync(attID);
+        if (att && att.isAttachment() && (att as any).attachmentContentType === "application/pdf") {
+          found = att;
+          break;
+        }
+      }
+      if (!found) throw { code: -32602, message: `No PDF attachment found for item ${item.key ?? params.key}` };
+      attachment = found;
+    }
+
+    const result = await (Zotero as any).PDFWorker.getFullText(attachment.id);
+    const fullText: string = result?.text ?? "";
+    const pages = fullText.split("\f");
+    return {
+      key: attachment.key,
+      totalPages: pages.length,
+      pages: pages.map((text: string, i: number) => ({
+        page: i,
+        text: text.trim(),
+      })),
+    };
+  },
+
   async add(params: {
     parentKey: number | string;
     path: string;

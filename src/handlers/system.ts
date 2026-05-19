@@ -2,6 +2,7 @@
 // Copyright (C) 2026 diamondrill
 import { registerHandlers, getRegisteredMethods } from "../server";
 import { setPref } from "../utils/prefs";
+import { requireItem } from "../utils/guards";
 
 export const systemHandlers = {
   async ping() { return { status: "ok", timestamp: new Date().toISOString() }; },
@@ -113,6 +114,59 @@ export const systemHandlers = {
       return { name: params.method, description: `RPC method ${params.method}` };
     }
     return methods.map(name => ({ name, description: `RPC method ${name}` }));
+  },
+
+  async openPDF(params: { key: number | string }) {
+    const item = await requireItem(params.key);
+    let attachment: Zotero.Item;
+    if (item.isAttachment()) {
+      attachment = item;
+    } else {
+      const attIDs = item.getAttachments ? item.getAttachments() : [];
+      for (const id of attIDs) {
+        const att = await Zotero.Items.getAsync(id);
+        if (att && att.isAttachment() && (att as any).attachmentContentType === "application/pdf") {
+          attachment = att; break;
+        }
+      }
+      if (!attachment!) throw { code: -32602, message: "No PDF attachment" };
+    }
+    const win = (Zotero as any).getMainWindow?.();
+    if (!win) throw { code: -32603, message: "No main window" };
+    const zp = win.ZoteroPane;
+    if (!zp) throw { code: -32603, message: "No ZoteroPane" };
+    await zp.viewAttachment(attachment!.id);
+    return { ok: true, attachmentKey: attachment!.key, attachmentID: attachment!.id };
+  },
+
+  async closePDF(params: { key: number | string }) {
+    const item = await requireItem(params.key);
+    let attachment: Zotero.Item;
+    if (item.isAttachment()) {
+      attachment = item;
+    } else {
+      const attIDs = item.getAttachments ? item.getAttachments() : [];
+      for (const id of attIDs) {
+        const att = await Zotero.Items.getAsync(id);
+        if (att && att.isAttachment() && (att as any).attachmentContentType === "application/pdf") {
+          attachment = att; break;
+        }
+      }
+      if (!attachment!) throw { code: -32602, message: "No PDF attachment" };
+    }
+    const win = (Zotero as any).getMainWindow?.();
+    if (!win) throw { code: -32603, message: "No main window" };
+    const tabs = win.Zotero_Tabs?._tabs ?? [];
+    for (const tab of tabs) {
+      if (tab.id) {
+        const reader = (Zotero as any).Reader.getByTabID(tab.id);
+        if (reader && reader.itemID === attachment!.id) {
+          win.Zotero_Tabs.close(tab.id);
+          return { ok: true, closed: true, attachmentKey: attachment!.key };
+        }
+      }
+    }
+    return { ok: true, closed: false, message: "No open reader tab found" };
   },
 
   async reload() {

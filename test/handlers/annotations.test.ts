@@ -2,6 +2,34 @@ import { expect } from "chai";
 import sinon from "sinon";
 import { installZotero, resetZotero } from "../fixtures/zotero-mock";
 
+function mockPdfExtract(overrides: {
+  extractPageChars?: (...args: any[]) => Promise<any[]>;
+  getPageCount?: (...args: any[]) => Promise<number>;
+}) {
+  const extractPage = overrides.extractPageChars ?? (async () => []);
+  const pageCount = overrides.getPageCount ?? (async () => 0);
+  const resolvedPath = require.resolve("../../src/utils/pdf-extract");
+  require.cache[resolvedPath] = {
+    id: resolvedPath,
+    filename: resolvedPath,
+    loaded: true,
+    exports: {
+      extractPageChars: extractPage,
+      extractAllPagesChars: async (att: any) => {
+        const count = await pageCount(att);
+        return Promise.all(Array.from({ length: count }, (_, i) => extractPage(att, i)));
+      },
+      getPageCount: pageCount,
+      shutdown: () => {},
+      __test__: { setExtractImpl() {}, setAllCharsImpl() {}, setCountImpl() {}, reset() {} },
+    },
+  } as any;
+}
+
+function clearPdfExtractMock() {
+  delete require.cache[require.resolve("../../src/utils/pdf-extract")];
+}
+
 describe("annotations handler", () => {
   beforeEach(() => {
     delete require.cache[require.resolve("../../src/handlers/annotations")];
@@ -495,9 +523,30 @@ describe("annotations handler", () => {
     });
   });
 
-  describe("create with quote (mocked reader)", () => {
+  describe("create with quote (via pdf-extract)", () => {
+    afterEach(() => clearPdfExtractMock());
+
+    function buildCharsFromText(text: string, yTop: number): any[] {
+      const chars: any[] = [];
+      let x = 10;
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        const isSpace = c === " ";
+        const isLast = i === text.length - 1;
+        chars.push({
+          c, rect: [x, yTop, x + 6, yTop + 12],
+          inlineRect: [10, yTop - 2, 260, yTop + 14],
+          spaceAfter: isSpace,
+          lineBreakAfter: isLast,
+        });
+        x += 6;
+      }
+      return chars;
+    }
+
     it("rejects quote for non-highlight/underline types with -32602", async () => {
       const parent: any = { id: 5, key: "ATT05", libraryID: 1, isAttachment: () => true };
+      mockPdfExtract({});
       installZotero({
         Items: { getAsync: sinon.stub().withArgs(5).resolves(parent) },
       });
@@ -516,41 +565,20 @@ describe("annotations handler", () => {
       }
     });
 
-    it("throws -32602 when quote is not found on any page (mocked reader)", async () => {
+    it("throws -32602 when quote is not found on any page", async () => {
       const parent: any = { id: 5, key: "ATT05", libraryID: 1, isAttachment: () => true };
-      const mockChars = [
-        { c: "H", rect: [0, 90, 5, 100], spaceAfter: false, lineBreakAfter: false },
-        { c: "e", rect: [5, 90, 10, 100], spaceAfter: false, lineBreakAfter: false },
-        { c: "l", rect: [10, 90, 15, 100], spaceAfter: false, lineBreakAfter: false },
-        { c: "l", rect: [15, 90, 20, 100], spaceAfter: false, lineBreakAfter: false },
-        { c: "o", rect: [20, 90, 25, 100], spaceAfter: true, lineBreakAfter: false },
-        { c: "w", rect: [30, 90, 35, 100], spaceAfter: false, lineBreakAfter: false },
-        { c: "o", rect: [35, 90, 40, 100], spaceAfter: false, lineBreakAfter: false },
-        { c: "r", rect: [40, 90, 45, 100], spaceAfter: false, lineBreakAfter: false },
-        { c: "l", rect: [45, 90, 50, 100], spaceAfter: false, lineBreakAfter: false },
-        { c: "d", rect: [50, 90, 55, 100], spaceAfter: false, lineBreakAfter: true },
-        { c: "S", rect: [0, 78, 5, 88], spaceAfter: false, lineBreakAfter: false },
-        { c: "e", rect: [5, 78, 10, 88], spaceAfter: false, lineBreakAfter: false },
-        { c: "c", rect: [10, 78, 15, 88], spaceAfter: false, lineBreakAfter: false },
-        { c: "o", rect: [15, 78, 20, 88], spaceAfter: false, lineBreakAfter: false },
-        { c: "n", rect: [20, 78, 25, 88], spaceAfter: false, lineBreakAfter: false },
-        { c: "d", rect: [25, 78, 30, 88], spaceAfter: false, lineBreakAfter: true },
-      ];
-      const mockReader = {
-        itemID: 5,
-        _internalReader: {
-          _primaryView: {
-            _pdfPages: [{ chars: mockChars }],
-          },
+      const page0Chars = buildCharsFromText("Hello world", 90);
+
+      mockPdfExtract({
+        extractPageChars: async (_att: any, pageIndex: number) => {
+          if (pageIndex === 0) return page0Chars;
+          return [];
         },
-      };
+        getPageCount: async () => 1,
+      });
 
       installZotero({
         Items: { getAsync: sinon.stub().withArgs(5).resolves(parent) },
-        Reader: {
-          getByTabID: sinon.stub(),
-          open: sinon.stub().resolves(mockReader),
-        },
         getMainWindows: () => [],
       });
 
@@ -568,63 +596,31 @@ describe("annotations handler", () => {
       }
     });
 
-    it("resolves quote to position and creates annotation (mocked reader)", async () => {
+    it("resolves quote on page 0 and creates annotation", async () => {
       const parent: any = { id: 5, key: "ATT05", libraryID: 1, isAttachment: () => true };
       const saveTxStub = sinon.stub().resolves();
       let createdItem: any = null;
-      // Build chars for "This is an important sentence in the PDF."
-      const text1 = "This is an important sentence in the PDF.";
-      const text2 = "And another line follows.";
-      const mockChars: any[] = [];
-      let x = 10;
-      for (let i = 0; i < text1.length; i++) {
-        const c = text1[i];
-        const isSpace = c === " ";
-        const isLast = i === text1.length - 1;
-        mockChars.push({
-          c, rect: [x, 90, x + 6, 102],
-          inlineRect: [10, 88, 260, 104],
-          spaceAfter: isSpace,
-          lineBreakAfter: isLast,
-        });
-        x += 6;
-      }
-      x = 10;
-      for (let i = 0; i < text2.length; i++) {
-        const c = text2[i];
-        const isSpace = c === " ";
-        const isLast = i === text2.length - 1;
-        mockChars.push({
-          c, rect: [x, 70, x + 6, 82],
-          inlineRect: [10, 68, 160, 84],
-          spaceAfter: isSpace,
-          lineBreakAfter: isLast,
-        });
-        x += 6;
-      }
-      const mockReader = {
-        itemID: 5,
-        _internalReader: {
-          _primaryView: {
-            _pdfPages: [{ chars: mockChars }],
-          },
+
+      const page0Chars = [
+        ...buildCharsFromText("This is an important sentence in the PDF.", 90),
+        ...buildCharsFromText("And another line follows.", 70),
+      ];
+
+      mockPdfExtract({
+        extractPageChars: async (_att: any, pageIndex: number) => {
+          if (pageIndex === 0) return page0Chars;
+          return [];
         },
-      };
+        getPageCount: async () => 3,
+      });
 
       installZotero({
         Items: { getAsync: sinon.stub().withArgs(5).resolves(parent) },
-        Reader: {
-          getByTabID: sinon.stub(),
-          open: sinon.stub().resolves(mockReader),
-        },
         getMainWindows: () => [],
         Item: function (itemType: string) {
           createdItem = {
-            itemType,
-            libraryID: 0,
-            parentID: 0,
-            key: "NEWANN04",
-            saveTx: saveTxStub,
+            itemType, libraryID: 0, parentID: 0,
+            key: "NEWANN04", saveTx: saveTxStub,
           };
           return createdItem;
         },
@@ -646,6 +642,140 @@ describe("annotations handler", () => {
       expect(pos.pageIndex).to.equal(0);
       expect(pos.rects).to.have.lengthOf(1);
       expect(pos.rects[0]).to.have.lengthOf(4);
+    });
+
+    it("finds quote on page 2 after skipping pages 0 and 1", async () => {
+      const parent: any = { id: 5, key: "ATT05", libraryID: 1, isAttachment: () => true };
+      const saveTxStub = sinon.stub().resolves();
+      let createdItem: any = null;
+
+      const page2Chars = buildCharsFromText("The target quote lives here.", 500);
+      const extractStub = sinon.stub();
+      extractStub.resolves([]);
+      extractStub.withArgs(sinon.match.any, 2).resolves(page2Chars);
+
+      mockPdfExtract({
+        extractPageChars: extractStub,
+        getPageCount: async () => 5,
+      });
+
+      installZotero({
+        Items: { getAsync: sinon.stub().withArgs(5).resolves(parent) },
+        getMainWindows: () => [],
+        Item: function (itemType: string) {
+          createdItem = {
+            itemType, libraryID: 0, parentID: 0,
+            key: "NEWANN05", saveTx: saveTxStub,
+          };
+          return createdItem;
+        },
+      });
+
+      const { annotationsHandlers } = await import("../../src/handlers/annotations");
+      const result = await annotationsHandlers.create({
+        parentKey: 5,
+        type: "highlight",
+        quote: "target quote",
+      });
+
+      expect(result.ok).to.equal(true);
+      const pos = JSON.parse(createdItem.annotationPosition);
+      expect(pos.pageIndex).to.equal(2);
+      expect(pos.rects).to.have.lengthOf(1);
+    });
+
+    it("searches only the specified pageIndex when provided", async () => {
+      const parent: any = { id: 5, key: "ATT05", libraryID: 1, isAttachment: () => true };
+      const saveTxStub = sinon.stub().resolves();
+      let createdItem: any = null;
+
+      const page7Chars = buildCharsFromText("Specific page content here.", 400);
+      const extractStub = sinon.stub();
+      extractStub.resolves([]);
+      extractStub.withArgs(sinon.match.any, 7).resolves(page7Chars);
+
+      mockPdfExtract({
+        extractPageChars: extractStub,
+        getPageCount: async () => 10,
+      });
+
+      installZotero({
+        Items: { getAsync: sinon.stub().withArgs(5).resolves(parent) },
+        getMainWindows: () => [],
+        Item: function (itemType: string) {
+          createdItem = {
+            itemType, libraryID: 0, parentID: 0,
+            key: "NEWANN06", saveTx: saveTxStub,
+          };
+          return createdItem;
+        },
+      });
+
+      const { annotationsHandlers } = await import("../../src/handlers/annotations");
+      const result = await annotationsHandlers.create({
+        parentKey: 5,
+        type: "highlight",
+        quote: "page content",
+        pageIndex: 7,
+      });
+
+      expect(result.ok).to.equal(true);
+      const pos = JSON.parse(createdItem.annotationPosition);
+      expect(pos.pageIndex).to.equal(7);
+    });
+
+    it("uses open reader chars before falling back to pdf-extract", async () => {
+      const parent: any = { id: 5, key: "ATT05", libraryID: 1, isAttachment: () => true };
+      const saveTxStub = sinon.stub().resolves();
+      let createdItem: any = null;
+
+      const readerChars = buildCharsFromText("Reader has this text already loaded.", 90);
+      const mockReader = {
+        itemID: 5,
+        _internalReader: {
+          _primaryView: {
+            _pdfPages: [{ chars: readerChars }],
+          },
+        },
+      };
+
+      const extractStub = sinon.stub().resolves([]);
+      mockPdfExtract({
+        extractPageChars: extractStub,
+        getPageCount: async () => 1,
+      });
+
+      installZotero({
+        Items: { getAsync: sinon.stub().withArgs(5).resolves(parent) },
+        getMainWindows: () => [{
+          Zotero_Tabs: {
+            _tabs: [{ id: "tab1" }],
+          },
+        }],
+        Reader: {
+          getByTabID: sinon.stub().returns(mockReader),
+        },
+        Item: function (itemType: string) {
+          createdItem = {
+            itemType, libraryID: 0, parentID: 0,
+            key: "NEWANN07", saveTx: saveTxStub,
+          };
+          return createdItem;
+        },
+      });
+
+      const { annotationsHandlers } = await import("../../src/handlers/annotations");
+      const result = await annotationsHandlers.create({
+        parentKey: 5,
+        type: "highlight",
+        quote: "text already loaded",
+      });
+
+      expect(result.ok).to.equal(true);
+      const pos = JSON.parse(createdItem.annotationPosition);
+      expect(pos.pageIndex).to.equal(0);
+      // pdf-extract should NOT have been called — reader had the data
+      expect(extractStub.called).to.be.false;
     });
   });
 

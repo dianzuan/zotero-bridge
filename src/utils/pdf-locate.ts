@@ -42,6 +42,52 @@ export function getTextFromChars(chars: CharData[]): string {
   return text.join("");
 }
 
+// CJK Unicode ranges for whitespace normalization
+const CJK_RE = /[⺀-鿿豈-﫿︰-﹏]/;
+
+/**
+ * Build a normalized version of `text` with a position map back to original indices.
+ *
+ * mode "cjk": collapse whitespace to single space, then remove spaces adjacent
+ *   to CJK characters. Preserves English word boundaries.
+ * mode "strip": remove ALL whitespace (fallback for extreme PDF artifacts).
+ */
+function buildNormalized(text: string, mode: "cjk" | "strip"): { text: string; originMap: number[] } {
+  const out: string[] = [];
+  const originMap: number[] = [];
+
+  if (mode === "strip") {
+    for (let i = 0; i < text.length; i++) {
+      if (!/\s/.test(text[i])) {
+        out.push(text[i]);
+        originMap.push(i);
+      }
+    }
+    return { text: out.join(""), originMap };
+  }
+
+  // mode === "cjk": collapse whitespace runs, then drop spaces next to CJK
+  let i = 0;
+  while (i < text.length) {
+    if (/\s/.test(text[i])) {
+      // Consume entire whitespace run
+      while (i < text.length && /\s/.test(text[i])) i++;
+      // Insert a single space — but only if NOT between CJK chars
+      const prev = out.length > 0 ? out[out.length - 1] : "";
+      const next = i < text.length ? text[i] : "";
+      if (prev && next && !(CJK_RE.test(prev) || CJK_RE.test(next))) {
+        out.push(" ");
+        originMap.push(i - 1);
+      }
+    } else {
+      out.push(text[i]);
+      originMap.push(i);
+      i++;
+    }
+  }
+  return { text: out.join(""), originMap };
+}
+
 /**
  * Find a quote substring within the chars-derived text.
  * Whitespace is normalized in both the chars-text and the quote.
@@ -70,23 +116,28 @@ export function findQuoteInChars(chars: CharData[], quote: string): QuoteMatch |
 
   const fullText = textParts.join("");
 
-  // Strip ALL whitespace for matching — handles cross-line CJK (where line
-  // breaks insert spaces into continuous text) and English word boundaries.
-  const strippedQuote = quote.replace(/\s/g, "");
-  if (strippedQuote.length === 0) return null;
+  // Two-pass matching: first with CJK-aware normalization (preserves English
+  // word boundaries), then with full whitespace stripping as fallback.
+  const { text: normQuote } = buildNormalized(quote, "cjk");
+  if (normQuote.length === 0) return null;
+  const { text: normText, originMap: normTextMap } = buildNormalized(fullText, "cjk");
+  let matchPos = normText.indexOf(normQuote);
+  let matchLen = normQuote.length;
+  let textMap = normTextMap;
 
-  const strippedText = fullText.replace(/\s/g, "");
-  const matchPos = strippedText.indexOf(strippedQuote);
+  // Fallback: strip ALL whitespace (handles extreme PDF spacing artifacts)
+  if (matchPos === -1) {
+    const { text: strippedQuote } = buildNormalized(quote, "strip");
+    if (strippedQuote.length === 0) return null;
+    const { text: strippedText, originMap: strippedTextMap } = buildNormalized(fullText, "strip");
+    matchPos = strippedText.indexOf(strippedQuote);
+    matchLen = strippedQuote.length;
+    textMap = strippedTextMap;
+  }
   if (matchPos === -1) return null;
 
-  // Map stripped-text positions back to fullText positions.
-  const strippedToFull: number[] = [];
-  for (let i = 0; i < fullText.length; i++) {
-    if (!/\s/.test(fullText[i])) strippedToFull.push(i);
-  }
-
-  const fullStart = strippedToFull[matchPos];
-  const fullEnd = strippedToFull[matchPos + strippedQuote.length - 1];
+  const fullStart = textMap[matchPos];
+  const fullEnd = textMap[matchPos + matchLen - 1];
 
   // Map fullText positions to char indices, skipping synthetic spaces.
   let charStart = -1;

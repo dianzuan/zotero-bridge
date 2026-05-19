@@ -7,13 +7,6 @@ import { requireItem } from "../utils/guards";
 import { validateAnnotationParams } from "../utils/annotation";
 import { findQuoteInChars, getRangeRects } from "../utils/pdf-locate";
 
-/**
- * Resolve a parentKey to the annotation-bearing attachment item.
- *
- * If the item is already an attachment, return it directly.
- * If the item is a regular item, find its first PDF attachment and return that.
- * Throws -32602 if the item has no PDF attachments.
- */
 async function resolveAnnotationParent(parentKey: number | string): Promise<Zotero.Item> {
   const item = await requireItem(parentKey);
   if (item.isAttachment()) return item;
@@ -28,35 +21,27 @@ async function resolveAnnotationParent(parentKey: number | string): Promise<Zote
   throw { code: -32602, message: `No PDF attachment found for item ${item.key ?? parentKey}` };
 }
 
-async function searchReaderForQuote(
+function searchReaderChars(
   reader: any,
   quote: string,
   pageIndex?: number,
-): Promise<{ pageIndex: number; rects: number[][] } | null> {
-  const internalReader = reader?._internalReader;
-  const primaryView = internalReader?._primaryView ?? internalReader?._state;
-  if (!internalReader || !primaryView) return null;
+): { pageIndex: number; rects: number[][] } | null {
+  const primaryView = reader?._internalReader?._primaryView
+    ?? reader?._internalReader?._state
+    ?? null;
+  const pdfPages = primaryView?._pdfPages;
+  if (!pdfPages) return null;
 
-  const pdfPages = primaryView._pdfPages ?? {};
-  const pdfDocument = primaryView._pdfDocument;
-  const totalPages: number = pdfDocument?.pagesCount
-    ?? pdfDocument?.numPages
-    ?? (Array.isArray(pdfPages) ? pdfPages.length : Object.keys(pdfPages).length);
-
+  const totalPages = Array.isArray(pdfPages)
+    ? pdfPages.length
+    : Object.keys(pdfPages).length;
   const pagesToSearch = pageIndex !== undefined
     ? [pageIndex]
     : Array.from({ length: totalPages }, (_, i) => i);
 
   for (const pi of pagesToSearch) {
-    let chars = pdfPages[pi]?.chars;
-    if ((!chars || chars.length === 0) && pdfDocument?.getPageData) {
-      try {
-        const loaded = await pdfDocument.getPageData({ pageIndex: pi });
-        chars = loaded?.chars;
-      } catch { /* skip */ }
-    }
+    const chars = pdfPages[pi]?.chars;
     if (!chars || chars.length === 0) continue;
-
     const match = findQuoteInChars(chars, quote);
     if (match) {
       return { pageIndex: pi, rects: getRangeRects(chars, match.offsetStart, match.offsetEnd) };
@@ -65,61 +50,33 @@ async function searchReaderForQuote(
   return null;
 }
 
-async function waitForReaderReady(reader: any, timeoutMs = 15000): Promise<void> {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    const ir = reader._internalReader;
-    const pv = ir?._primaryView ?? ir?._state;
-    if (pv?._pdfDocument) return;
-    const pages = pv?._pdfPages;
-    if (pages && (Array.isArray(pages) ? pages.some((p: any) => p?.chars?.length) : Object.values(pages).some((p: any) => (p as any)?.chars?.length))) return;
-    await new Promise(r => setTimeout(r, 250));
-  }
-}
-
-function closeBackgroundReader(reader: any): void {
-  try {
-    const tabID = reader._tabID ?? reader.tabID ?? (reader as any)._options?.tabID;
-    if (!tabID) return;
-    const windows = (Zotero as any).getMainWindows?.() ?? [];
-    for (const win of windows) {
-      if (win?.Zotero_Tabs?.close) {
-        win.Zotero_Tabs.close(tabID);
-        return;
-      }
-    }
-  } catch { /* ignore */ }
-}
-
 async function resolveQuotePosition(
   attachment: Zotero.Item,
   quote: string,
   pageIndex?: number,
 ): Promise<{ pageIndex: number; rects: number[][] }> {
-  // Path 1: use already-open reader (no side effects)
+  // Fast path: if Reader is open, use its cached chars
   const existingReader = findOpenReaderForAttachment(attachment);
   if (existingReader) {
-    try {
-      const result = await searchReaderForQuote(existingReader, quote, pageIndex);
-      if (result) return result;
-    } catch { /* fall through */ }
+    const cached = searchReaderChars(existingReader, quote, pageIndex);
+    if (cached) return cached;
   }
 
-  // Path 2: open reader in background (user won't see it), search, then close
-  if (!existingReader) {
-    let bgReader: any = null;
-    try {
-      bgReader = await (Zotero as any).Reader.open(
-        attachment.id, null, { openInBackground: true },
-      );
-      if (bgReader) {
-        await waitForReaderReady(bgReader);
-        const result = await searchReaderForQuote(bgReader, quote, pageIndex);
-        if (result) return result;
-      }
-    } catch { /* background open failed */ }
-    finally {
-      if (bgReader) closeBackgroundReader(bgReader);
+  // Primary path: extract all pages in parallel, cache, then search
+  // @ts-expect-error — lazy require for test mockability; esbuild resolves at bundle time
+  const pdfExtract: typeof import("../utils/pdf-extract") = require("../utils/pdf-extract");
+  const allChars = await pdfExtract.extractAllPagesChars(attachment);
+
+  const pages = pageIndex !== undefined ? [pageIndex] : allChars.map((_, i) => i);
+  for (const pi of pages) {
+    const chars = allChars[pi];
+    if (!chars || chars.length === 0) continue;
+    const match = findQuoteInChars(chars, quote);
+    if (match) {
+      return {
+        pageIndex: pi,
+        rects: getRangeRects(chars, match.offsetStart, match.offsetEnd),
+      };
     }
   }
 
@@ -129,7 +86,6 @@ async function resolveQuotePosition(
     message: `Quote not found on ${scope}: ${quote.slice(0, 80)}${quote.length > 80 ? "..." : ""}`,
   };
 }
-
 
 function findOpenReaderForAttachment(attachment: Zotero.Item): any | null {
   for (const reader of getAllReaders()) {
