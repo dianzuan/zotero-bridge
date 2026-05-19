@@ -45,7 +45,7 @@ async function ensurePdfJs(): Promise<any> {
       }
       pdfJs = mod;
       return mod;
-    })();
+    })().catch((e) => { pdfJsPromise = null; throw e; });
   }
   return pdfJsPromise;
 }

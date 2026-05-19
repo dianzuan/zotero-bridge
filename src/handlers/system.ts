@@ -105,7 +105,7 @@ export const systemHandlers = {
     if (!win) throw { code: -32603, message: "No main window" };
     const zp = win.ZoteroPane;
     if (!zp) throw { code: -32603, message: "No ZoteroPane" };
-    zp.viewAttachment(attachment.id);
+    await zp.viewAttachment(attachment.id);
     return { ok: true, attachmentKey: attachment.key, attachmentID: attachment.id };
   },
 
