@@ -3,29 +3,21 @@
 // zotron/src/handlers/annotations.ts
 import { registerHandlers } from "../server";
 import { serializeItem } from "../utils/serialize";
-import { requireItem } from "../utils/guards";
+import { requireItem, requirePdfAttachment } from "../utils/guards";
 import { validateAnnotationParams } from "../utils/annotation";
 import { findQuoteInChars, getRangeRects } from "../utils/pdf-locate";
 
-async function resolveAnnotationParent(parentKey: number | string): Promise<Zotero.Item> {
-  const item = await requireItem(parentKey);
-  if (item.isAttachment()) return item;
-
-  const attIDs = item.getAttachments ? item.getAttachments() : [];
-  for (const attID of attIDs) {
-    const att = await Zotero.Items.getAsync(attID);
-    if (att && att.isAttachment() && (att as any).attachmentContentType === "application/pdf") {
-      return att;
-    }
-  }
-  throw { code: -32602, message: `No PDF attachment found for item ${item.key ?? parentKey}` };
+interface QuotePosition {
+  pageIndex: number;
+  rects: number[][];
+  charOffset: number;
 }
 
 function searchReaderChars(
   reader: any,
   quote: string,
   pageIndex?: number,
-): { pageIndex: number; rects: number[][] } | null {
+): QuotePosition | null {
   const primaryView = reader?._internalReader?._primaryView
     ?? reader?._internalReader?._state
     ?? null;
@@ -44,7 +36,11 @@ function searchReaderChars(
     if (!chars || chars.length === 0) continue;
     const match = findQuoteInChars(chars, quote);
     if (match) {
-      return { pageIndex: pi, rects: getRangeRects(chars, match.offsetStart, match.offsetEnd) };
+      return {
+        pageIndex: pi,
+        rects: getRangeRects(chars, match.offsetStart, match.offsetEnd),
+        charOffset: match.offsetStart,
+      };
     }
   }
   return null;
@@ -54,7 +50,7 @@ async function resolveQuotePosition(
   attachment: Zotero.Item,
   quote: string,
   pageIndex?: number,
-): Promise<{ pageIndex: number; rects: number[][] }> {
+): Promise<QuotePosition> {
   // Fast path: if Reader is open, use its cached chars
   const existingReader = findOpenReaderForAttachment(attachment);
   if (existingReader) {
@@ -76,6 +72,7 @@ async function resolveQuotePosition(
       return {
         pageIndex: pi,
         rects: getRangeRects(chars, match.offsetStart, match.offsetEnd),
+        charOffset: match.offsetStart,
       };
     }
   }
@@ -115,7 +112,7 @@ function getAllReaders(): any[] {
 
 export const annotationsHandlers = {
   async list(params: { parentKey: number | string }) {
-    const attachment = await resolveAnnotationParent(params.parentKey);
+    const attachment = await requirePdfAttachment(params.parentKey);
     const annotationRefs: any[] = (attachment as any).getAnnotations?.() ?? [];
     if (annotationRefs.length === 0) return { items: [], total: 0, attachmentKey: attachment.key };
     const anns = await resolveAnnotationRefs(attachment.libraryID, annotationRefs);
@@ -142,7 +139,7 @@ export const annotationsHandlers = {
     pageIndex?: number;
     sortIndex?: unknown;
   }) {
-    const parent = await resolveAnnotationParent(params.parentKey);
+    const parent = await requirePdfAttachment(params.parentKey);
     const validation = validateAnnotationParams({
       type: params.type as any,
       text: params.text,
@@ -155,8 +152,11 @@ export const annotationsHandlers = {
     if (!validation.ok) throw { code: -32602, message: validation.message };
 
     let position = params.position;
+    let charOffset: number | undefined;
     if (params.quote && !position) {
-      position = await resolveQuotePosition(parent, params.quote, params.pageIndex);
+      const resolved = await resolveQuotePosition(parent, params.quote, params.pageIndex);
+      charOffset = resolved.charOffset;
+      position = { pageIndex: resolved.pageIndex, rects: resolved.rects };
     }
 
     const ann = new Zotero.Item("annotation");
@@ -171,6 +171,7 @@ export const annotationsHandlers = {
     (ann as any).annotationSortIndex = normalizeAnnotationSortIndex(
       position,
       params.sortIndex,
+      charOffset,
     );
     await ann.saveTx();
     return { ok: true, key: ann.key, attachmentKey: parent.key };
@@ -206,16 +207,17 @@ async function resolveAnnotationRefs(libraryID: number, refs: any[]): Promise<an
   return anns;
 }
 
-function normalizeAnnotationSortIndex(position: any, sortIndex: unknown): string {
+function normalizeAnnotationSortIndex(position: any, sortIndex: unknown, charOffset?: number): string {
   if (typeof sortIndex === "string" && /^\d{5}\|\d{6}\|\d{5}$/.test(sortIndex.trim())) {
     return sortIndex.trim();
   }
 
   const page = padInt(position.pageIndex, 5);
+  const charOff = padInt(charOffset ?? 0, 6);
   const yOffset = sortIndex === undefined
     ? firstRectY(position)
     : Number(String(sortIndex).trim());
-  return `${page}|000000|${padInt(yOffset, 5)}`;
+  return `${page}|${charOff}|${padInt(yOffset, 5)}`;
 }
 
 function firstRectY(position: any): number {
