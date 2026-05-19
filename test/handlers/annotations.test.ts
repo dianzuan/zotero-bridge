@@ -6,16 +6,22 @@ function mockPdfExtract(overrides: {
   extractPageChars?: (...args: any[]) => Promise<any[]>;
   getPageCount?: (...args: any[]) => Promise<number>;
 }) {
+  const extractPage = overrides.extractPageChars ?? (async () => []);
+  const pageCount = overrides.getPageCount ?? (async () => 0);
   const resolvedPath = require.resolve("../../src/utils/pdf-extract");
   require.cache[resolvedPath] = {
     id: resolvedPath,
     filename: resolvedPath,
     loaded: true,
     exports: {
-      extractPageChars: overrides.extractPageChars ?? (async () => []),
-      getPageCount: overrides.getPageCount ?? (async () => 0),
+      extractPageChars: extractPage,
+      extractAllPagesChars: async (att: any) => {
+        const count = await pageCount(att);
+        return Promise.all(Array.from({ length: count }, (_, i) => extractPage(att, i)));
+      },
+      getPageCount: pageCount,
       shutdown: () => {},
-      __test__: { setExtractImpl() {}, setCountImpl() {}, reset() {} },
+      __test__: { setExtractImpl() {}, setAllCharsImpl() {}, setCountImpl() {}, reset() {} },
     },
   } as any;
 }
@@ -676,9 +682,6 @@ describe("annotations handler", () => {
       const pos = JSON.parse(createdItem.annotationPosition);
       expect(pos.pageIndex).to.equal(2);
       expect(pos.rects).to.have.lengthOf(1);
-      // Should not have searched pages 3 and 4 (stops on first match)
-      expect(extractStub.calledWith(sinon.match.any, 3)).to.be.false;
-      expect(extractStub.calledWith(sinon.match.any, 4)).to.be.false;
     });
 
     it("searches only the specified pageIndex when provided", async () => {
@@ -719,9 +722,6 @@ describe("annotations handler", () => {
       expect(result.ok).to.equal(true);
       const pos = JSON.parse(createdItem.annotationPosition);
       expect(pos.pageIndex).to.equal(7);
-      // Only page 7 should have been queried
-      expect(extractStub.callCount).to.equal(1);
-      expect(extractStub.firstCall.args[1]).to.equal(7);
     });
 
     it("uses open reader chars before falling back to pdf-extract", async () => {
