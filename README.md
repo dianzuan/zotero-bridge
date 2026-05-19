@@ -207,7 +207,7 @@ Yes. `zotron system libraries` lists available libraries. `zotron system switchL
 4. On Windows, check that your firewall allows localhost connections.
 
 **Q: How does `--quote` highlighting work without opening the PDF?**
-Zotron opens the PDF in a background reader tab (invisible to the user), extracts per-character position data, locates the quoted text, creates the annotation, and closes the background tab.
+Zotron loads the PDF directly via pdf.js, extracts per-character position data, locates the quoted text, and creates the annotation — no background reader tab needed. An already-open reader tab is used as a fast-path cache if available.
 
 **Q: Downloaded the binary but "permission denied"?**
 Run `chmod +x zotron-*` and make sure it's in a directory on your `PATH` (e.g., `~/.local/bin/`).

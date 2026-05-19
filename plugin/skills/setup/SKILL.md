@@ -137,7 +137,7 @@ zotron --help  # should show all command groups
 ## Mirror Controls
 
 ```bash
-ZOTRON_XPI_URLS='https://mirror.example/zotron.xpi https://github.com/dianzuan/zotron/releases/download/v0.1.1/zotron.xpi' \
+ZOTRON_XPI_URLS='https://mirror.example/zotron.xpi https://github.com/dianzuan/zotron/releases/latest/download/zotron.xpi' \
   bash "$PLUGIN_ROOT/scripts/setup-zotron.sh"
 ```
 
