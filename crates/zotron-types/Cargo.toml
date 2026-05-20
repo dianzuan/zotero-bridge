@@ -1,6 +1,6 @@
 [package]
 name = "zotron-types"
-version = "0.2.2"
+version = "0.2.3"
 description = "Shared types for the Zotron Zotero bridge (OCR/embedding providers, RPC protocol, PDF evidence)"
 authors = ["diamondrill <hongzuanlv@gmail.com>"]
 keywords = ["zotero", "academic", "ocr", "embedding"]
