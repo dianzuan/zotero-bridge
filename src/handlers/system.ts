@@ -57,7 +57,7 @@ export const systemHandlers = {
   },
 
   async pdfRecognizerData(params: { key: number | string; maxChars?: number }) {
-    const attachment = await requirePdfAttachment(params.key);
+    const { attachment } = await requirePdfAttachment(params.key);
     const data = await (Zotero as any).PDFWorker.getRecognizerData(attachment.id);
     // Return summary + first page sample to understand the format
     const pages = data?.pages ?? [];
@@ -100,7 +100,7 @@ export const systemHandlers = {
   },
 
   async openPDF(params: { key: number | string }) {
-    const attachment = await requirePdfAttachment(params.key);
+    const { attachment } = await requirePdfAttachment(params.key);
     const win = (Zotero as any).getMainWindow?.();
     if (!win) throw { code: -32603, message: "No main window" };
     const zp = win.ZoteroPane;
@@ -110,7 +110,7 @@ export const systemHandlers = {
   },
 
   async closePDF(params: { key: number | string }) {
-    const attachment = await requirePdfAttachment(params.key);
+    const { attachment } = await requirePdfAttachment(params.key);
     const win = (Zotero as any).getMainWindow?.();
     if (!win) throw { code: -32603, message: "No main window" };
     const tabs = win.Zotero_Tabs?._tabs ?? [];

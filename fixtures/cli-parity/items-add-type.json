@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "name": "items create",
+  "name": "items add --type",
   "command": [
     "items",
-    "create",
+    "add",
     "--type",
     "journalArticle",
     "--field",

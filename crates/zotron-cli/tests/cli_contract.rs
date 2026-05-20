@@ -75,82 +75,7 @@ fn rpc_command_forwards_method_and_params_json() {
 }
 
 #[test]
-fn attachments_add_from_url_attaches_remote_url() {
-    let mut client = FakeClient::with_response(json!({
-        "key": "ATT4",
-        "title": "Remote PDF",
-        "parentKey": "ITEM1",
-    }));
-
-    run_with_client(
-        [
-            "zotron",
-            "attachments",
-            "add",
-            "--parent",
-            "ITEM1",
-            "--from-url",
-            "https://example.com/paper.pdf",
-        ],
-        &mut client,
-    )
-    .expect("--from-url succeeds");
-
-    assert_eq!(
-        client.calls,
-        vec![(
-            "attachments.addByURL".to_string(),
-            Some(json!({
-                "parentKey": "ITEM1",
-                "url": "https://example.com/paper.pdf",
-            })),
-        )]
-    );
-}
-
-#[test]
-fn attachments_add_from_url_with_title() {
-    let mut client = FakeClient::with_response(json!({
-        "key": "ATT3",
-        "title": "Remote PDF",
-        "parentKey": "ITEM1",
-    }));
-
-    let out = run_with_client(
-        [
-            "zotron",
-            "attachments",
-            "add",
-            "--parent",
-            "ITEM1",
-            "--from-url",
-            "https://example.com/paper.pdf",
-            "--title",
-            "Remote PDF",
-        ],
-        &mut client,
-    )
-    .expect("--from-url with --title succeeds");
-
-    assert_eq!(
-        client.calls,
-        vec![(
-            "attachments.addByURL".to_string(),
-            Some(json!({
-                "parentKey": "ITEM1",
-                "url": "https://example.com/paper.pdf",
-                "title": "Remote PDF",
-            })),
-        )]
-    );
-    assert_eq!(
-        out,
-        "{\"key\": \"ATT3\", \"title\": \"Remote PDF\", \"parentKey\": \"ITEM1\"}\n"
-    );
-}
-
-#[test]
-fn attachments_add_dry_run_translates_local_path_for_zotero() {
+fn items_add_file_dry_run_translates_local_path_for_zotero() {
     let path =
         std::env::temp_dir().join(format!("zotron-cli-path-smoke-{}.pdf", std::process::id()));
     fs::write(&path, b"%PDF- test").expect("write temp pdf");
@@ -160,35 +85,33 @@ fn attachments_add_dry_run_translates_local_path_for_zotero() {
     let out = run_with_client(
         [
             "zotron",
-            "attachments",
+            "items",
             "add",
-            "--parent",
-            "ITEM1",
-            "--path",
+            "--file",
             path.to_str().expect("temp path is utf8"),
             "--dry-run",
         ],
         &mut client,
     )
-    .expect("attachment dry-run succeeds");
+    .expect("items add --file dry-run succeeds");
 
     let payload: Value = serde_json::from_str(&out).expect("dry-run output is JSON");
-    assert_eq!(payload["wouldCall"], "attachments.add");
+    assert_eq!(payload["wouldCall"], "items.addFromFile");
     assert_eq!(payload["wouldCallParams"]["path"], expected_path);
     assert!(client.calls.is_empty(), "dry-run should not call RPC");
     let _ = fs::remove_file(path);
 }
 
 #[test]
-fn attachments_path_translates_zotero_path_for_local_cli_use() {
+fn items_path_translates_zotero_path_for_local_cli_use() {
     let zotero_path = r"C:\Users\testuser\Zotero\storage\ATTACH1\paper.pdf";
     let mut client = FakeClient::with_response(json!({
         "key": "ATTACH1",
         "path": zotero_path,
     }));
 
-    let out = run_with_client(["zotron", "attachments", "path", "ATTACH1"], &mut client)
-        .expect("attachment path succeeds");
+    let out = run_with_client(["zotron", "items", "path", "ATTACH1"], &mut client)
+        .expect("items path succeeds");
 
     assert_eq!(
         client.calls,

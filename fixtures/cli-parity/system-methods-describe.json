@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "name": "system describe",
+  "name": "system methods describe",
   "command": [
     "system",
-    "describe",
+    "methods",
     "items.get"
   ],
   "rpc": {

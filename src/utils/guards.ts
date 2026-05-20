@@ -50,22 +50,49 @@ export async function requireCollection(idOrKey: number | string): Promise<Zoter
   return col;
 }
 
+export interface PdfAttachmentResult {
+  attachment: Zotero.Item;
+  otherAttachments: string[];
+}
+
 /**
  * Resolve an item key to its first PDF attachment.
  * If the item itself is an attachment, returns it directly.
  * Otherwise iterates child attachments looking for application/pdf.
+ * If `attachmentKey` is specified, uses that attachment instead of auto-resolving.
+ * Returns the attachment plus keys of any other PDF attachments on the same item.
  */
-export async function requirePdfAttachment(idOrKey: number | string): Promise<Zotero.Item> {
+export async function requirePdfAttachment(
+  idOrKey: number | string,
+  attachmentKey?: string,
+): Promise<PdfAttachmentResult> {
   const item = await requireItem(idOrKey);
-  if (item.isAttachment()) return item;
+  if (item.isAttachment()) return { attachment: item, otherAttachments: [] };
+
   const attIDs = item.getAttachments ? item.getAttachments() : [];
+  const pdfAtts: Zotero.Item[] = [];
   for (const attID of attIDs) {
     const att = await Zotero.Items.getAsync(attID);
     if (att && att.isAttachment() && (att as any).attachmentContentType === "application/pdf") {
-      return att;
+      pdfAtts.push(att);
     }
   }
-  throw rpcError(INVALID_PARAMS, `No PDF attachment found for item ${item.key ?? idOrKey}`);
+
+  if (pdfAtts.length === 0) {
+    throw rpcError(INVALID_PARAMS, `No PDF attachment found for item ${item.key ?? idOrKey}`);
+  }
+
+  if (attachmentKey) {
+    const match = pdfAtts.find(a => a.key === attachmentKey);
+    if (!match) {
+      throw rpcError(INVALID_PARAMS, `Attachment ${attachmentKey} not found on item ${item.key ?? idOrKey}`);
+    }
+    const others = pdfAtts.filter(a => a.key !== attachmentKey).map(a => a.key);
+    return { attachment: match, otherAttachments: others };
+  }
+
+  const others = pdfAtts.slice(1).map(a => a.key);
+  return { attachment: pdfAtts[0], otherAttachments: others };
 }
 
 /**
