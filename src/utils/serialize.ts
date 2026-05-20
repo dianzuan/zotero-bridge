@@ -20,11 +20,15 @@ export function serializeItem(item: Zotero.Item): Record<string, any> {
   if (item.isNote()) {
     data.note = item.getNote();
   }
-  data.creators = item.getCreators().map((c: any) => ({
-    firstName: c.firstName || "",
-    lastName: c.lastName || "",
-    creatorType: Zotero.CreatorTypes.getName(c.creatorTypeID),
-  }));
+  data.creators = item.getCreators().map((c: any) => {
+    const creator: Record<string, any> = {
+      firstName: c.firstName || "",
+      lastName: c.lastName || "",
+      creatorType: Zotero.CreatorTypes.getName(c.creatorTypeID),
+    };
+    if (c.fieldMode === 1) creator.fieldMode = 1;
+    return creator;
+  });
   data.tags = item.getTags().map((t: any) => ({ tag: t.tag, type: t.type }));
   data.collections = item.getCollections()
     .map((colId: number) => {

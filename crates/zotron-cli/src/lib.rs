@@ -3750,11 +3750,15 @@ fn to_xpi_payload(item_json: &Value, collection_key: Option<&Value>) -> Value {
                     creators
                         .iter()
                         .map(|creator| {
-                            serde_json::json!({
+                            let mut c = serde_json::json!({
                                 "firstName": creator.get("firstName").and_then(Value::as_str).unwrap_or(""),
                                 "lastName": creator.get("lastName").and_then(Value::as_str).unwrap_or(""),
                                 "creatorType": creator.get("creatorType").and_then(Value::as_str).unwrap_or("author"),
-                            })
+                            });
+                            if let Some(fm) = creator.get("fieldMode").and_then(Value::as_u64) {
+                                c["fieldMode"] = Value::from(fm);
+                            }
+                            c
                         })
                         .collect(),
                 ),
