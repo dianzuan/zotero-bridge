@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "name": "system list-methods",
-  "command": ["system", "list-methods"],
+  "name": "system methods",
+  "command": ["system", "methods"],
   "rpc": {
     "method": "system.listMethods",
     "params": null,

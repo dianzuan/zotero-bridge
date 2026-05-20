@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "name": "attachments path",
+  "name": "items path",
   "command": [
-    "attachments",
+    "items",
     "path",
     "ATT1"
   ],

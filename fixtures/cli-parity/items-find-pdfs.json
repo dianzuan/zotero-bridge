@@ -1,7 +1,8 @@
 {
   "schemaVersion": 1,
-  "name": "find pdfs missing scan",
+  "name": "items find-pdfs missing scan",
   "command": [
+    "items",
     "find-pdfs",
     "--collection",
     "Reading List",

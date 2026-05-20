@@ -356,11 +356,6 @@ enum Command {
         #[command(subcommand)]
         command: NotesCommand,
     },
-    /// Inspect Zotero attachments.
-    Attachments {
-        #[command(subcommand)]
-        command: AttachmentsCommand,
-    },
     /// Inspect Zotero preferences.
     Settings {
         #[command(subcommand)]
@@ -387,16 +382,6 @@ enum Command {
     Rag {
         #[command(subcommand)]
         command: RagCommand,
-    },
-    /// Batch fill missing PDFs in a collection via Zotero's resolver chain.
-    #[command(name = "find-pdfs")]
-    FindPdfs {
-        #[arg(long)]
-        collection: String,
-        #[arg(long, default_value_t = 0)]
-        limit: usize,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
 }
 
@@ -501,14 +486,9 @@ enum SystemCommand {
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
-    /// List all RPC methods exposed by the XPI.
-    #[command(name = "list-methods")]
-    ListMethods {
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
-    /// Describe one or all RPC methods (schema / signatures).
-    Describe {
+    /// List RPC methods, or describe a specific method.
+    Methods {
+        /// Method name to describe. Omit to list all methods.
         method: Option<String>,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
@@ -591,7 +571,7 @@ enum SearchManagementCommand {
 
 #[derive(Debug, Subcommand)]
 enum ItemsCommand {
-    /// Add an item by DOI, ISBN, URL, or local file.
+    /// Add an item by DOI, ISBN, URL, local file, or manual entry (--type + --field).
     Add {
         #[arg(long)]
         doi: Option<String>,
@@ -603,19 +583,14 @@ enum ItemsCommand {
         /// Local file path to add from.
         #[arg(long)]
         file: Option<String>,
-        #[arg(long)]
-        collection: Option<String>,
-        #[arg(long)]
-        dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
-    /// Create a new item of the given type.
-    Create {
+        /// Item type for manual creation (e.g. journalArticle).
         #[arg(long = "type")]
-        item_type: String,
+        item_type: Option<String>,
+        /// Field values for manual creation (e.g. title="My Paper").
         #[arg(long = "field")]
         fields: Vec<String>,
+        #[arg(long)]
+        collection: Option<String>,
         #[arg(long)]
         dry_run: bool,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
@@ -741,6 +716,30 @@ enum ItemsCommand {
     #[command(name = "citation-key")]
     CitationKey {
         key: String,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Get the local filesystem path of an item's PDF attachment.
+    Path {
+        key: String,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// List attachments belonging to an item.
+    Attachments {
+        key: String,
+        #[arg(long, default_value_t = 0)]
+        offset: u64,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Batch find missing PDFs in a collection via Zotero's resolver chain.
+    #[command(name = "find-pdfs")]
+    FindPdfs {
+        #[arg(long)]
+        collection: String,
+        #[arg(long, default_value_t = 0)]
+        limit: usize,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
@@ -894,72 +893,6 @@ enum AnnotationsCommand {
         annotation_key: String,
         #[arg(long)]
         dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
-}
-
-#[derive(Debug, Subcommand)]
-enum AttachmentsCommand {
-    /// List attachments belonging to a parent item.
-    List {
-        #[arg(long)]
-        parent: String,
-        #[arg(long, default_value_t = 50)]
-        limit: u64,
-        #[arg(long, default_value_t = 0)]
-        offset: u64,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
-    /// Get a single attachment by key.
-    Get {
-        key: String,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
-    /// Get full-text content of an attachment.
-    Fulltext {
-        key: String,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
-    /// Get the local filesystem path of an attachment.
-    Path {
-        key: String,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
-    /// Attach a local file or remote URL to an item.
-    Add {
-        #[arg(long)]
-        parent: String,
-        /// Local file path to attach.
-        #[arg(long)]
-        path: Option<String>,
-        /// Remote URL to attach.
-        #[arg(long = "from-url")]
-        from_url: Option<String>,
-        #[arg(long)]
-        title: Option<String>,
-        #[arg(long)]
-        dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
-    /// Delete an attachment.
-    Delete {
-        key: String,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Trigger Zotero's Find Available PDF for a parent item.
-    #[command(name = "find-pdf")]
-    FindPdf {
-        #[arg(long)]
-        parent: String,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
@@ -1203,7 +1136,7 @@ fn command_url(command: &Command) -> String {
         Command::Ping { url }
         | Command::Rpc { url, .. }
         | Command::Push { url, .. }
-        | Command::FindPdfs { url, .. } => url.clone(),
+        => url.clone(),
         Command::Ocr { command } => match command {
             OcrCommand::Providers => DEFAULT_RPC_URL.to_string(),
             OcrCommand::Run { .. } => DEFAULT_RPC_URL.to_string(),
@@ -1217,8 +1150,7 @@ fn command_url(command: &Command) -> String {
             | SystemCommand::LibraryStats { url, .. }
             | SystemCommand::Schema { url, .. }
             | SystemCommand::CurrentCollection { url }
-            | SystemCommand::ListMethods { url }
-            | SystemCommand::Describe { url, .. } => url.clone(),
+            | SystemCommand::Methods { url, .. } => url.clone(),
         },
         Command::Search(ref args) => match &args.management {
             Some(SearchManagementCommand::SavedSearches { url })
@@ -1228,7 +1160,6 @@ fn command_url(command: &Command) -> String {
         },
         Command::Items { command } => match command {
             ItemsCommand::Add { url, .. }
-            | ItemsCommand::Create { url, .. }
             | ItemsCommand::Update { url, .. }
             | ItemsCommand::Delete { url, .. }
             | ItemsCommand::Trash { url, .. }
@@ -1242,7 +1173,10 @@ fn command_url(command: &Command) -> String {
             | ItemsCommand::Recent { url, .. }
             | ItemsCommand::Fulltext { url, .. }
             | ItemsCommand::Related { url, .. }
-            | ItemsCommand::CitationKey { url, .. } => url.clone(),
+            | ItemsCommand::CitationKey { url, .. }
+            | ItemsCommand::Path { url, .. }
+            | ItemsCommand::Attachments { url, .. }
+            | ItemsCommand::FindPdfs { url, .. } => url.clone(),
         },
         Command::Collections { command } => match command {
             CollectionsCommand::List { url }
@@ -1263,15 +1197,6 @@ fn command_url(command: &Command) -> String {
             | NotesCommand::Update { url, .. }
             | NotesCommand::Delete { url, .. }
             | NotesCommand::Search { url, .. } => url.clone(),
-        },
-        Command::Attachments { command } => match command {
-            AttachmentsCommand::List { url, .. }
-            | AttachmentsCommand::Get { url, .. }
-            | AttachmentsCommand::Fulltext { url, .. }
-            | AttachmentsCommand::Path { url, .. }
-            | AttachmentsCommand::Add { url, .. }
-            | AttachmentsCommand::Delete { url, .. }
-            | AttachmentsCommand::FindPdf { url, .. } => url.clone(),
         },
         Command::Settings { command } => match command {
             SettingsCommand::Get { url, .. }
@@ -2661,7 +2586,6 @@ fn run_command(command: Command, client: &mut impl RpcCaller) -> Result<String, 
         Command::Items { command } => run_items_command(command, client)?,
         Command::Collections { command } => run_collections_command(command, client)?,
         Command::Notes { command } => run_notes_command(command, client)?,
-        Command::Attachments { command } => run_attachments_command(command, client)?,
         Command::Settings { command } => run_settings_command(command, client)?,
         Command::Tags { command } => run_tags_command(command, client)?,
         Command::Annotations { command } => run_annotations_command(command, client)?,
@@ -2672,9 +2596,6 @@ fn run_command(command: Command, client: &mut impl RpcCaller) -> Result<String, 
             return run_rag_command(command, client);
         }
         Command::Export(_) => unreachable!("export commands return raw output above"),
-        Command::FindPdfs {
-            collection, limit, ..
-        } => run_find_pdfs_command(client, collection, limit)?,
     };
 
     format_json(&value, style)
@@ -4345,10 +4266,12 @@ fn run_system_command(
             }
         }
         SystemCommand::CurrentCollection { .. } => client.call("system.currentCollection", None)?,
-        SystemCommand::ListMethods { .. } => client.call("system.listMethods", None)?,
-        SystemCommand::Describe { method, .. } => {
-            let params = method.map(|method| serde_json::json!({"method": method}));
-            client.call("system.describe", params)?
+        SystemCommand::Methods { method, .. } => {
+            if let Some(method) = method {
+                client.call("system.describe", Some(serde_json::json!({"method": method})))?
+            } else {
+                client.call("system.listMethods", None)?
+            }
         }
     };
     Ok((value, JsonStyle::Pretty))
@@ -4364,6 +4287,8 @@ fn run_items_command(
             isbn,
             from_url,
             file,
+            item_type,
+            fields,
             collection,
             dry_run,
             ..
@@ -4378,24 +4303,18 @@ fn run_items_command(
                 let mut params = serde_json::json!({"path": zotero_path(&file)});
                 maybe_insert_collection(client, &mut params, collection)?;
                 run_mutation_command(client, "items.addFromFile", params, dry_run)?
-            } else {
-                return Err("INVALID_ARGS: provide one of --doi, --isbn, --from-url, or --file".into());
-            }
-        }
-        ItemsCommand::Create {
-            item_type,
-            fields,
-            dry_run,
-            ..
-        } => {
-            let parsed_fields = parse_field_options(&fields)?;
-            let mut params = serde_json::json!({"itemType": item_type});
-            if !parsed_fields.is_empty() {
-                if let Some(map) = params.as_object_mut() {
-                    map.insert("fields".to_string(), Value::Object(parsed_fields));
+            } else if let Some(item_type) = item_type {
+                let parsed_fields = parse_field_options(&fields)?;
+                let mut params = serde_json::json!({"itemType": item_type});
+                if !parsed_fields.is_empty() {
+                    if let Some(map) = params.as_object_mut() {
+                        map.insert("fields".to_string(), Value::Object(parsed_fields));
+                    }
                 }
+                run_mutation_command(client, "items.create", params, dry_run)?
+            } else {
+                return Err("INVALID_ARGS: provide one of --doi, --isbn, --from-url, --file, or --type".into());
             }
-            run_mutation_command(client, "items.create", params, dry_run)?
         }
         ItemsCommand::Update {
             key,
@@ -4547,6 +4466,26 @@ fn run_items_command(
             client.call("items.citationKey", Some(serde_json::json!({"key": key})))?,
             JsonStyle::Pretty,
         ),
+        ItemsCommand::Path { key, .. } => (
+            localize_attachment_path_response(
+                client.call("attachments.getPath", Some(serde_json::json!({"key": key})))?,
+            ),
+            JsonStyle::Pretty,
+        ),
+        ItemsCommand::Attachments { key, offset, .. } => {
+            let value = client.call(
+                "attachments.list",
+                Some(serde_json::json!({"parentKey": key})),
+            )?;
+            let total = value
+                .get("items")
+                .and_then(Value::as_array)
+                .map_or(0, |a| a.len()) as u64;
+            (normalize_list_envelope(value, "items", Some(total), offset), JsonStyle::Pretty)
+        }
+        ItemsCommand::FindPdfs { collection, limit, .. } => {
+            run_find_pdfs_command(client, collection, limit)?
+        }
     };
     Ok((value, style))
 }
@@ -4970,100 +4909,6 @@ fn is_zotero_pdf_sort_index(value: &str) -> bool {
     )
 }
 
-fn run_attachments_command(
-    command: AttachmentsCommand,
-    client: &mut impl RpcCaller,
-) -> Result<(Value, JsonStyle), String> {
-    let value = match command {
-        AttachmentsCommand::List {
-            parent,
-            limit,
-            offset,
-            ..
-        } => normalize_list_envelope(
-            client.call(
-                "attachments.list",
-                Some(serde_json::json!({"parentKey": parent})),
-            )?,
-            "items",
-            Some(limit),
-            offset,
-        ),
-        AttachmentsCommand::Get { key, .. } => {
-            client.call("attachments.get", Some(serde_json::json!({"key": key})))?
-        }
-        AttachmentsCommand::Fulltext { key, .. } => client.call(
-            "attachments.getFulltext",
-            Some(serde_json::json!({"key": key})),
-        )?,
-        AttachmentsCommand::Path { key, .. } => localize_attachment_path_response(
-            client.call("attachments.getPath", Some(serde_json::json!({"key": key})))?,
-        ),
-        AttachmentsCommand::Add {
-            parent,
-            path,
-            from_url,
-            title,
-            dry_run,
-            ..
-        } => {
-            match (path, from_url) {
-                (Some(p), None) => {
-                    let mut params = serde_json::json!({"parentKey": parent, "path": zotero_path(&p)});
-                    insert_optional_string(&mut params, "title", title);
-                    if dry_run {
-                        return Ok((
-                            dry_run_value("attachments.add", params),
-                            JsonStyle::PythonCompact,
-                        ));
-                    }
-                    return Ok((
-                        client.call("attachments.add", Some(params))?,
-                        JsonStyle::PythonCompact,
-                    ));
-                }
-                (None, Some(u)) => {
-                    let mut params = serde_json::json!({"parentKey": parent, "url": u});
-                    insert_optional_string(&mut params, "title", title);
-                    if dry_run {
-                        return Ok((
-                            dry_run_value("attachments.addByURL", params),
-                            JsonStyle::PythonCompact,
-                        ));
-                    }
-                    return Ok((
-                        client.call("attachments.addByURL", Some(params))?,
-                        JsonStyle::PythonCompact,
-                    ));
-                }
-                (Some(_), Some(_)) => {
-                    return Err("INVALID_ARGS: --path and --from-url are mutually exclusive".to_string());
-                }
-                (None, None) => {
-                    return Err("INVALID_ARGS: either --path or --from-url is required".to_string());
-                }
-            }
-        }
-        AttachmentsCommand::Delete { key, dry_run, .. } => {
-            let params = serde_json::json!({"key": key});
-            if dry_run {
-                return Ok((
-                    dry_run_value("attachments.delete", params),
-                    JsonStyle::PythonCompact,
-                ));
-            }
-            return Ok((
-                client.call("attachments.delete", Some(params))?,
-                JsonStyle::PythonCompact,
-            ));
-        }
-        AttachmentsCommand::FindPdf { parent, .. } => client.call(
-            "attachments.findPDF",
-            Some(serde_json::json!({"parentKey": parent})),
-        )?,
-    };
-    Ok((value, JsonStyle::Pretty))
-}
 
 fn localize_attachment_path_response(mut value: Value) -> Value {
     if let Some(path) = value.get("path").and_then(Value::as_str) {
@@ -5503,12 +5348,6 @@ fn resolve_mutable_collection(
         ));
     }
     Ok(key)
-}
-
-fn insert_optional_string(value: &mut Value, key: &str, maybe: Option<String>) {
-    if let (Some(map), Some(content)) = (value.as_object_mut(), maybe) {
-        map.insert(key.to_string(), Value::String(content));
-    }
 }
 
 fn normalize_collection_name(name: &str) -> String {
