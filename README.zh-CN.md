@@ -9,7 +9,7 @@
 [![crates.io](https://img.shields.io/crates/v/zotron)](https://crates.io/crates/zotron)
 [![CI](https://github.com/dianzuan/zotron/actions/workflows/ci.yml/badge.svg)](https://github.com/dianzuan/zotron/actions/workflows/ci.yml)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
-[![Zotero 8+](https://img.shields.io/badge/Zotero-8.0+-orange)](https://www.zotero.org/)
+[![Zotero 7+](https://img.shields.io/badge/Zotero-7.0+-orange)](https://www.zotero.org/)
 
 [为什么选 Zotron？](#为什么选-zotron) · [功能](#功能) · [安装](#安装) · [Agent 集成](#agent-集成) · [CLI 参考](#cli-参考) · [常见问题](#常见问题) · [English](README.md)
 
@@ -27,7 +27,7 @@ Zotron 是一个本地 Rust CLI，直接对接 Zotero 内部 JS API——完整�
 
 - **阅读**论文内容、元数据和笔记。`items fulltext` 返回 PDF 附件的缓存文本。`items get` 返回结构化元数据（标题、作者、日期、期刊、DOI、标签、集合）。`notes list` 在有 OCR 结果时包含 OCR markdown。
 
-- **标注** PDF——引用一段文字，Zotron 自动在 PDF 中定位并创建高亮，不需要打开 PDF 阅读器。支持高亮和下划线两种类型，支持 Zotero 内置的 8 种颜色。
+- **标注** PDF——引用一段文字，Zotron 自动在 PDF 中定位并创建高亮，不需要打开 PDF 阅读器。自动处理 Unicode 标点差异（弯引号、全角标点）和跨页引用。支持高亮和下划线两种类型，支持 Zotero 内置的 8 种颜色。
 
 - **导出**引用——BibTeX、APA、Chicago 或任何 CSL 样式。可以导出单个条目、多个条目或整个集合。输出到 stdout，按需重定向到文件。
 

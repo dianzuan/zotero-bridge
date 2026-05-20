@@ -121,9 +121,14 @@ zotron annotations create ATT_KEY --quote "要高亮的文字"
 # With color for a specific dimension
 zotron annotations create ATT_KEY --quote "研究基于..." --color "#56B4E9" --comment "背景"
 
+# Dry-run to verify the quote is found before creating the annotation
+zotron annotations create ATT_KEY --quote "要高亮的文字" --dry-run
+
 # With explicit type/color/position (for non-text annotations)
 zotron annotations create ATT_KEY --type image --position '{"pageIndex":0,"rects":[[10,20,30,40]]}'
 ```
+
+`--quote` handles Unicode punctuation variants automatically (curly quotes ↔ straight quotes, fullwidth ↔ halfwidth CJK punctuation). Quotes that span a page boundary are detected and create one annotation per page segment.
 
 **Annotation color convention** (Okabe-Ito colorblind-safe palette):
 

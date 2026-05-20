@@ -9,7 +9,7 @@ Let AI agents read, search, and annotate your Zotero library.
 [![crates.io](https://img.shields.io/crates/v/zotron)](https://crates.io/crates/zotron)
 [![CI](https://github.com/dianzuan/zotron/actions/workflows/ci.yml/badge.svg)](https://github.com/dianzuan/zotron/actions/workflows/ci.yml)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
-[![Zotero 8+](https://img.shields.io/badge/Zotero-8.0+-orange)](https://www.zotero.org/)
+[![Zotero 7+](https://img.shields.io/badge/Zotero-7.0+-orange)](https://www.zotero.org/)
 
 [Why Zotron?](#why-zotron) · [What it does](#what-it-does) · [Install](#install) · [For agents](#for-agents) · [CLI reference](#cli-reference) · [FAQ](#faq) · [中文](README.zh-CN.md)
 
@@ -27,7 +27,7 @@ Once installed, your agent can:
 
 - **Read** paper content, metadata, and notes. `items fulltext` returns the cached text of a PDF attachment. `items get` returns structured metadata (title, authors, date, journal, DOI, tags, collections). `notes list` includes OCR markdown when available.
 
-- **Annotate** PDFs by quoting text. Pass `--quote "the sentence you want"` and Zotron locates it in the PDF and creates a highlight at the correct position — without opening the PDF in Zotero's reader. Works for highlight and underline types. Supports Zotero's 8 built-in colors.
+- **Annotate** PDFs by quoting text. Pass `--quote "the sentence you want"` and Zotron locates it in the PDF and creates a highlight at the correct position — without opening the PDF in Zotero's reader. Handles Unicode punctuation variants (curly quotes, fullwidth CJK punctuation) and quotes that span page boundaries. Works for highlight and underline types. Supports Zotero's 8 built-in colors.
 
 - **Export** citations as BibTeX, APA, Chicago, or any CSL style. Export a single item, multiple items, or an entire collection. Output goes to stdout, redirect to a file as needed.
 
