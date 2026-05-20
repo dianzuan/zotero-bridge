@@ -18,7 +18,11 @@ body:
     validations:
       required: true
   - type: textarea
-    id: proposed-solution
+    id: example
     attributes:
-      label: Proposed Solution
-      description: If you have ideas on how this could work, describe them here.
+      label: Example
+      description: Show how you'd use this feature — a CLI invocation, expected output, or workflow.
+      placeholder: |
+        ```
+        zotron search "attention mechanism" --after 2024 --collection MyProject
+        ```

@@ -1,6 +1,6 @@
 # Export
 
-Generate formatted citations from papers in the user's Zotero library. For Chinese academic writing default to GB/T 7714.
+Generate formatted citations from papers in the user's Zotero library. CLI defaults to APA style; for Chinese academic writing, specify GB/T 7714 via `--style`.
 
 ## Workflow
 
@@ -18,22 +18,23 @@ zotron export --format bibliography YR5BUGHG BF4I9QX4 X6LYTXEJ
 
 | Format | When to use | Command |
 |--------|------------|---------|
-| **GB/T 7714** (default) | Chinese academic papers, 中文参考文献 | `zotron export --format bibliography` |
-| BibTeX (default format) | LaTeX users, .bib file | `zotron export` |
+| BibTeX (default) | LaTeX users, .bib file | `zotron export` |
+| **GB/T 7714** | Chinese academic papers, 中文参考文献 | `zotron export --format bibliography --style http://www.zotero.org/styles/china-national-standard-gb-t-7714-2015-numeric` |
+| APA | Default bibliography style | `zotron export --format bibliography` |
 | RIS | EndNote/other reference managers | `zotron export --format ris` |
 | CSL-JSON | Programmatic use | `zotron export --format csl-json` |
 
-## GB/T 7714 (中文学术默认)
+## GB/T 7714 (中文学术)
 
 ```bash
-zotron export --format bibliography YR5BUGHG BF4I9QX4 X6LYTXEJ
+zotron export --format bibliography --style http://www.zotero.org/styles/china-national-standard-gb-t-7714-2015-numeric YR5BUGHG BF4I9QX4 X6LYTXEJ
 ```
 
 Returns both `html` and `text` versions. Use `text` for plain output.
 
-For the author-date variant:
+For the APA style (default when no `--style` is specified):
 ```bash
-zotron export --format bibliography YR5BUGHG --style apa
+zotron export --format bibliography YR5BUGHG
 ```
 
 ## BibTeX
