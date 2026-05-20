@@ -45,7 +45,7 @@ zotron collections get-items "宏观因子" --limit 20
 zotron items get YR5BUGHG
 zotron items fulltext YR5BUGHG
 zotron notes list --parent YR5BUGHG
-zotron attachments list --parent YR5BUGHG
+zotron items attachments YR5BUGHG
 zotron annotations list YR5BUGHG
 zotron annotations create YR5BUGHG --quote "要高亮的文字"  # works headlessly, no PDF viewer required
 zotron tags add YR5BUGHG --tag "已读"
@@ -54,7 +54,7 @@ zotron export YR5BUGHG
 zotron settings list
 zotron system schema                   # item types, fields, creator types
 zotron system schema --type journalArticle  # fields for a specific type
-zotron system list-methods
+zotron system methods
 ```
 
 **Keys (primary):** All item-scoped commands accept an 8-char item key (`YR5BUGHG`) as the primary identifier. RPC params use `key`/`parentKey`/`keys` — never `id`/`parentId`. Collections accept 8-char key or name (`"数字经济"`).
@@ -79,5 +79,5 @@ The CLI does not have built-in `--jq`; use external `jq`.
 **Discovery:**
 - `zotron --help` — list all namespaces
 - `zotron <namespace> --help` — list subcommands in a namespace
-- `zotron system list-methods` — list all RPC methods
-- `zotron system describe items.get` — describe a specific method's parameters
+- `zotron system methods` — list all RPC methods
+- `zotron system methods items.get` — describe a specific method's parameters
