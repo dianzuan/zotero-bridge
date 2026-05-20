@@ -83,17 +83,11 @@ zotron items get YR5BUGHG
 # Get fulltext from an item (auto-finds the PDF attachment)
 zotron items fulltext YR5BUGHG
 
-# Or get fulltext directly from a specific attachment
-zotron attachments fulltext ATT_KEY
+# Get the local file path of an item's PDF attachment
+zotron items path ATT_KEY
 
-# Get attachment metadata (contentType, path, linkMode)
-zotron attachments get ATT_KEY
-
-# Get the local file path of an attachment
-zotron attachments path ATT_KEY
-
-# List attachments
-zotron attachments list --parent YR5BUGHG
+# List attachments belonging to an item
+zotron items attachments YR5BUGHG
 
 # Notes (includes OCR markdown when OCR'd — filter for "ocr" tag)
 zotron notes list --parent YR5BUGHG

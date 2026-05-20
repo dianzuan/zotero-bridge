@@ -12,7 +12,7 @@ Choose the command based on what the user provides:
 | URL (journal site) | `zotron items add --from-url` | `zotron items add --from-url "https://..."` |
 | ISBN | `zotron items add --isbn` | `zotron items add --isbn 978-7-...` |
 | Local PDF file | `zotron items add --file` | `zotron items add --file /path/to/paper.pdf` |
-| Manual entry | `zotron items create` | See below |
+| Manual entry | `zotron items add --type` | See below |
 
 ```bash
 # By DOI (most reliable)
@@ -31,7 +31,7 @@ zotron items add --from-url "https://doi.org/10.1234/example" --collection "My P
 zotron items add --isbn 978-7-111-55555-5
 
 # Manual creation
-zotron items create --type journalArticle --field title="论文标题" --field date="2024" --field publicationTitle="经济研究"
+zotron items add --type journalArticle --field title="论文标题" --field date="2024" --field publicationTitle="经济研究"
 ```
 
 CJK author names with only a lastName (empty firstName) are stored in single-field mode (`fieldMode=1`), keeping the full name intact. This matches the behavior of Jasminum and CNKI translators — no auto-splitting into surname/given name.
@@ -130,17 +130,17 @@ zotron items merge-duplicates YR5BUGHG ABC12345
 ## Attachments
 
 ```bash
-# Add a local file as attachment
-zotron attachments add --parent YR5BUGHG /path/to/paper.pdf
+# List attachments on an item
+zotron items attachments YR5BUGHG
 
-# Add a remote URL as attachment
-zotron attachments add --from-url https://example.com/paper.pdf --parent YR5BUGHG
+# Get local file path of an item's PDF
+zotron items path YR5BUGHG
 
-# Auto-find and attach PDF from online sources
-zotron attachments find-pdf --parent YR5BUGHG
+# Attach a local file (via rpc)
+zotron rpc attachments.add '{"parentKey":"YR5BUGHG","path":"/path/to/paper.pdf"}'
 
-# Delete an attachment
-zotron attachments delete ATT_KEY
+# Attach a remote URL (via rpc)
+zotron rpc attachments.addByURL '{"parentKey":"YR5BUGHG","url":"https://example.com/paper.pdf"}'
 ```
 
 ## Notes
@@ -166,7 +166,7 @@ zotron notes search "量化分析" --limit 20
 
 ```bash
 # Find and attach PDFs for all items missing one in a collection
-zotron find-pdfs --collection "数字经济" --limit 20
+zotron items find-pdfs --collection "数字经济" --limit 20
 ```
 
 ## Push prepared items
