@@ -181,6 +181,58 @@ describe("findQuoteInChars", () => {
     expect(findQuoteInChars([], "hello")).to.be.null;
   });
 
+  it("matches when PDF has curly quotes but query has straight quotes", () => {
+    // PDF chars use “/”, query uses ASCII "
+    const chars = [
+      ch("“", [0, 0, 5, 10]),   // "
+      ch("创", [5, 0, 15, 10]),
+      ch("新", [15, 0, 25, 10]),
+      ch("”", [25, 0, 30, 10]), // "
+    ];
+    const result = findQuoteInChars(chars, '"创新"');
+    expect(result).to.not.be.null;
+    expect(result!.offsetStart).to.equal(0);
+    expect(result!.offsetEnd).to.equal(3);
+  });
+
+  it("matches when query has curly quotes but PDF has straight quotes", () => {
+    const chars = [
+      ch('"', [0, 0, 5, 10]),
+      ch("测", [5, 0, 15, 10]),
+      ch("试", [15, 0, 25, 10]),
+      ch('"', [25, 0, 30, 10]),
+    ];
+    const result = findQuoteInChars(chars, "“测试”");
+    expect(result).to.not.be.null;
+    expect(result!.offsetStart).to.equal(0);
+    expect(result!.offsetEnd).to.equal(3);
+  });
+
+  it("matches fullwidth quotation marks against curly quotes", () => {
+    const chars = [
+      ch("＂", [0, 0, 5, 10]),   // fullwidth "
+      ch("数", [5, 0, 15, 10]),
+      ch("据", [15, 0, 25, 10]),
+      ch("＂", [25, 0, 30, 10]),
+    ];
+    const result = findQuoteInChars(chars, "“数据”");
+    expect(result).to.not.be.null;
+    expect(result!.offsetStart).to.equal(0);
+    expect(result!.offsetEnd).to.equal(3);
+  });
+
+  it("normalizes single quote variants", () => {
+    const chars = [
+      ch("‘", [0, 0, 5, 10]),   // '
+      ch("x", [5, 0, 10, 10]),
+      ch("’", [10, 0, 15, 10]), // '
+    ];
+    const result = findQuoteInChars(chars, "'x'");
+    expect(result).to.not.be.null;
+    expect(result!.offsetStart).to.equal(0);
+    expect(result!.offsetEnd).to.equal(2);
+  });
+
   it("skips ignorable chars when building text and adjusts offsets", () => {
     const chars = [
       ch("H", [0, 0, 5, 10]),
