@@ -2,25 +2,21 @@
 // Copyright (C) 2026 diamondrill
 // zotron/src/handlers/items.ts
 import { registerHandlers } from "../server";
-import { splitChineseName, CJK_REGEX } from "../utils/chinese-name";
+import { CJK_REGEX } from "../utils/chinese-name";
 import { serializeItem } from "../utils/serialize";
 import { creatorKeyName, extractYear } from "../utils/citation-key";
 import { requireItem, requireCollection, resolveItems } from "../utils/guards";
 import { sanitizePath } from "../utils/safe-path";
 
-/** Auto-split a creator's CJK name when firstName is empty and lastName
- *  contains 2+ CJK characters. Callers that pre-split (firstName set) pass
- *  through unchanged. Non-CJK names also pass through. */
-function autoSplitCreator(c: { firstName: string; lastName: string; creatorType: string }) {
-  // Only auto-split when caller clearly left firstName empty AND lastName
-  // looks like a full Chinese name (≥ 2 CJK chars).
+/** Normalize a creator entry. CJK full names with empty firstName are stored
+ *  in single-field mode (fieldMode=1) instead of being split — matches
+ *  Jasminum/CNKI translator behavior. */
+function normalizeCreator(c: { firstName: string; lastName: string; creatorType: string; fieldMode?: number }) {
   if (c.firstName && c.firstName.length > 0) return c;
   if (!c.lastName || !CJK_REGEX.test(c.lastName)) return c;
-  // Count CJK chars; single-character surnames like 李 need no splitting.
   const cjkChars = Array.from(c.lastName).filter(ch => CJK_REGEX.test(ch));
   if (cjkChars.length < 2) return c;
-  const split = splitChineseName(c.lastName);
-  return { ...c, firstName: split.firstName, lastName: split.lastName };
+  return { ...c, fieldMode: 1 };
 }
 
 /**
@@ -60,7 +56,7 @@ async function findDupByDOIOrTitle(fields?: Record<string, string>): Promise<str
 
 function applyFields(
   zotItem: Zotero.Item,
-  input: { fields?: Record<string, string>; creators?: Array<{ firstName: string; lastName: string; creatorType: string }>; tags?: string[] },
+  input: { fields?: Record<string, string>; creators?: Array<{ firstName: string; lastName: string; creatorType: string; fieldMode?: number }>; tags?: string[] },
 ) {
   if (input.fields) {
     for (const [field, value] of Object.entries(input.fields)) {
@@ -68,7 +64,7 @@ function applyFields(
     }
   }
   if (input.creators) {
-    zotItem.setCreators(input.creators.map(c => autoSplitCreator(c)) as any);
+    zotItem.setCreators(input.creators.map(c => normalizeCreator(c)) as any);
   }
   if (input.tags && input.tags.length > 0) {
     for (const existing of zotItem.getTags()) zotItem.removeTag(existing.tag);
@@ -100,7 +96,7 @@ export const itemsHandlers = {
   async create(params: {
     itemType: string;
     fields?: Record<string, string>;
-    creators?: Array<{ firstName: string; lastName: string; creatorType: string }>;
+    creators?: Array<{ firstName: string; lastName: string; creatorType: string; fieldMode?: number }>;
     tags?: string[];
     collections?: number[];
   }) {
@@ -115,11 +111,7 @@ export const itemsHandlers = {
 
     if (params.creators) {
       item.setCreators(
-        params.creators.map((c) => autoSplitCreator({
-          firstName: c.firstName,
-          lastName: c.lastName,
-          creatorType: c.creatorType,
-        })) as any
+        params.creators.map((c) => normalizeCreator(c)) as any
       );
     }
 
@@ -142,7 +134,7 @@ export const itemsHandlers = {
   async update(params: {
     key: number | string;
     fields?: Record<string, string>;
-    creators?: Array<{ firstName: string; lastName: string; creatorType: string }>;
+    creators?: Array<{ firstName: string; lastName: string; creatorType: string; fieldMode?: number }>;
     tags?: string[];
   }) {
     const item = await requireItem(params.key);
@@ -154,14 +146,8 @@ export const itemsHandlers = {
     }
 
     if (params.creators) {
-      // Same auto-split as items.create so re-push metadata updates keep
-      // compound-surname behavior (欧阳 → 欧阳/修).
       item.setCreators(
-        params.creators.map((c) => autoSplitCreator({
-          firstName: c.firstName,
-          lastName: c.lastName,
-          creatorType: c.creatorType,
-        })) as any
+        params.creators.map((c) => normalizeCreator(c)) as any
       );
     }
 
@@ -462,7 +448,7 @@ export const itemsHandlers = {
     item: {
       itemType?: string;
       fields?: Record<string, string>;
-      creators?: Array<{ firstName: string; lastName: string; creatorType: string }>;
+      creators?: Array<{ firstName: string; lastName: string; creatorType: string; fieldMode?: number }>;
       tags?: string[];
     };
     pdf?: string;
