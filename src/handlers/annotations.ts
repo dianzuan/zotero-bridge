@@ -50,12 +50,12 @@ async function resolveQuotePosition(
   attachment: Zotero.Item,
   quote: string,
   pageIndex?: number,
-): Promise<QuotePosition> {
+): Promise<QuotePosition[]> {
   // Fast path: if Reader is open, use its cached chars
   const existingReader = findOpenReaderForAttachment(attachment);
   if (existingReader) {
     const cached = searchReaderChars(existingReader, quote, pageIndex);
-    if (cached) return cached;
+    if (cached) return [cached];
   }
 
   // Primary path: extract all pages in parallel, cache, then search
@@ -69,11 +69,36 @@ async function resolveQuotePosition(
     if (!chars || chars.length === 0) continue;
     const match = findQuoteInChars(chars, quote);
     if (match) {
-      return {
+      return [{
         pageIndex: pi,
         rects: getRangeRects(chars, match.offsetStart, match.offsetEnd),
         charOffset: match.offsetStart,
-      };
+      }];
+    }
+  }
+
+  // Cross-page fallback: split the quote at every position and search
+  // each half independently on adjacent pages. No concatenation needed,
+  // so footnotes / page numbers / running headers don't interfere.
+  if (pageIndex === undefined) {
+    const MIN_HALF = 2;
+    for (let pi = 0; pi < allChars.length - 1; pi++) {
+      const charsA = allChars[pi];
+      const charsB = allChars[pi + 1];
+      if (!charsA?.length || !charsB?.length) continue;
+
+      for (let k = MIN_HALF; k <= quote.length - MIN_HALF; k++) {
+        const left = quote.slice(0, k);
+        const right = quote.slice(k);
+        const matchA = findQuoteInChars(charsA, left);
+        const matchB = findQuoteInChars(charsB, right);
+        if (matchA && matchB) {
+          return [
+            { pageIndex: pi, rects: getRangeRects(charsA, matchA.offsetStart, matchA.offsetEnd), charOffset: matchA.offsetStart },
+            { pageIndex: pi + 1, rects: getRangeRects(charsB, matchB.offsetStart, matchB.offsetEnd), charOffset: matchB.offsetStart },
+          ];
+        }
+      }
     }
   }
 
@@ -153,10 +178,35 @@ export const annotationsHandlers = {
 
     let position = params.position;
     let charOffset: number | undefined;
+    let crossPagePositions: QuotePosition[] | undefined;
+
     if (params.quote && !position) {
       const resolved = await resolveQuotePosition(parent, params.quote, params.pageIndex);
-      charOffset = resolved.charOffset;
-      position = { pageIndex: resolved.pageIndex, rects: resolved.rects };
+      if (resolved.length === 1) {
+        charOffset = resolved[0].charOffset;
+        position = { pageIndex: resolved[0].pageIndex, rects: resolved[0].rects };
+      } else {
+        crossPagePositions = resolved;
+      }
+    }
+
+    if (crossPagePositions) {
+      const keys: string[] = [];
+      for (const pos of crossPagePositions) {
+        const ann = new Zotero.Item("annotation");
+        ann.libraryID = parent.libraryID;
+        ann.parentID = parent.id;
+        (ann as any).annotationType = params.type;
+        if (params.quote) (ann as any).annotationText = params.quote;
+        if (params.comment) (ann as any).annotationComment = params.comment;
+        if (params.color) (ann as any).annotationColor = params.color;
+        const annPos = { pageIndex: pos.pageIndex, rects: pos.rects };
+        (ann as any).annotationPosition = JSON.stringify(annPos);
+        (ann as any).annotationSortIndex = normalizeAnnotationSortIndex(annPos, params.sortIndex, pos.charOffset);
+        await ann.saveTx();
+        keys.push(ann.key);
+      }
+      return { ok: true, key: keys[0], keys, attachmentKey: parent.key };
     }
 
     const ann = new Zotero.Item("annotation");

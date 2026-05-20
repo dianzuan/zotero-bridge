@@ -45,6 +45,29 @@ export function getTextFromChars(chars: CharData[]): string {
 // CJK Unicode ranges for whitespace normalization
 const CJK_RE = /[⺀-鿿豈-﫿︰-﹏]/;
 
+// Normalize Unicode punctuation variants so PDF char data and user queries
+// match regardless of which codepoint the font or text extraction chose.
+// Covers: quotation marks, fullwidth ↔ halfwidth CJK punctuation.
+const PUNCT_NORM: Record<string, string> = {
+  "\u201C": '"', "\u201D": '"', "\u201E": '"',
+  "\uFF02": '"',
+  "\u301D": '"', "\u301E": '"', "\u301F": '"',
+  "\u2018": "'", "\u2019": "'", "\u201A": "'",
+  "\uFF07": "'",
+  "\uFF0C": ",", "\u3001": ",",
+  "\uFF0E": ".", "\u3002": ".",
+  "\uFF1B": ";",
+  "\uFF1A": ":",
+  "\uFF01": "!",
+  "\uFF1F": "?",
+  "\uFF08": "(", "\uFF09": ")",
+  "\u2014": "-", "\u2013": "-", "\uFF0D": "-",
+};
+
+function normChar(c: string): string {
+  return PUNCT_NORM[c] || c;
+}
+
 /**
  * Build a normalized version of `text` with a position map back to original indices.
  *
@@ -59,7 +82,7 @@ function buildNormalized(text: string, mode: "cjk" | "strip"): { text: string; o
   if (mode === "strip") {
     for (let i = 0; i < text.length; i++) {
       if (!/\s/.test(text[i])) {
-        out.push(text[i]);
+        out.push(normChar(text[i]));
         originMap.push(i);
       }
     }
@@ -80,7 +103,7 @@ function buildNormalized(text: string, mode: "cjk" | "strip"): { text: string; o
         originMap.push(i - 1);
       }
     } else {
-      out.push(text[i]);
+      out.push(normChar(text[i]));
       originMap.push(i);
       i++;
     }
