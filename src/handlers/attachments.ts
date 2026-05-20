@@ -70,7 +70,7 @@ export const attachmentsHandlers = {
   },
 
   async getFulltextByPage(params: { key: number | string }) {
-    const attachment = await requirePdfAttachment(params.key);
+    const { attachment } = await requirePdfAttachment(params.key);
 
     const result = await (Zotero as any).PDFWorker.getFullText(attachment.id);
     const fullText: string = result?.text ?? "";

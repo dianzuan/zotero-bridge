@@ -844,15 +844,23 @@ struct ExportArgs {
 
 #[derive(Debug, Subcommand)]
 enum AnnotationsCommand {
-    /// List annotations on a PDF attachment.
+    /// List annotations on a PDF. Accepts an item key (auto-resolves to PDF) or attachment key.
     List {
+        /// Item key or attachment key
         parent: String,
+        /// Use a specific attachment when the item has multiple PDFs
+        #[arg(long)]
+        attachment: Option<String>,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
-    /// Create a new annotation on a PDF attachment.
+    /// Create a new annotation on a PDF. Accepts an item key (auto-resolves to PDF) or attachment key.
     Create {
+        /// Item key or attachment key
         parent: String,
+        /// Use a specific attachment when the item has multiple PDFs
+        #[arg(long)]
+        attachment: Option<String>,
         #[arg(long = "type")]
         annotation_type: Option<String>,
         /// JSON annotation position, for example '{"pageIndex":0,"rects":[[10,20,30,40]]}'.
@@ -4785,11 +4793,12 @@ fn run_annotations_command(
     client: &mut impl RpcCaller,
 ) -> Result<(Value, JsonStyle), String> {
     let (value, style) = match command {
-        AnnotationsCommand::List { parent, .. } => {
-            let value = client.call(
-                "annotations.list",
-                Some(serde_json::json!({"parentKey": parent})),
-            )?;
+        AnnotationsCommand::List { parent, attachment, .. } => {
+            let mut params = serde_json::json!({"parentKey": parent});
+            if let Some(att) = attachment {
+                params["attachmentKey"] = Value::String(att);
+            }
+            let value = client.call("annotations.list", Some(params))?;
             let total = value
                 .get("items")
                 .and_then(Value::as_array)
@@ -4798,6 +4807,7 @@ fn run_annotations_command(
         }
         AnnotationsCommand::Create {
             parent,
+            attachment,
             annotation_type,
             position,
             quote,
@@ -4820,6 +4830,9 @@ fn run_annotations_command(
             }
             let mut params = serde_json::Map::new();
             params.insert("parentKey".to_string(), Value::String(parent));
+            if let Some(att) = attachment {
+                params.insert("attachmentKey".to_string(), Value::String(att));
+            }
             params.insert("type".to_string(), Value::String(annotation_type.clone()));
             params.insert("color".to_string(), Value::String(color));
 

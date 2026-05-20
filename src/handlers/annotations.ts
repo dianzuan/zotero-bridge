@@ -136,10 +136,14 @@ function getAllReaders(): any[] {
 }
 
 export const annotationsHandlers = {
-  async list(params: { parentKey: number | string }) {
-    const attachment = await requirePdfAttachment(params.parentKey);
+  async list(params: { parentKey: number | string; attachmentKey?: string }) {
+    const { attachment, otherAttachments } = await requirePdfAttachment(params.parentKey, params.attachmentKey);
     const annotationRefs: any[] = (attachment as any).getAnnotations?.() ?? [];
-    if (annotationRefs.length === 0) return { items: [], total: 0, attachmentKey: attachment.key };
+    if (annotationRefs.length === 0) {
+      const result: Record<string, any> = { items: [], total: 0, attachmentKey: attachment.key };
+      if (otherAttachments.length > 0) result.otherAttachments = otherAttachments;
+      return result;
+    }
     const anns = await resolveAnnotationRefs(attachment.libraryID, annotationRefs);
     const items = anns.map((a: any) => {
       const data = serializeItem(a);
@@ -150,11 +154,14 @@ export const annotationsHandlers = {
       data.annotationPosition = a.annotationPosition ? JSON.parse(a.annotationPosition) : null;
       return data;
     });
-    return { items, total: items.length, attachmentKey: attachment.key };
+    const result: Record<string, any> = { items, total: items.length, attachmentKey: attachment.key };
+    if (otherAttachments.length > 0) result.otherAttachments = otherAttachments;
+    return result;
   },
 
   async create(params: {
     parentKey: number | string;
+    attachmentKey?: string;
     type: string;
     text?: string;
     comment?: string;
@@ -164,7 +171,7 @@ export const annotationsHandlers = {
     pageIndex?: number;
     sortIndex?: unknown;
   }) {
-    const parent = await requirePdfAttachment(params.parentKey);
+    const { attachment: parent, otherAttachments } = await requirePdfAttachment(params.parentKey, params.attachmentKey);
     const validation = validateAnnotationParams({
       type: params.type as any,
       text: params.text,
@@ -206,7 +213,9 @@ export const annotationsHandlers = {
         await ann.saveTx();
         keys.push(ann.key);
       }
-      return { ok: true, key: keys[0], keys, attachmentKey: parent.key };
+      const result: Record<string, any> = { ok: true, key: keys[0], keys, attachmentKey: parent.key };
+      if (otherAttachments.length > 0) result.otherAttachments = otherAttachments;
+      return result;
     }
 
     const ann = new Zotero.Item("annotation");
@@ -224,7 +233,9 @@ export const annotationsHandlers = {
       charOffset,
     );
     await ann.saveTx();
-    return { ok: true, key: ann.key, attachmentKey: parent.key };
+    const result: Record<string, any> = { ok: true, key: ann.key, attachmentKey: parent.key };
+    if (otherAttachments.length > 0) result.otherAttachments = otherAttachments;
+    return result;
   },
 
   async delete(params: { key: number | string }) {
