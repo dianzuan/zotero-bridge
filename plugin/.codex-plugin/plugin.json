@@ -1,6 +1,6 @@
 {
   "name": "zotron",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Zotero library bridge for Codex: search, manage, export, OCR, and RAG over local papers.",
   "author": {
     "name": "diamondrill",
