@@ -416,6 +416,7 @@ export const itemsHandlers = {
       if (att && att.isAttachment() && (att as any).attachmentContentType === "application/pdf") {
         const cacheFile = Zotero.Fulltext.getItemCacheFile(att);
         let content = "";
+        let fromFallback = false;
         try {
           content = (await Zotero.File.getContentsAsync(cacheFile.path) as string) ?? "";
         } catch { content = ""; }
@@ -425,6 +426,7 @@ export const itemsHandlers = {
           try {
             const result = await (Zotero as any).PDFWorker.getFullText(att.id);
             content = (result?.text ?? "").replace(/\f/g, "\n");
+            if (content) fromFallback = true;
           } catch { /* PDFWorker unavailable */ }
         }
 
@@ -436,8 +438,8 @@ export const itemsHandlers = {
         return {
           key: att.key,
           content: content ?? "",
-          indexedChars: content ? content.length : (meta.indexedChars ?? 0),
-          totalChars: content ? content.length : (meta.totalChars ?? 0),
+          indexedChars: fromFallback ? content.length : (meta.indexedChars ?? 0),
+          totalChars: fromFallback ? content.length : (meta.totalChars ?? 0),
         };
       }
     }

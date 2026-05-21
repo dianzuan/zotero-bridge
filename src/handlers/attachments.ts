@@ -45,6 +45,7 @@ export const attachmentsHandlers = {
 
     const cacheFile = Zotero.Fulltext.getItemCacheFile(item);
     let content = "";
+    let fromFallback = false;
     try {
       content = (await Zotero.File.getContentsAsync(cacheFile.path) as string) ?? "";
     } catch {
@@ -56,6 +57,7 @@ export const attachmentsHandlers = {
       try {
         const result = await (Zotero as any).PDFWorker.getFullText(item.id);
         content = (result?.text ?? "").replace(/\f/g, "\n");
+        if (content) fromFallback = true;
       } catch { /* PDFWorker unavailable */ }
     }
 
@@ -70,8 +72,8 @@ export const attachmentsHandlers = {
     return {
       key: item.key,
       content: content ?? "",
-      indexedChars: content ? content.length : (meta.indexedChars ?? 0),
-      totalChars: content ? content.length : (meta.totalChars ?? 0),
+      indexedChars: fromFallback ? content.length : (meta.indexedChars ?? 0),
+      totalChars: fromFallback ? content.length : (meta.totalChars ?? 0),
     };
   },
 
