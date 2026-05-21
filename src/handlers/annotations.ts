@@ -5,7 +5,7 @@ import { registerHandlers } from "../server";
 import { serializeItem } from "../utils/serialize";
 import { requireItem, requirePdfAttachment } from "../utils/guards";
 import { validateAnnotationParams } from "../utils/annotation";
-import { findQuoteInChars, getRangeRects } from "../utils/pdf-locate";
+import { findQuoteInChars, getRangeRects, getTextFromChars } from "../utils/pdf-locate";
 
 interface QuotePosition {
   pageIndex: number;
@@ -135,8 +135,71 @@ function getAllReaders(): any[] {
   }
 }
 
+interface AnnotationInput {
+  type?: string;
+  text?: string;
+  comment?: string;
+  color?: string;
+  position?: any;
+  quote?: string;
+  pageIndex?: number;
+  sortIndex?: unknown;
+}
+
+async function saveOneAnnotation(
+  parent: Zotero.Item,
+  ann: AnnotationInput,
+): Promise<string[]> {
+  const type = ann.type ?? "highlight";
+  let position = ann.position;
+  let charOffset: number | undefined;
+  let crossPagePositions: QuotePosition[] | undefined;
+
+  if (ann.quote && !position) {
+    const resolved = await resolveQuotePosition(parent, ann.quote, ann.pageIndex);
+    if (resolved.length === 1) {
+      charOffset = resolved[0].charOffset;
+      position = { pageIndex: resolved[0].pageIndex, rects: resolved[0].rects };
+    } else {
+      crossPagePositions = resolved;
+    }
+  }
+
+  if (crossPagePositions) {
+    const keys: string[] = [];
+    for (const pos of crossPagePositions) {
+      const item = new Zotero.Item("annotation");
+      item.libraryID = parent.libraryID;
+      item.parentID = parent.id;
+      (item as any).annotationType = type;
+      if (ann.quote) (item as any).annotationText = ann.quote;
+      if (ann.comment) (item as any).annotationComment = ann.comment;
+      if (ann.color) (item as any).annotationColor = ann.color;
+      const annPos = { pageIndex: pos.pageIndex, rects: pos.rects };
+      (item as any).annotationPosition = JSON.stringify(annPos);
+      (item as any).annotationSortIndex = normalizeAnnotationSortIndex(annPos, ann.sortIndex, pos.charOffset);
+      await item.saveTx();
+      keys.push(item.key);
+    }
+    return keys;
+  }
+
+  const item = new Zotero.Item("annotation");
+  item.libraryID = parent.libraryID;
+  item.parentID = parent.id;
+  (item as any).annotationType = type;
+  const annotationText = ann.text || ann.quote;
+  if (annotationText) (item as any).annotationText = annotationText;
+  if (ann.comment) (item as any).annotationComment = ann.comment;
+  if (ann.color) (item as any).annotationColor = ann.color;
+  (item as any).annotationPosition = JSON.stringify(position);
+  (item as any).annotationSortIndex = normalizeAnnotationSortIndex(position, ann.sortIndex, charOffset);
+  await item.saveTx();
+  return [item.key];
+}
+
 export const annotationsHandlers = {
-  async list(params: { parentKey: number | string; attachmentKey?: string }) {
+  async list(params: { parentKey: number | string; attachmentKey?: string; context?: number }) {
     const { attachment, otherAttachments } = await requirePdfAttachment(params.parentKey, params.attachmentKey);
     const annotationRefs: any[] = (attachment as any).getAnnotations?.() ?? [];
     if (annotationRefs.length === 0) {
@@ -145,13 +208,30 @@ export const annotationsHandlers = {
       return result;
     }
     const anns = await resolveAnnotationRefs(attachment.libraryID, annotationRefs);
+
+    let allChars: import("../utils/pdf-locate").CharData[][] | null = null;
+    const contextChars = typeof params.context === "number" && params.context > 0 ? params.context : 0;
+    if (contextChars > 0) {
+      // @ts-expect-error — lazy require for test mockability
+      const pdfExtract: typeof import("../utils/pdf-extract") = require("../utils/pdf-extract");
+      allChars = await pdfExtract.extractAllPagesChars(attachment);
+    }
+
     const items = anns.map((a: any) => {
       const data = serializeItem(a);
       data.annotationType = a.annotationType;
       data.annotationText = a.annotationText || "";
       data.annotationComment = a.annotationComment || "";
       data.annotationColor = a.annotationColor || "";
-      data.annotationPosition = a.annotationPosition ? JSON.parse(a.annotationPosition) : null;
+      const pos = a.annotationPosition ? JSON.parse(a.annotationPosition) : null;
+      data.annotationPosition = pos;
+
+      if (allChars && pos && typeof pos.pageIndex === "number") {
+        const pageChars = allChars[pos.pageIndex];
+        if (pageChars && pageChars.length > 0) {
+          data.contextText = extractContextText(pageChars, a.annotationText || "", contextChars);
+        }
+      }
       return data;
     });
     const result: Record<string, any> = { items, total: items.length, attachmentKey: attachment.key };
@@ -183,57 +263,85 @@ export const annotationsHandlers = {
     });
     if (!validation.ok) throw { code: -32602, message: validation.message };
 
-    let position = params.position;
-    let charOffset: number | undefined;
-    let crossPagePositions: QuotePosition[] | undefined;
+    const keys = await saveOneAnnotation(parent, params);
+    const result: Record<string, any> = { ok: true, key: keys[0], attachmentKey: parent.key };
+    if (keys.length > 1) result.keys = keys;
+    if (otherAttachments.length > 0) result.otherAttachments = otherAttachments;
+    return result;
+  },
 
-    if (params.quote && !position) {
-      const resolved = await resolveQuotePosition(parent, params.quote, params.pageIndex);
-      if (resolved.length === 1) {
-        charOffset = resolved[0].charOffset;
-        position = { pageIndex: resolved[0].pageIndex, rects: resolved[0].rects };
-      } else {
-        crossPagePositions = resolved;
+  async locate(params: {
+    parentKey: number | string;
+    attachmentKey?: string;
+    quote: string;
+    pageIndex?: number;
+  }) {
+    const { attachment } = await requirePdfAttachment(params.parentKey, params.attachmentKey);
+    const positions = await resolveQuotePosition(attachment, params.quote, params.pageIndex);
+    return {
+      found: true,
+      attachmentKey: attachment.key,
+      positions: positions.map(p => ({
+        pageIndex: p.pageIndex,
+        rects: p.rects,
+        charOffset: p.charOffset,
+      })),
+    };
+  },
+
+  async createBatch(params: {
+    parentKey: number | string;
+    attachmentKey?: string;
+    annotations: Array<{
+      type?: string;
+      text?: string;
+      comment?: string;
+      color?: string;
+      position?: any;
+      quote?: string;
+      pageIndex?: number;
+      sortIndex?: unknown;
+    }>;
+  }) {
+    if (!Array.isArray(params.annotations) || params.annotations.length === 0) {
+      throw { code: -32602, message: "annotations array is required and must not be empty" };
+    }
+    const { attachment: parent, otherAttachments } = await requirePdfAttachment(params.parentKey, params.attachmentKey);
+
+    // Pre-warm the char cache by extracting all pages once
+    // @ts-expect-error — lazy require for test mockability
+    const pdfExtract: typeof import("../utils/pdf-extract") = require("../utils/pdf-extract");
+    await pdfExtract.extractAllPagesChars(parent);
+
+    const results: Array<{ ok: true; key: string; index: number } | { ok: false; index: number; error: string }> = [];
+
+    for (let i = 0; i < params.annotations.length; i++) {
+      const ann = params.annotations[i];
+      try {
+        const validation = validateAnnotationParams({
+          type: (ann.type ?? "highlight") as any,
+          text: ann.text,
+          color: ann.color,
+          comment: ann.comment,
+          position: ann.position,
+          quote: ann.quote,
+          sortIndex: ann.sortIndex,
+        });
+        if (!validation.ok) {
+          results.push({ ok: false, index: i, error: validation.message });
+          continue;
+        }
+        const keys = await saveOneAnnotation(parent, ann);
+        results.push({ ok: true, key: keys[0], index: i });
+      } catch (e: any) {
+        const msg = e?.message ?? String(e);
+        results.push({ ok: false, index: i, error: msg });
       }
     }
 
-    if (crossPagePositions) {
-      const keys: string[] = [];
-      for (const pos of crossPagePositions) {
-        const ann = new Zotero.Item("annotation");
-        ann.libraryID = parent.libraryID;
-        ann.parentID = parent.id;
-        (ann as any).annotationType = params.type;
-        if (params.quote) (ann as any).annotationText = params.quote;
-        if (params.comment) (ann as any).annotationComment = params.comment;
-        if (params.color) (ann as any).annotationColor = params.color;
-        const annPos = { pageIndex: pos.pageIndex, rects: pos.rects };
-        (ann as any).annotationPosition = JSON.stringify(annPos);
-        (ann as any).annotationSortIndex = normalizeAnnotationSortIndex(annPos, params.sortIndex, pos.charOffset);
-        await ann.saveTx();
-        keys.push(ann.key);
-      }
-      const result: Record<string, any> = { ok: true, key: keys[0], keys, attachmentKey: parent.key };
-      if (otherAttachments.length > 0) result.otherAttachments = otherAttachments;
-      return result;
-    }
-
-    const ann = new Zotero.Item("annotation");
-    ann.libraryID = parent.libraryID;
-    ann.parentID = parent.id;
-    (ann as any).annotationType = params.type;
-    const annotationText = params.text || params.quote;
-    if (annotationText) (ann as any).annotationText = annotationText;
-    if (params.comment) (ann as any).annotationComment = params.comment;
-    if (params.color) (ann as any).annotationColor = params.color;
-    (ann as any).annotationPosition = JSON.stringify(position);
-    (ann as any).annotationSortIndex = normalizeAnnotationSortIndex(
-      position,
-      params.sortIndex,
-      charOffset,
-    );
-    await ann.saveTx();
-    const result: Record<string, any> = { ok: true, key: ann.key, attachmentKey: parent.key };
+    const succeeded = results.filter(r => r.ok).length;
+    const failed = results.filter(r => !r.ok).length;
+    const result: Record<string, any> = { results, succeeded, failed, total: params.annotations.length, attachmentKey: parent.key };
     if (otherAttachments.length > 0) result.otherAttachments = otherAttachments;
     return result;
   },
@@ -244,6 +352,42 @@ export const annotationsHandlers = {
     return { ok: true, key: item.key };
   },
 };
+
+function extractContextText(
+  chars: import("../utils/pdf-locate").CharData[],
+  annotationText: string,
+  contextChars: number,
+): { before: string; highlight: string; after: string } | null {
+  if (!annotationText) return null;
+  const match = findQuoteInChars(chars, annotationText);
+  if (!match) return null;
+
+  const fullText = getTextFromChars(chars);
+
+  // Build char-index → text-position map
+  const charToText: number[] = [];
+  let textPos = 0;
+  for (let i = 0; i < chars.length; i++) {
+    if (chars[i].ignorable) {
+      charToText.push(-1);
+      continue;
+    }
+    charToText.push(textPos);
+    textPos += 1;
+    if (chars[i].spaceAfter || chars[i].lineBreakAfter) textPos += 1;
+  }
+
+  const textStart = charToText[match.offsetStart] ?? 0;
+  const textEnd = (charToText[match.offsetEnd] ?? textStart) + 1;
+  const beforeStart = Math.max(0, textStart - contextChars);
+  const afterEnd = Math.min(fullText.length, textEnd + contextChars);
+
+  return {
+    before: fullText.slice(beforeStart, textStart),
+    highlight: fullText.slice(textStart, textEnd),
+    after: fullText.slice(textEnd, afterEnd),
+  };
+}
 
 async function resolveAnnotationRefs(libraryID: number, refs: any[]): Promise<any[]> {
   if (refs.every((ref) => typeof ref === "number" && Number.isFinite(ref))) {
