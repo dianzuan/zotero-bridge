@@ -419,6 +419,15 @@ export const itemsHandlers = {
         try {
           content = (await Zotero.File.getContentsAsync(cacheFile.path) as string) ?? "";
         } catch { content = ""; }
+
+        // Fallback: cache empty → live extraction via PDFWorker
+        if (!content) {
+          try {
+            const result = await (Zotero as any).PDFWorker.getFullText(att.id);
+            content = (result?.text ?? "").replace(/\f/g, "\n");
+          } catch { /* PDFWorker unavailable */ }
+        }
+
         const rows = ((await Zotero.DB.queryAsync(
           "SELECT indexedChars, totalChars FROM fulltextItems WHERE itemID=?",
           [att.id],
@@ -427,8 +436,8 @@ export const itemsHandlers = {
         return {
           key: att.key,
           content: content ?? "",
-          indexedChars: meta.indexedChars ?? 0,
-          totalChars: meta.totalChars ?? 0,
+          indexedChars: content ? content.length : (meta.indexedChars ?? 0),
+          totalChars: content ? content.length : (meta.totalChars ?? 0),
         };
       }
     }
