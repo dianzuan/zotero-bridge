@@ -43,14 +43,22 @@ export const attachmentsHandlers = {
     const item = await requireItem(params.key);
     if (!item.isAttachment()) throw { code: -32602, message: `Not an attachment: ${params.key}` };
 
-    // Zotero 8 has no Zotero.Fulltext.getItemContent — read the cache file and
-    // pull chars from the fulltextItems SQL row (anchored at fulltext.js#L672+L692).
     const cacheFile = Zotero.Fulltext.getItemCacheFile(item);
     let content = "";
+    let fromFallback = false;
     try {
       content = (await Zotero.File.getContentsAsync(cacheFile.path) as string) ?? "";
     } catch {
-      content = "";  // un-indexed → no cache file
+      content = "";
+    }
+
+    // Fallback: cache empty → live extraction via PDFWorker
+    if (!content && item.attachmentContentType === "application/pdf") {
+      try {
+        const result = await (Zotero as any).PDFWorker.getFullText(item.id);
+        content = (result?.text ?? "").replace(/\f/g, "\n");
+        if (content) fromFallback = true;
+      } catch { /* PDFWorker unavailable */ }
     }
 
     const rows = (
@@ -64,8 +72,8 @@ export const attachmentsHandlers = {
     return {
       key: item.key,
       content: content ?? "",
-      indexedChars: meta.indexedChars ?? 0,
-      totalChars: meta.totalChars ?? 0,
+      indexedChars: fromFallback ? content.length : (meta.indexedChars ?? 0),
+      totalChars: fromFallback ? content.length : (meta.totalChars ?? 0),
     };
   },
 

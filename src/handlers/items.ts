@@ -416,9 +416,20 @@ export const itemsHandlers = {
       if (att && att.isAttachment() && (att as any).attachmentContentType === "application/pdf") {
         const cacheFile = Zotero.Fulltext.getItemCacheFile(att);
         let content = "";
+        let fromFallback = false;
         try {
           content = (await Zotero.File.getContentsAsync(cacheFile.path) as string) ?? "";
         } catch { content = ""; }
+
+        // Fallback: cache empty → live extraction via PDFWorker
+        if (!content) {
+          try {
+            const result = await (Zotero as any).PDFWorker.getFullText(att.id);
+            content = (result?.text ?? "").replace(/\f/g, "\n");
+            if (content) fromFallback = true;
+          } catch { /* PDFWorker unavailable */ }
+        }
+
         const rows = ((await Zotero.DB.queryAsync(
           "SELECT indexedChars, totalChars FROM fulltextItems WHERE itemID=?",
           [att.id],
@@ -427,8 +438,8 @@ export const itemsHandlers = {
         return {
           key: att.key,
           content: content ?? "",
-          indexedChars: meta.indexedChars ?? 0,
-          totalChars: meta.totalChars ?? 0,
+          indexedChars: fromFallback ? content.length : (meta.indexedChars ?? 0),
+          totalChars: fromFallback ? content.length : (meta.totalChars ?? 0),
         };
       }
     }
