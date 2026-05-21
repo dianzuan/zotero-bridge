@@ -123,12 +123,22 @@ jobs:
           for dir in artifacts/zotron-*/; do
             [ -d "$dir" ] && cp "$dir"* release-assets/ 2>/dev/null || true
           done
+
+          # Stamp update.json with the actual XPI hash
+          HASH=$(sha512sum release-assets/zotron.xpi | awk '{print $1}')
+          sed "s/sha512:[a-f0-9]*/sha512:${HASH}/" update.json > release-assets/update.json
+
           ls -la release-assets/
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "${{ github.ref_name }}" release-assets/* --generate-notes
+
+      - name: Update latest tag
+        run: |
+          git tag -f latest
+          git push -f origin latest
 
   crates:
     name: Publish to crates.io
