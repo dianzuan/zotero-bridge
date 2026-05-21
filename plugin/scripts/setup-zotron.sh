@@ -25,7 +25,7 @@ case ":${PATH}:" in
     ;;
 esac
 
-REQUIRED_VERSION="${ZOTRON_REQUIRED_VERSION:-0.2.3}"
+REQUIRED_VERSION="${ZOTRON_REQUIRED_VERSION:-0.2.4}"
 GITHUB_XPI_URL="https://github.com/dianzuan/zotron/releases/download/v${REQUIRED_VERSION}/zotron.xpi"
 DEFAULT_XPI_URLS="${GITHUB_XPI_URL}
 https://gh-proxy.com/${GITHUB_XPI_URL}

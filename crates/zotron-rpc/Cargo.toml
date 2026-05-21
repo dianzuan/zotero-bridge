@@ -1,6 +1,6 @@
 [package]
 name = "zotron-rpc"
-version = "0.2.3"
+version = "0.2.4"
 description = "JSON-RPC 2.0 client for the Zotron Zotero bridge"
 authors = ["diamondrill <hongzuanlv@gmail.com>"]
 keywords = ["zotero", "jsonrpc", "rpc"]
@@ -13,4 +13,4 @@ rust-version.workspace = true
 [dependencies]
 serde_json.workspace = true
 ureq.workspace = true
-zotron-types = { version = "0.2.3", path = "../zotron-types" }
+zotron-types = { version = "0.2.4", path = "../zotron-types" }
