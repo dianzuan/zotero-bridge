@@ -850,6 +850,9 @@ enum AnnotationsCommand {
         /// Use a specific attachment when the item has multiple PDFs
         #[arg(long)]
         attachment: Option<String>,
+        /// Include N characters of surrounding text for each annotation
+        #[arg(long)]
+        context: Option<u32>,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
@@ -868,7 +871,6 @@ enum AnnotationsCommand {
         position: Option<String>,
         /// Text to locate in the PDF and highlight. Resolves to rects automatically.
         /// Locates text headlessly (no PDF viewer required).
-        /// Use with --dry-run for locate-only mode.
         #[arg(long)]
         quote: Option<String>,
         /// Restrict quote search to a specific page (0-indexed).
@@ -885,6 +887,39 @@ enum AnnotationsCommand {
         color: String,
         #[arg(long)]
         dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Batch-create annotations from a JSON array on stdin or --file.
+    /// Each entry: {"quote": "...", "color": "#hex", "comment": "...", "type": "highlight"}
+    CreateBatch {
+        /// Item key or attachment key
+        parent: String,
+        /// Use a specific attachment when the item has multiple PDFs
+        #[arg(long)]
+        attachment: Option<String>,
+        /// Read annotations from a JSON file instead of stdin
+        #[arg(long)]
+        file: Option<String>,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Locate a text quote in a PDF without creating an annotation.
+    /// Returns page index and rects if found.
+    Locate {
+        /// Item key or attachment key
+        parent: String,
+        /// Use a specific attachment when the item has multiple PDFs
+        #[arg(long)]
+        attachment: Option<String>,
+        /// Text to locate in the PDF
+        #[arg(long)]
+        quote: String,
+        /// Restrict search to a specific page (0-indexed)
+        #[arg(long)]
+        page: Option<u32>,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
@@ -1214,6 +1249,8 @@ fn command_url(command: &Command) -> String {
         Command::Annotations { command } => match command {
             AnnotationsCommand::List { url, .. }
             | AnnotationsCommand::Create { url, .. }
+            | AnnotationsCommand::CreateBatch { url, .. }
+            | AnnotationsCommand::Locate { url, .. }
             | AnnotationsCommand::Delete { url, .. } => url.clone(),
         },
     }
@@ -4732,10 +4769,13 @@ fn run_annotations_command(
     client: &mut impl RpcCaller,
 ) -> Result<(Value, JsonStyle), String> {
     let (value, style) = match command {
-        AnnotationsCommand::List { parent, attachment, .. } => {
+        AnnotationsCommand::List { parent, attachment, context, .. } => {
             let mut params = serde_json::json!({"parentKey": parent});
             if let Some(att) = attachment {
                 params["attachmentKey"] = Value::String(att);
+            }
+            if let Some(ctx) = context {
+                params["context"] = Value::Number(ctx.into());
             }
             let value = client.call("annotations.list", Some(params))?;
             let total = value
@@ -4819,6 +4859,56 @@ fn run_annotations_command(
                 params.insert("comment".to_string(), Value::String(comment));
             }
             run_mutating_command(client, "annotations.create", Value::Object(params), dry_run)?
+        }
+        AnnotationsCommand::CreateBatch {
+            parent,
+            attachment,
+            file,
+            dry_run,
+            ..
+        } => {
+            let input = if let Some(ref path) = file {
+                std::fs::read_to_string(path)
+                    .map_err(|e| format!("INVALID_ARGS: cannot read file {path}: {e}"))?
+            } else {
+                let mut buf = String::new();
+                std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)
+                    .map_err(|e| format!("INVALID_ARGS: cannot read stdin: {e}"))?;
+                buf
+            };
+            let annotations: Value = serde_json::from_str(&input)
+                .map_err(|e| format!("INVALID_JSON: {e}"))?;
+            if !annotations.is_array() {
+                return Err("INVALID_ARGS: input must be a JSON array".to_string());
+            }
+            let mut params = serde_json::json!({
+                "parentKey": parent,
+                "annotations": annotations,
+            });
+            if let Some(att) = attachment {
+                params["attachmentKey"] = Value::String(att);
+            }
+            run_mutating_command(client, "annotations.createBatch", params, dry_run)?
+        }
+        AnnotationsCommand::Locate {
+            parent,
+            attachment,
+            quote,
+            page,
+            ..
+        } => {
+            let mut params = serde_json::json!({
+                "parentKey": parent,
+                "quote": quote,
+            });
+            if let Some(att) = attachment {
+                params["attachmentKey"] = Value::String(att);
+            }
+            if let Some(page_idx) = page {
+                params["pageIndex"] = Value::Number(page_idx.into());
+            }
+            let value = client.call("annotations.locate", Some(params))?;
+            (value, JsonStyle::Pretty)
         }
         AnnotationsCommand::Delete {
             annotation_key,
