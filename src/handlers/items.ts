@@ -410,6 +410,7 @@ export const itemsHandlers = {
 
   async getFullText(params: { key: number | string }) {
     const item = await requireItem(params.key);
+    await item.loadAllData();
     const attIDs = item.getAttachments ? item.getAttachments() : [];
     for (const attID of attIDs) {
       const att = await Zotero.Items.getAsync(attID);
