@@ -469,6 +469,7 @@ describe("items handler", () => {
     it("finds first PDF attachment and returns its fulltext content", async () => {
       const parentItem: any = {
         id: 10, key: "PARENT",
+        loadAllData: sinon.stub().resolves(),
         getAttachments: () => [20, 21],
       };
       const pdfAtt: any = {
@@ -507,6 +508,7 @@ describe("items handler", () => {
     it("returns empty content when item has no PDF attachments", async () => {
       const parentItem: any = {
         id: 30, key: "NOATT",
+        loadAllData: sinon.stub().resolves(),
         getAttachments: () => [],
       };
       installZotero({
