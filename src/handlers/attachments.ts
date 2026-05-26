@@ -160,6 +160,70 @@ export const attachmentsHandlers = {
     return { ok: true, key: item.key };
   },
 
+  async rename(params: { key: number | string; name?: string; fromParent?: boolean }) {
+    const item = await requireItem(params.key);
+    if (!item.isAttachment()) {
+      throw { code: -32602, message: `Item ${params.key} is not an attachment` };
+    }
+
+    const currentPath = await (item as any).getFilePathAsync();
+    if (!currentPath) throw { code: -32603, message: `No file path for ${params.key}` };
+    const leaf: string = currentPath.replace(/^.*[/\\]/, "");
+    const dot = leaf.lastIndexOf(".");
+    const ext = dot > 0 ? leaf.slice(dot + 1) : "";
+
+    let baseName: string;
+    if (params.fromParent) {
+      const parentID = (item as any).parentItemID;
+      if (!parentID) throw { code: -32602, message: `Attachment ${params.key} has no parent` };
+      const parent = await Zotero.Items.getAsync(parentID);
+      baseName = (Zotero.Attachments as any).getFileBaseNameFromItem(parent);
+    } else if (params.name) {
+      baseName = params.name;
+    } else {
+      baseName = (item as any).getField("title") || leaf;
+    }
+
+    const newName = ext ? `${baseName}.${ext}` : baseName;
+    const renamed = await (item as any).renameAttachmentFile(newName, false, true);
+    if (!renamed) throw { code: -32603, message: `Rename failed for ${params.key}` };
+
+    const newPath = await (item as any).getFilePathAsync();
+    return { ok: true, key: item.key, filename: newName, path: newPath };
+  },
+
+  async exportPDF(params: {
+    key: number | string;
+    path: string;
+    attachmentKey?: string;
+    transfer?: boolean;
+    password?: string;
+  }) {
+    const { attachment } = await requirePdfAttachment(params.key, params.attachmentKey);
+    const outputPath = sanitizePath(params.path);
+
+    try {
+      const count: number = await (Zotero as any).PDFWorker.export(
+        attachment.id,
+        outputPath,
+        true,
+        params.password ?? undefined,
+        params.transfer ?? false,
+      );
+      return {
+        ok: true,
+        key: attachment.key,
+        path: outputPath,
+        annotationsWritten: count,
+      };
+    } catch (e: any) {
+      if (e?.name === "PasswordException") {
+        throw { code: -32602, message: "PDF is password-protected. Provide the 'password' parameter." };
+      }
+      throw { code: -32603, message: `PDF export failed: ${e?.message ?? e}` };
+    }
+  },
+
   async findPDF(params: { parentKey: number | string }) {
     const parent = await requireItem(params.parentKey);
     const attachment = await Zotero.Attachments.addAvailableFile(parent);
