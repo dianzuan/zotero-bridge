@@ -15,10 +15,12 @@ use zotron_rpc::{StdProviderCommandRunner, UreqProviderHttpTransport, ZoteroRpc}
 use zotron_types::{
     bm25_score_chunks, build_embedding_provider_request, build_ocr_provider_request,
     builtin_ocr_provider_specs, cosine_similarity, execute_embedding_provider_request,
-    is_zotron_evidence_artifact, machine_artifact_exists_for_item,
+    gap_cutoff, is_zotron_evidence_artifact, machine_artifact_exists_for_item,
     machine_artifact_exists_in_sidecar, machine_artifact_store_root,
+    min_max_k_clamp, mmr_select,
     ocr_provider_spec as raw_ocr_provider_spec, parse_embedding_provider_response,
     parse_ocr_provider_response, read_machine_artifact_sidecar, rrf_merge,
+    score_floor_filter, token_budget_filter,
     write_machine_artifact_sidecar, ArtifactStorePlatform, EmbeddingChunkInput,
     EmbeddingRequestInput, EmbeddingVector, MachineArtifactKind, OcrRequestInput,
     ProviderCommandRunner, ProviderHttpInvocation, ProviderHttpTransport, StructureChunk,
@@ -2883,7 +2885,48 @@ pub fn fetch_rerank_settings(
     })
 }
 
-#[allow(dead_code)] // will be called by pipeline integration (Task 7)
+struct RagCutoffSettings {
+    min_k: usize,
+    max_k: usize,
+    token_budget: usize,
+    mmr_lambda: f64,
+}
+
+fn fetch_rag_cutoff_settings(client: &mut impl RpcCaller) -> RagCutoffSettings {
+    let settings = client.call("settings.getAll", None).unwrap_or_default();
+    let get = |key: &str, default: &str| -> String {
+        settings
+            .get(key)
+            .and_then(|v| v.as_str())
+            .unwrap_or(default)
+            .to_string()
+    };
+    let legacy_top_k: Option<usize> = settings
+        .get("rag.topK")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse().ok());
+    let max_k = get("rag.maxK", "")
+        .parse()
+        .ok()
+        .or(legacy_top_k)
+        .unwrap_or(20);
+    if legacy_top_k.is_some()
+        && settings
+            .get("rag.maxK")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .is_empty()
+    {
+        eprintln!("warning: rag.topK is deprecated, use rag.maxK instead");
+    }
+    RagCutoffSettings {
+        min_k: get("rag.minK", "3").parse().unwrap_or(3),
+        max_k,
+        token_budget: get("rag.tokenBudget", "6000").parse().unwrap_or(6000),
+        mmr_lambda: get("rag.mmrLambda", "0.7").parse().unwrap_or(0.7),
+    }
+}
+
 fn rerank_chunks(
     query: &str,
     chunks: &[StructureChunk],
@@ -3266,13 +3309,104 @@ fn run_rag_search_command(
 
     // Step 6: merge results.
     let limit = options.top_k as usize;
-    let ranked = if !bm25_ranked.is_empty() && !dense_ranked.is_empty() {
+    let rrf_ranked = if !bm25_ranked.is_empty() && !dense_ranked.is_empty() {
         rrf_merge(&bm25_ranked, &dense_ranked, 60.0, limit)
     } else if !bm25_ranked.is_empty() {
         bm25_ranked.into_iter().take(limit).collect()
     } else {
         dense_ranked.into_iter().take(limit).collect()
     };
+
+    // --- Rerank + Dynamic Cutoff Pipeline ---
+
+    let rerank_result = fetch_rerank_settings(client);
+    let rag_cutoff = fetch_rag_cutoff_settings(client);
+
+    let mut pipeline_ranked = rrf_ranked.clone();
+    let mut used_reranker = false;
+
+    // Step 6a: Rerank (if configured)
+    if let Ok(ref rs) = rerank_result {
+        if !rs.provider.is_empty() && !rs.api_key.is_empty() {
+            match rerank_chunks(&options.query, &all_chunks, &pipeline_ranked, rs) {
+                Ok(reranked) => {
+                    pipeline_ranked = reranked;
+                    used_reranker = true;
+                }
+                Err(e) => {
+                    eprintln!("warning: reranker skipped: {e}");
+                }
+            }
+        }
+    }
+
+    // Step 6b: Score floor + Gap cutoff (only with reranker scores)
+    if used_reranker {
+        let floor = rerank_result
+            .as_ref()
+            .map(|s| s.score_floor)
+            .unwrap_or(0.1);
+        let gap_thresh = rerank_result
+            .as_ref()
+            .map(|s| s.gap_threshold)
+            .unwrap_or(0.15);
+        pipeline_ranked = score_floor_filter(&pipeline_ranked, floor);
+        pipeline_ranked = gap_cutoff(&pipeline_ranked, gap_thresh);
+    }
+
+    // Step 6c: MMR dedup
+    let vector_map: std::collections::HashMap<usize, Vec<f64>> = all_vectors
+        .iter()
+        .filter_map(|v| {
+            let idx = all_chunks
+                .iter()
+                .position(|c| c.chunk_key == v.chunk_key)?;
+            Some((idx, v.vector.clone()))
+        })
+        .collect();
+    pipeline_ranked = mmr_select(
+        &pipeline_ranked,
+        &vector_map,
+        rag_cutoff.mmr_lambda,
+        0.05,
+    );
+
+    // Step 6d: Token budget
+    let budget_texts: Vec<String> = (0..all_chunks.len())
+        .map(|i| all_chunks[i].text.clone())
+        .collect();
+    pipeline_ranked = token_budget_filter(
+        &pipeline_ranked,
+        &budget_texts,
+        rag_cutoff.token_budget,
+    );
+
+    // Step 6e: Min/Max K with re-expansion
+    if pipeline_ranked.len() < rag_cutoff.min_k {
+        let source = if used_reranker {
+            rerank_chunks(
+                &options.query,
+                &all_chunks,
+                &rrf_ranked,
+                rerank_result.as_ref().unwrap(),
+            )
+            .unwrap_or_else(|_| rrf_ranked.clone())
+        } else {
+            rrf_ranked.clone()
+        };
+        for &(idx, score) in &source {
+            if pipeline_ranked.len() >= rag_cutoff.min_k {
+                break;
+            }
+            if !pipeline_ranked.iter().any(|(i, _)| *i == idx) {
+                pipeline_ranked.push((idx, score));
+            }
+        }
+    }
+    pipeline_ranked =
+        min_max_k_clamp(pipeline_ranked, rag_cutoff.min_k, rag_cutoff.max_k);
+
+    let ranked = pipeline_ranked;
 
     // Step 7: apply per-item span limit.
     let mut per_item_count: std::collections::HashMap<&str, u64> =
