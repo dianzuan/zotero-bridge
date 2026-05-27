@@ -261,6 +261,17 @@ enum OcrCommand {
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
+    /// Re-chunk and re-embed existing OCR results without re-running OCR.
+    Reindex {
+        #[arg(long)]
+        collection: Option<String>,
+        #[arg(long)]
+        key: Option<String>,
+        #[arg(long, help = "Only reindex items with stale schema version")]
+        stale_only: bool,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
     /// Parse a Zotero PDF through MinerU and write hidden sidecar OCR/RAG artifacts.
     #[command(name = "process")]
     Process {
@@ -1178,6 +1189,7 @@ fn command_url(command: &Command) -> String {
             OcrCommand::Providers => DEFAULT_RPC_URL.to_string(),
             OcrCommand::Run { .. } => DEFAULT_RPC_URL.to_string(),
             OcrCommand::Status { url, .. } => url.clone(),
+            OcrCommand::Reindex { url, .. } => url.clone(),
             OcrCommand::Process { url, .. } => url.clone(),
         },
         Command::Rag { command } => rag_command_url(command),
@@ -1287,6 +1299,9 @@ fn run_ocr_command(command: OcrCommand, client: &mut impl RpcCaller) -> Result<S
             api_key_env,
         })?,
         OcrCommand::Status { collection, .. } => run_ocr_status_command(client, collection)?,
+        OcrCommand::Reindex { collection, key, stale_only, .. } => {
+            return run_ocr_reindex_command(client, collection, key, stale_only);
+        }
         OcrCommand::Process {
             provider,
             parent,
@@ -1600,6 +1615,118 @@ fn run_ocr_process_sync(
         "chunks": chunks.len(),
         "artifacts": artifacts,
     }))
+}
+
+/// Schema version written as the first line of chunks.v1.jsonl by reindex.
+const CHUNK_SCHEMA_VERSION: u32 = 2;
+
+fn run_ocr_reindex_command(
+    client: &mut impl RpcCaller,
+    collection: Option<String>,
+    key: Option<String>,
+    stale_only: bool,
+) -> Result<String, String> {
+    // Resolve sidecar paths using the same logic as RAG search.
+    let keys: Vec<String> = key.into_iter().collect();
+    let sidecars = resolve_sidecar_paths(
+        client,
+        collection.as_deref(),
+        &keys,
+    )?;
+
+    if sidecars.is_empty() {
+        return format_json(
+            &serde_json::json!({
+                "reindexed": 0,
+                "skipped": 0,
+                "message": "no sidecars found"
+            }),
+            JsonStyle::Pretty,
+        );
+    }
+
+    let mut reindexed: Vec<Value> = Vec::new();
+    let mut skipped = 0usize;
+
+    for (item_key, att_key, sidecar_root) in &sidecars {
+        // sidecar_root is storage_dir/.zotron
+        // storage_dir is sidecar_root's parent
+        let storage_dir = match sidecar_root.parent() {
+            Some(p) => p,
+            None => {
+                skipped += 1;
+                continue;
+            }
+        };
+
+        // Check if already at current schema version when --stale-only.
+        let chunks_path = sidecar_root.join("chunks").join("chunks.v1.jsonl");
+        if stale_only {
+            if let Ok(content) = fs::read_to_string(&chunks_path) {
+                if let Some(first_line) = content.lines().next() {
+                    if first_line.contains(&format!("\"schema_version\":{CHUNK_SCHEMA_VERSION}")) {
+                        skipped += 1;
+                        continue;
+                    }
+                }
+            }
+        }
+
+        // Read existing blocks.
+        let blocks_path = sidecar_root.join("ocr").join("latest.blocks.jsonl");
+        let blocks_content = match fs::read_to_string(&blocks_path) {
+            Ok(c) => c,
+            Err(_) => {
+                skipped += 1;
+                continue;
+            }
+        };
+        let blocks: Vec<zotron_types::PdfEvidenceBlock> = blocks_content
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .filter_map(|line| serde_json::from_str(line).ok())
+            .collect();
+        if blocks.is_empty() {
+            skipped += 1;
+            continue;
+        }
+
+        // Re-chunk.
+        let chunks = zotron_types::chunks_from_blocks(&blocks, 1200);
+
+        // Write chunks with schema version header.
+        let mut out = String::new();
+        out.push_str(&format!("{{\"schema_version\":{CHUNK_SCHEMA_VERSION}}}\n"));
+        for chunk in &chunks {
+            out.push_str(&serde_json::to_string(chunk).map_err(|e| e.to_string())?);
+            out.push('\n');
+        }
+        if let Some(parent) = chunks_path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("create chunks dir {}: {e}", parent.display()))?;
+        }
+        fs::write(&chunks_path, out.as_bytes())
+            .map_err(|e| format!("write chunks {}: {e}", chunks_path.display()))?;
+
+        // Re-embed.
+        let embedding_count = embed_sidecar_chunks(client, storage_dir, item_key, att_key, &chunks);
+
+        reindexed.push(serde_json::json!({
+            "item_key": item_key,
+            "attachment_key": att_key,
+            "chunks": chunks.len(),
+            "embeddings": embedding_count,
+        }));
+    }
+
+    format_json(
+        &serde_json::json!({
+            "reindexed": reindexed.len(),
+            "skipped": skipped,
+            "items": reindexed,
+        }),
+        JsonStyle::Pretty,
+    )
 }
 
 fn embed_sidecar_chunks(
@@ -3079,6 +3206,7 @@ fn load_sidecar_chunks(sidecar_root: &Path) -> Vec<StructureChunk> {
     content
         .lines()
         .filter(|line| !line.trim().is_empty())
+        .filter(|line| !line.contains("\"schema_version\""))
         .filter_map(|line| serde_json::from_str::<StructureChunk>(line).ok())
         .collect()
 }
