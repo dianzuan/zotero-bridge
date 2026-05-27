@@ -943,9 +943,7 @@ pub struct RerankResult {
 }
 
 pub fn build_rerank_provider_request(
-    _spec: &RerankProviderSpec,
     model: &str,
-    _url: &str,
     query: &str,
     documents: &[&str],
     top_n: usize,
@@ -2072,6 +2070,7 @@ fn normalize_block_type(block_type: &str) -> &str {
         "title" | "doc_title" | "paragraph_title" | "heading" | "section" => "heading",
         "text" => "paragraph",
         "table" | "table_body" | "table_caption" | "table_footnote" => "table",
+        "image" | "figure" | "image_caption" => "figure",
         other => other,
     }
 }
@@ -2081,7 +2080,7 @@ fn is_table_type(block_type: &str) -> bool {
 }
 
 fn is_figure_type(block_type: &str) -> bool {
-    matches!(block_type, "image" | "figure" | "image_caption")
+    normalize_block_type(block_type) == "figure"
 }
 
 fn same_section(a: &[String], b: &[String]) -> bool {
@@ -2202,13 +2201,13 @@ pub fn gap_cutoff(ranked: &[(usize, f64)], threshold: f64) -> Vec<(usize, f64)> 
 
 pub fn token_budget_filter(
     ranked: &[(usize, f64)],
-    texts: &[String],
+    text_lens: &[usize],
     budget: usize,
 ) -> Vec<(usize, f64)> {
     let mut total = 0usize;
     let mut result = Vec::new();
     for &(idx, score) in ranked {
-        let tokens = texts.get(idx).map(|t| t.len() / 3).unwrap_or(0);
+        let tokens = text_lens.get(idx).copied().unwrap_or(0) / 3;
         if !result.is_empty() && total + tokens > budget {
             break;
         }
@@ -2218,21 +2217,17 @@ pub fn token_budget_filter(
     result
 }
 
-pub fn min_max_k_clamp(
-    ranked: Vec<(usize, f64)>,
-    _min_k: usize,
+pub fn max_k_truncate(
+    mut ranked: Vec<(usize, f64)>,
     max_k: usize,
 ) -> Vec<(usize, f64)> {
-    if ranked.len() > max_k {
-        ranked.into_iter().take(max_k).collect()
-    } else {
-        ranked
-    }
+    ranked.truncate(max_k);
+    ranked
 }
 
 pub fn mmr_select(
     ranked: &[(usize, f64)],
-    vectors: &std::collections::HashMap<usize, Vec<f64>>,
+    vectors: &std::collections::HashMap<usize, &[f64]>,
     lambda: f64,
     threshold: f64,
 ) -> Vec<(usize, f64)> {

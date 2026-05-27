@@ -1,4 +1,4 @@
-use zotron_types::{score_floor_filter, gap_cutoff, token_budget_filter, min_max_k_clamp, mmr_select, PdfEvidenceBlock, chunks_from_blocks};
+use zotron_types::{score_floor_filter, gap_cutoff, token_budget_filter, max_k_truncate, mmr_select, PdfEvidenceBlock, chunks_from_blocks};
 use std::collections::HashMap;
 
 // === Dynamic Cutoff Tests ===
@@ -35,21 +35,21 @@ fn gap_cutoff_flat_distribution_keeps_all() {
 
 #[test]
 fn token_budget_stops_at_limit() {
-    let texts = vec!["a".repeat(900), "b".repeat(900), "c".repeat(900)];
+    let text_lens = vec![900usize, 900, 900];
     let input: Vec<(usize, f64)> = vec![(0, 0.9), (1, 0.8), (2, 0.7)];
-    let result = token_budget_filter(&input, &texts, 650);
+    let result = token_budget_filter(&input, &text_lens, 650);
     assert_eq!(result.len(), 2);
 }
 
 #[test]
-fn min_max_k_clamp_enforces_bounds() {
+fn max_k_truncate_enforces_bounds() {
     let short: Vec<(usize, f64)> = vec![(0, 0.9)];
     let long: Vec<(usize, f64)> = (0..25).map(|i| (i, 0.9 - i as f64 * 0.01)).collect();
 
-    let result_min = min_max_k_clamp(short, 3, 20);
-    assert_eq!(result_min.len(), 1);
+    let result_short = max_k_truncate(short, 20);
+    assert_eq!(result_short.len(), 1);
 
-    let result_max = min_max_k_clamp(long, 3, 20);
+    let result_max = max_k_truncate(long, 20);
     assert_eq!(result_max.len(), 20);
 }
 
@@ -58,10 +58,11 @@ fn min_max_k_clamp_enforces_bounds() {
 #[test]
 fn mmr_removes_near_duplicate_chunks() {
     let ranked = vec![(0, 0.9), (1, 0.85), (2, 0.7)];
-    let vectors: HashMap<usize, Vec<f64>> = [
-        (0, vec![1.0, 0.0, 0.0]),
-        (1, vec![0.99, 0.01, 0.0]),
-        (2, vec![0.0, 1.0, 0.0]),
+    let v0: Vec<f64> = vec![1.0, 0.0, 0.0];
+    let v1: Vec<f64> = vec![0.99, 0.01, 0.0];
+    let v2: Vec<f64> = vec![0.0, 1.0, 0.0];
+    let vectors: HashMap<usize, &[f64]> = [
+        (0, v0.as_slice()), (1, v1.as_slice()), (2, v2.as_slice()),
     ].into_iter().collect();
 
     let result = mmr_select(&ranked, &vectors, 0.7, 0.05);
@@ -72,10 +73,11 @@ fn mmr_removes_near_duplicate_chunks() {
 #[test]
 fn mmr_keeps_all_when_diverse() {
     let ranked = vec![(0, 0.9), (1, 0.8), (2, 0.7)];
-    let vectors: HashMap<usize, Vec<f64>> = [
-        (0, vec![1.0, 0.0, 0.0]),
-        (1, vec![0.0, 1.0, 0.0]),
-        (2, vec![0.0, 0.0, 1.0]),
+    let v0: Vec<f64> = vec![1.0, 0.0, 0.0];
+    let v1: Vec<f64> = vec![0.0, 1.0, 0.0];
+    let v2: Vec<f64> = vec![0.0, 0.0, 1.0];
+    let vectors: HashMap<usize, &[f64]> = [
+        (0, v0.as_slice()), (1, v1.as_slice()), (2, v2.as_slice()),
     ].into_iter().collect();
 
     let result = mmr_select(&ranked, &vectors, 0.7, 0.05);
@@ -85,8 +87,9 @@ fn mmr_keeps_all_when_diverse() {
 #[test]
 fn mmr_retains_chunks_without_vectors() {
     let ranked = vec![(0, 0.9), (1, 0.8)];
-    let vectors: HashMap<usize, Vec<f64>> = [
-        (0, vec![1.0, 0.0]),
+    let v0: Vec<f64> = vec![1.0, 0.0];
+    let vectors: HashMap<usize, &[f64]> = [
+        (0, v0.as_slice()),
     ].into_iter().collect();
 
     let result = mmr_select(&ranked, &vectors, 0.7, 0.05);

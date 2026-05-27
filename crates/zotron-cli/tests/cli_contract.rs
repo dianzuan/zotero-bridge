@@ -2101,8 +2101,6 @@ fn fetch_rerank_settings_returns_defaults_for_jina() {
         "rerank.model": "",
         "rerank.apiUrl": "",
         "rerank.candidateCount": "30",
-        "rerank.scoreFloor": "0.1",
-        "rerank.gapThreshold": "0.15",
     });
     let raw_response = json!({
         "rerank.apiKey": "test-key-123"

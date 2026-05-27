@@ -17,7 +17,7 @@ use zotron_types::{
     builtin_ocr_provider_specs, cosine_similarity, execute_embedding_provider_request,
     gap_cutoff, is_zotron_evidence_artifact, machine_artifact_exists_for_item,
     machine_artifact_exists_in_sidecar, machine_artifact_store_root,
-    min_max_k_clamp, mmr_select,
+    max_k_truncate, mmr_select,
     ocr_provider_spec as raw_ocr_provider_spec, parse_embedding_provider_response,
     parse_ocr_provider_response, read_machine_artifact_sidecar, rrf_merge,
     score_floor_filter, token_budget_filter,
@@ -1659,21 +1659,24 @@ fn run_ocr_reindex_command(
             }
         };
 
-        // Check if already at current schema version when --stale-only.
-        let chunks_path = sidecar_root.join("chunks").join("chunks.v1.jsonl");
+        let chunks_path = sidecar_root.join(zotron_types::MachineArtifactKind::Chunks.sidecar_relative_path());
         if stale_only {
-            if let Ok(content) = fs::read_to_string(&chunks_path) {
-                if let Some(first_line) = content.lines().next() {
-                    if first_line.contains(&format!("\"schema_version\":{CHUNK_SCHEMA_VERSION}")) {
-                        skipped += 1;
-                        continue;
+            if let Ok(f) = fs::File::open(&chunks_path) {
+                use std::io::BufRead;
+                let mut reader = std::io::BufReader::new(f);
+                let mut first_line = String::new();
+                if reader.read_line(&mut first_line).is_ok() {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&first_line) {
+                        if v.get("schema_version").and_then(|v| v.as_u64()) == Some(CHUNK_SCHEMA_VERSION as u64) {
+                            skipped += 1;
+                            continue;
+                        }
                     }
                 }
             }
         }
 
-        // Read existing blocks.
-        let blocks_path = sidecar_root.join("ocr").join("latest.blocks.jsonl");
+        let blocks_path = sidecar_root.join(zotron_types::MachineArtifactKind::Blocks.sidecar_relative_path());
         let blocks_content = match fs::read_to_string(&blocks_path) {
             Ok(c) => c,
             Err(_) => {
@@ -2936,8 +2939,6 @@ pub struct RerankSettings {
     pub api_url: String,
     pub api_key: String,
     pub candidate_count: usize,
-    pub score_floor: f64,
-    pub gap_threshold: f64,
 }
 
 pub fn fetch_rerank_settings(
@@ -2964,16 +2965,6 @@ pub fn fetch_rerank_settings(
         .and_then(Value::as_str)
         .and_then(|s| s.parse().ok())
         .unwrap_or(30);
-    let score_floor = settings
-        .get("rerank.scoreFloor")
-        .and_then(Value::as_str)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0.1);
-    let gap_threshold = settings
-        .get("rerank.gapThreshold")
-        .and_then(Value::as_str)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0.15);
 
     let raw = client.call(
         "settings.getRaw",
@@ -2985,7 +2976,6 @@ pub fn fetch_rerank_settings(
         .unwrap_or("")
         .to_string();
 
-    // Resolve defaults from provider spec
     let specs = zotron_types::builtin_rerank_provider_specs();
     let spec = specs.iter().find(|s| s.id == provider);
 
@@ -3007,8 +2997,6 @@ pub fn fetch_rerank_settings(
         api_url,
         api_key,
         candidate_count,
-        score_floor,
-        gap_threshold,
     })
 }
 
@@ -3017,6 +3005,8 @@ struct RagCutoffSettings {
     max_k: usize,
     token_budget: usize,
     mmr_lambda: f64,
+    score_floor: f64,
+    gap_threshold: f64,
 }
 
 fn fetch_rag_cutoff_settings(client: &mut impl RpcCaller) -> RagCutoffSettings {
@@ -3051,6 +3041,8 @@ fn fetch_rag_cutoff_settings(client: &mut impl RpcCaller) -> RagCutoffSettings {
         max_k,
         token_budget: get("rag.tokenBudget", "6000").parse().unwrap_or(6000),
         mmr_lambda: get("rag.mmrLambda", "0.7").parse().unwrap_or(0.7),
+        score_floor: get("rerank.scoreFloor", "0.1").parse().unwrap_or(0.1),
+        gap_threshold: get("rerank.gapThreshold", "0.15").parse().unwrap_or(0.15),
     }
 }
 
@@ -3074,39 +3066,38 @@ fn rerank_chunks(
         .collect();
 
     let request_body = zotron_types::build_rerank_provider_request(
-        spec,
         &settings.model,
-        &settings.api_url,
         query,
         &documents,
         candidate_count,
     );
 
+    let body_str = serde_json::to_string(&request_body)
+        .map_err(|e| format!("rerank request serialize error: {e}"))?;
+
     let agent = ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(10))
         .build();
 
-    let send = |agent: &ureq::Agent| -> Result<ureq::Response, String> {
+    let send = |agent: &ureq::Agent| -> Result<ureq::Response, (bool, String)> {
         agent
             .post(&settings.api_url)
             .set("Content-Type", "application/json")
             .set("Authorization", &format!("Bearer {}", settings.api_key))
-            .send_json(request_body.clone())
-            .map_err(|e| match &e {
-                ureq::Error::Status(code, _) if *code == 429 || *code >= 500 => {
-                    format!("rerank API transient error ({code}): {e}")
-                }
-                _ => format!("rerank API failed: {e}"),
+            .send_string(&body_str)
+            .map_err(|e| {
+                let transient = matches!(&e, ureq::Error::Status(code, _) if *code == 429 || *code >= 500);
+                (transient, e.to_string())
             })
     };
 
     let response = match send(&agent) {
         Ok(r) => r,
-        Err(msg) if msg.contains("transient error") => {
+        Err((true, _)) => {
             std::thread::sleep(Duration::from_secs(1));
-            send(&agent).map_err(|e| format!("rerank API retry failed: {e}"))?
+            send(&agent).map_err(|(_, msg)| format!("rerank API retry failed: {msg}"))?
         }
-        Err(e) => return Err(e),
+        Err((_, msg)) => return Err(format!("rerank API failed: {msg}")),
     };
 
     let payload: serde_json::Value = response
@@ -3451,15 +3442,15 @@ fn run_rag_search_command(
     let rag_cutoff = fetch_rag_cutoff_settings(client);
 
     let mut pipeline_ranked = rrf_ranked.clone();
-    let mut used_reranker = false;
+    let mut full_reranked: Option<Vec<(usize, f64)>> = None;
 
     // Step 6a: Rerank (if configured)
     if let Ok(ref rs) = rerank_result {
         if !rs.provider.is_empty() && !rs.api_key.is_empty() {
             match rerank_chunks(&options.query, &all_chunks, &pipeline_ranked, rs) {
                 Ok(reranked) => {
+                    full_reranked = Some(reranked.clone());
                     pipeline_ranked = reranked;
-                    used_reranker = true;
                 }
                 Err(e) => {
                     eprintln!("warning: reranker skipped: {e}");
@@ -3469,27 +3460,22 @@ fn run_rag_search_command(
     }
 
     // Step 6b: Score floor + Gap cutoff (only with reranker scores)
-    if used_reranker {
-        let floor = rerank_result
-            .as_ref()
-            .map(|s| s.score_floor)
-            .unwrap_or(0.1);
-        let gap_thresh = rerank_result
-            .as_ref()
-            .map(|s| s.gap_threshold)
-            .unwrap_or(0.15);
-        pipeline_ranked = score_floor_filter(&pipeline_ranked, floor);
-        pipeline_ranked = gap_cutoff(&pipeline_ranked, gap_thresh);
+    if full_reranked.is_some() {
+        pipeline_ranked = score_floor_filter(&pipeline_ranked, rag_cutoff.score_floor);
+        pipeline_ranked = gap_cutoff(&pipeline_ranked, rag_cutoff.gap_threshold);
     }
 
     // Step 6c: MMR dedup
-    let vector_map: std::collections::HashMap<usize, Vec<f64>> = all_vectors
+    let chunk_key_index: std::collections::HashMap<&str, usize> = all_chunks
+        .iter()
+        .enumerate()
+        .map(|(i, c)| (c.chunk_key.as_str(), i))
+        .collect();
+    let vector_map: std::collections::HashMap<usize, &[f64]> = all_vectors
         .iter()
         .filter_map(|v| {
-            let idx = all_chunks
-                .iter()
-                .position(|c| c.chunk_key == v.chunk_key)?;
-            Some((idx, v.vector.clone()))
+            let &idx = chunk_key_index.get(v.chunk_key.as_str())?;
+            Some((idx, v.vector.as_slice()))
         })
         .collect();
     pipeline_ranked = mmr_select(
@@ -3500,29 +3486,17 @@ fn run_rag_search_command(
     );
 
     // Step 6d: Token budget
-    let budget_texts: Vec<String> = (0..all_chunks.len())
-        .map(|i| all_chunks[i].text.clone())
-        .collect();
+    let text_lens: Vec<usize> = all_chunks.iter().map(|c| c.text.len()).collect();
     pipeline_ranked = token_budget_filter(
         &pipeline_ranked,
-        &budget_texts,
+        &text_lens,
         rag_cutoff.token_budget,
     );
 
-    // Step 6e: Min/Max K with re-expansion
+    // Step 6e: Min/Max K with re-expansion from cached results
     if pipeline_ranked.len() < rag_cutoff.min_k {
-        let source = if used_reranker {
-            rerank_chunks(
-                &options.query,
-                &all_chunks,
-                &rrf_ranked,
-                rerank_result.as_ref().unwrap(),
-            )
-            .unwrap_or_else(|_| rrf_ranked.clone())
-        } else {
-            rrf_ranked.clone()
-        };
-        for &(idx, score) in &source {
+        let source = full_reranked.as_deref().unwrap_or(&rrf_ranked);
+        for &(idx, score) in source {
             if pipeline_ranked.len() >= rag_cutoff.min_k {
                 break;
             }
@@ -3531,8 +3505,7 @@ fn run_rag_search_command(
             }
         }
     }
-    pipeline_ranked =
-        min_max_k_clamp(pipeline_ranked, rag_cutoff.min_k, rag_cutoff.max_k);
+    pipeline_ranked = max_k_truncate(pipeline_ranked, rag_cutoff.max_k);
 
     let ranked = pipeline_ranked;
 

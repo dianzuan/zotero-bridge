@@ -32,11 +32,8 @@ fn dashscope_uses_sigmoid_normalization() {
 
 #[test]
 fn build_jina_rerank_request() {
-    let spec = &builtin_rerank_provider_specs()[0]; // jina
     let req = build_rerank_provider_request(
-        spec,
         "jina-reranker-v2-base-multilingual",
-        "https://api.jina.ai/v1/rerank",
         "what is BM25?",
         &["BM25 is a ranking function", "Apples are fruit"],
         10,
