@@ -930,6 +930,58 @@ pub fn parse_embedding_provider_response(
         .collect()
 }
 
+#[derive(Debug, Clone)]
+pub struct RerankResult {
+    pub index: usize,
+    pub score: f64,
+}
+
+pub fn build_rerank_provider_request(
+    _spec: &RerankProviderSpec,
+    model: &str,
+    _url: &str,
+    query: &str,
+    documents: &[&str],
+    top_n: usize,
+) -> serde_json::Value {
+    serde_json::json!({
+        "model": model,
+        "query": query,
+        "documents": documents,
+        "top_n": top_n,
+    })
+}
+
+fn sigmoid(x: f64) -> f64 {
+    1.0 / (1.0 + (-x).exp())
+}
+
+pub fn parse_rerank_provider_response(
+    spec: &RerankProviderSpec,
+    payload: &serde_json::Value,
+) -> Result<Vec<RerankResult>, String> {
+    let results = payload
+        .get("results")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| "missing 'results' array in rerank response".to_string())?;
+
+    let mut parsed: Vec<RerankResult> = results
+        .iter()
+        .filter_map(|r| {
+            let index = r.get("index")?.as_u64()? as usize;
+            let raw_score = r.get("relevance_score")?.as_f64()?;
+            let score = match spec.score_norm {
+                RerankScoreNorm::Identity => raw_score,
+                RerankScoreNorm::Sigmoid => sigmoid(raw_score),
+            };
+            Some(RerankResult { index, score })
+        })
+        .collect();
+
+    parsed.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    Ok(parsed)
+}
+
 pub fn execute_ocr_provider_request(
     provider: &str,
     input: &OcrRequestInput,
