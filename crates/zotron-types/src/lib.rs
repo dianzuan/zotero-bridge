@@ -2173,6 +2173,53 @@ pub fn rrf_merge(
     merged
 }
 
+pub fn score_floor_filter(ranked: &[(usize, f64)], floor: f64) -> Vec<(usize, f64)> {
+    ranked.iter().filter(|(_, s)| *s >= floor).copied().collect()
+}
+
+pub fn gap_cutoff(ranked: &[(usize, f64)], threshold: f64) -> Vec<(usize, f64)> {
+    if ranked.len() <= 1 {
+        return ranked.to_vec();
+    }
+    for i in 0..ranked.len() - 1 {
+        let gap = ranked[i].1 - ranked[i + 1].1;
+        if gap > threshold {
+            return ranked[..=i].to_vec();
+        }
+    }
+    ranked.to_vec()
+}
+
+pub fn token_budget_filter(
+    ranked: &[(usize, f64)],
+    texts: &[String],
+    budget: usize,
+) -> Vec<(usize, f64)> {
+    let mut total = 0usize;
+    let mut result = Vec::new();
+    for &(idx, score) in ranked {
+        let tokens = texts.get(idx).map(|t| t.len() / 3).unwrap_or(0);
+        if !result.is_empty() && total + tokens > budget {
+            break;
+        }
+        total += tokens;
+        result.push((idx, score));
+    }
+    result
+}
+
+pub fn min_max_k_clamp(
+    ranked: Vec<(usize, f64)>,
+    _min_k: usize,
+    max_k: usize,
+) -> Vec<(usize, f64)> {
+    if ranked.len() > max_k {
+        ranked.into_iter().take(max_k).collect()
+    } else {
+        ranked
+    }
+}
+
 fn tokenize_query(text: &str) -> Vec<String> {
     text.to_lowercase()
         .split(|c: char| c.is_whitespace() || "，。、；：\u{201c}\u{201d}\u{2018}\u{2019}【】（）".contains(c))
