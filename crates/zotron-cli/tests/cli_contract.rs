@@ -2093,3 +2093,31 @@ fn test_is_wsl() -> bool {
             .map(|release| release.to_ascii_lowercase().contains("microsoft"))
             .unwrap_or(false)
 }
+
+#[test]
+fn fetch_rerank_settings_returns_defaults_for_jina() {
+    let settings_response = json!({
+        "rerank.provider": "jina",
+        "rerank.model": "",
+        "rerank.apiUrl": "",
+        "rerank.candidateCount": "30",
+        "rerank.scoreFloor": "0.1",
+        "rerank.gapThreshold": "0.15",
+    });
+    let raw_response = json!({
+        "rerank.apiKey": "test-key-123"
+    });
+    let mut client = FakeClient::with_responses(vec![settings_response, raw_response]);
+    let result = zotron_cli::fetch_rerank_settings(&mut client);
+    assert!(
+        result.is_ok(),
+        "fetch_rerank_settings failed: {:?}",
+        result.err()
+    );
+    let rs = result.unwrap();
+    assert_eq!(rs.provider, "jina");
+    assert_eq!(rs.model, "jina-reranker-v2-base-multilingual");
+    assert!(rs.api_url.contains("jina.ai"));
+    assert_eq!(rs.api_key, "test-key-123");
+    assert_eq!(rs.candidate_count, 30);
+}

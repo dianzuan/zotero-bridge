@@ -2800,6 +2800,157 @@ fn fetch_embedding_settings(
     Ok((provider, model, api_url, api_key))
 }
 
+#[derive(Debug)]
+pub struct RerankSettings {
+    pub provider: String,
+    pub model: String,
+    pub api_url: String,
+    pub api_key: String,
+    pub candidate_count: usize,
+    pub score_floor: f64,
+    pub gap_threshold: f64,
+}
+
+pub fn fetch_rerank_settings(
+    client: &mut impl RpcCaller,
+) -> Result<RerankSettings, String> {
+    let settings = client.call("settings.getAll", None)?;
+    let provider = settings
+        .get("rerank.provider")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let model = settings
+        .get("rerank.model")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let api_url = settings
+        .get("rerank.apiUrl")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let candidate_count = settings
+        .get("rerank.candidateCount")
+        .and_then(Value::as_str)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(30);
+    let score_floor = settings
+        .get("rerank.scoreFloor")
+        .and_then(Value::as_str)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0.1);
+    let gap_threshold = settings
+        .get("rerank.gapThreshold")
+        .and_then(Value::as_str)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0.15);
+
+    let raw = client.call(
+        "settings.getRaw",
+        Some(serde_json::json!({"key": "rerank.apiKey"})),
+    )?;
+    let api_key = raw
+        .get("rerank.apiKey")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+
+    // Resolve defaults from provider spec
+    let specs = zotron_types::builtin_rerank_provider_specs();
+    let spec = specs.iter().find(|s| s.id == provider);
+
+    let api_url = if api_url.is_empty() {
+        spec.map(|s| s.default_url.to_string()).unwrap_or_default()
+    } else {
+        api_url
+    };
+
+    let model = if model.is_empty() {
+        spec.map(|s| s.default_model.to_string()).unwrap_or_default()
+    } else {
+        model
+    };
+
+    Ok(RerankSettings {
+        provider,
+        model,
+        api_url,
+        api_key,
+        candidate_count,
+        score_floor,
+        gap_threshold,
+    })
+}
+
+#[allow(dead_code)] // will be called by pipeline integration (Task 7)
+fn rerank_chunks(
+    query: &str,
+    chunks: &[StructureChunk],
+    ranked: &[(usize, f64)],
+    settings: &RerankSettings,
+) -> Result<Vec<(usize, f64)>, String> {
+    let specs = zotron_types::builtin_rerank_provider_specs();
+    let spec = specs
+        .iter()
+        .find(|s| s.id == settings.provider)
+        .ok_or_else(|| format!("unknown rerank provider: {}", settings.provider))?;
+
+    let candidate_count = settings.candidate_count.min(ranked.len());
+    let candidates: Vec<(usize, f64)> = ranked.iter().take(candidate_count).copied().collect();
+    let documents: Vec<&str> = candidates
+        .iter()
+        .map(|(idx, _)| chunks[*idx].text.as_str())
+        .collect();
+
+    let request_body = zotron_types::build_rerank_provider_request(
+        spec,
+        &settings.model,
+        &settings.api_url,
+        query,
+        &documents,
+        candidate_count,
+    );
+
+    let agent = ureq::AgentBuilder::new()
+        .timeout(Duration::from_secs(10))
+        .build();
+
+    let send = |agent: &ureq::Agent| -> Result<ureq::Response, String> {
+        agent
+            .post(&settings.api_url)
+            .set("Content-Type", "application/json")
+            .set("Authorization", &format!("Bearer {}", settings.api_key))
+            .send_json(request_body.clone())
+            .map_err(|e| match &e {
+                ureq::Error::Status(code, _) if *code == 429 || *code >= 500 => {
+                    format!("rerank API transient error ({code}): {e}")
+                }
+                _ => format!("rerank API failed: {e}"),
+            })
+    };
+
+    let response = match send(&agent) {
+        Ok(r) => r,
+        Err(msg) if msg.contains("transient error") => {
+            std::thread::sleep(Duration::from_secs(1));
+            send(&agent).map_err(|e| format!("rerank API retry failed: {e}"))?
+        }
+        Err(e) => return Err(e),
+    };
+
+    let payload: serde_json::Value = response
+        .into_json()
+        .map_err(|e| format!("rerank response parse error: {e}"))?;
+
+    let reranked = zotron_types::parse_rerank_provider_response(spec, &payload)?;
+
+    Ok(reranked
+        .into_iter()
+        .map(|r| (candidates[r.index].0, r.score))
+        .collect())
+}
+
 fn fetch_retrieval_mode(client: &mut impl RpcCaller) -> String {
     client
         .call(
