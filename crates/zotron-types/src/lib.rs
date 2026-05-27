@@ -2220,6 +2220,35 @@ pub fn min_max_k_clamp(
     }
 }
 
+pub fn mmr_select(
+    ranked: &[(usize, f64)],
+    vectors: &std::collections::HashMap<usize, Vec<f64>>,
+    lambda: f64,
+    threshold: f64,
+) -> Vec<(usize, f64)> {
+    if ranked.is_empty() {
+        return Vec::new();
+    }
+    let mut selected: Vec<(usize, f64)> = vec![ranked[0]];
+
+    for &(idx, score) in &ranked[1..] {
+        let Some(vec_candidate) = vectors.get(&idx) else {
+            selected.push((idx, score));
+            continue;
+        };
+        let max_sim = selected
+            .iter()
+            .filter_map(|(sel_idx, _)| vectors.get(sel_idx))
+            .map(|sel_vec| cosine_similarity(vec_candidate, sel_vec))
+            .fold(0.0f64, f64::max);
+        let mmr_score = lambda * score - (1.0 - lambda) * max_sim;
+        if mmr_score > threshold {
+            selected.push((idx, score));
+        }
+    }
+    selected
+}
+
 fn tokenize_query(text: &str) -> Vec<String> {
     text.to_lowercase()
         .split(|c: char| c.is_whitespace() || "，。、；：\u{201c}\u{201d}\u{2018}\u{2019}【】（）".contains(c))
