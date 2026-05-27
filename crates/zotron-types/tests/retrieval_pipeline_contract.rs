@@ -1,4 +1,4 @@
-use zotron_types::{score_floor_filter, gap_cutoff, token_budget_filter, min_max_k_clamp, mmr_select};
+use zotron_types::{score_floor_filter, gap_cutoff, token_budget_filter, min_max_k_clamp, mmr_select, PdfEvidenceBlock, chunks_from_blocks};
 use std::collections::HashMap;
 
 // === Dynamic Cutoff Tests ===
@@ -91,4 +91,70 @@ fn mmr_retains_chunks_without_vectors() {
 
     let result = mmr_select(&ranked, &vectors, 0.7, 0.05);
     assert_eq!(result.len(), 2);
+}
+
+// === Chunking Enhancement Tests ===
+
+fn make_block(block_type: &str, text: &str, section_path: Vec<String>) -> PdfEvidenceBlock {
+    PdfEvidenceBlock {
+        block_key: String::new(),
+        item_key: "ITEM".into(),
+        attachment_key: "ATT".into(),
+        page_idx: 0,
+        block_type: block_type.into(),
+        bbox: None,
+        section_path,
+        text: text.into(),
+    }
+}
+
+#[test]
+fn chunks_prepend_section_path_to_text() {
+    let blocks = vec![
+        make_block("heading", "3. Methods", vec!["3. Methods".into()]),
+        make_block("paragraph", "We used logistic regression.", vec!["3. Methods".into()]),
+    ];
+    let chunks = chunks_from_blocks(&blocks, 1200);
+    assert_eq!(chunks.len(), 1);
+    assert!(
+        chunks[0].text.starts_with("3. Methods: "),
+        "chunk text should start with section path prefix, got: {}",
+        &chunks[0].text[..50.min(chunks[0].text.len())]
+    );
+    assert!(chunks[0].text.contains("We used logistic regression."));
+}
+
+#[test]
+fn chunks_with_nested_section_path_use_separator() {
+    let blocks = vec![
+        make_block("heading", "3.2 Data", vec!["3. Methods".into(), "3.2 Data".into()]),
+        make_block("paragraph", "Collected from surveys.", vec!["3. Methods".into(), "3.2 Data".into()]),
+    ];
+    let chunks = chunks_from_blocks(&blocks, 1200);
+    assert_eq!(chunks.len(), 1);
+    assert!(chunks[0].text.starts_with("3. Methods > 3.2 Data: "));
+}
+
+#[test]
+fn chunks_without_section_path_have_no_prefix() {
+    let blocks = vec![
+        make_block("paragraph", "Abstract text here.", vec![]),
+    ];
+    let chunks = chunks_from_blocks(&blocks, 1200);
+    assert_eq!(chunks.len(), 1);
+    assert_eq!(chunks[0].text, "Abstract text here.");
+}
+
+#[test]
+fn figure_blocks_become_standalone_chunks() {
+    let blocks = vec![
+        make_block("heading", "Results", vec!["Results".into()]),
+        make_block("paragraph", "Figure 1 shows the trend.", vec!["Results".into()]),
+        make_block("image", "Distribution of employment rates across regions", vec!["Results".into()]),
+        make_block("paragraph", "The data confirms our hypothesis.", vec!["Results".into()]),
+    ];
+    let chunks = chunks_from_blocks(&blocks, 1200);
+    assert!(chunks.len() >= 2, "figure should cause chunk split, got {} chunks", chunks.len());
+    let fig_chunk = chunks.iter().find(|c| c.text.contains("Distribution of employment")).unwrap();
+    assert_eq!(fig_chunk.block_keys.len(), 1);
 }

@@ -415,11 +415,17 @@ impl StructureChunk {
             .max()
             .unwrap_or(page_start);
         let section_path = first.map(|b| b.section_path.clone()).unwrap_or_default();
-        let text = blocks
+        let body = blocks
             .iter()
             .map(|b| b.text.as_str())
             .collect::<Vec<_>>()
             .join("\n\n");
+        let section = &blocks[0].section_path;
+        let text = if section.is_empty() {
+            body
+        } else {
+            format!("{}: {}", section.join(" > "), body)
+        };
 
         Self {
             chunk_key,
@@ -1870,7 +1876,7 @@ pub fn chunks_from_blocks(blocks: &[PdfEvidenceBlock], max_chars: usize) -> Vec<
         let mut block = block.clone();
         block.section_path = block_section;
 
-        if is_table_type(&block.block_type) {
+        if is_table_type(&block.block_type) || is_figure_type(&block.block_type) {
             flush_chunk(&mut chunks, &mut current, &attachment_key);
             current_chars = 0;
             chunks.push(StructureChunk::from_blocks(
@@ -2072,6 +2078,10 @@ fn normalize_block_type(block_type: &str) -> &str {
 
 fn is_table_type(block_type: &str) -> bool {
     normalize_block_type(block_type) == "table"
+}
+
+fn is_figure_type(block_type: &str) -> bool {
+    matches!(block_type, "image" | "figure" | "image_caption")
 }
 
 fn same_section(a: &[String], b: &[String]) -> bool {
