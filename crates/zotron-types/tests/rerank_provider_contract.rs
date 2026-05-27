@@ -24,10 +24,10 @@ fn jina_is_first_and_default() {
 }
 
 #[test]
-fn dashscope_uses_sigmoid_normalization() {
+fn dashscope_uses_identity_normalization() {
     let specs = builtin_rerank_provider_specs();
     let ds = specs.iter().find(|s| s.id == "dashscope").unwrap();
-    assert!(matches!(ds.score_norm, RerankScoreNorm::Sigmoid));
+    assert!(matches!(ds.score_norm, RerankScoreNorm::Identity));
 }
 
 #[test]

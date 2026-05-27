@@ -18,6 +18,17 @@ const SETTINGS_KEYS = [
   "rag.chunkOverlap",
   "rag.topK",
   "rag.retrievalMode",
+  "rag.minK",
+  "rag.maxK",
+  "rag.tokenBudget",
+  "rag.mmrLambda",
+  "rerank.provider",
+  "rerank.model",
+  "rerank.apiKey",
+  "rerank.apiUrl",
+  "rerank.candidateCount",
+  "rerank.scoreFloor",
+  "rerank.gapThreshold",
 ];
 
 // ReadonlySet derived from SETTINGS_KEYS — shared by set (includes-check) and
@@ -26,6 +37,7 @@ const KNOWN_KEYS: ReadonlySet<string> = new Set(SETTINGS_KEYS);
 const SECRET_KEYS: ReadonlySet<string> = new Set([
   "ocr.apiKey",
   "embedding.apiKey",
+  "rerank.apiKey",
 ]);
 
 function getSetting(key: string): any {

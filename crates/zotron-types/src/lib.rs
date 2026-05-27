@@ -296,10 +296,10 @@ pub fn builtin_rerank_provider_specs() -> Vec<RerankProviderSpec> {
         RerankProviderSpec {
             id: "dashscope",
             provider_key: "dashscope",
-            default_url: "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank",
-            default_model: "gte-rerank",
+            default_url: "https://dashscope.aliyuncs.com/compatible-api/v1/reranks",
+            default_model: "qwen3-rerank",
             auth: "bearer",
-            score_norm: RerankScoreNorm::Sigmoid,
+            score_norm: RerankScoreNorm::Identity,
         },
         RerankProviderSpec {
             id: "siliconflow",
