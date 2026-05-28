@@ -272,11 +272,12 @@ enum OcrCommand {
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
-    /// Parse a Zotero PDF through MinerU and write hidden sidecar OCR/RAG artifacts.
+    /// Parse a Zotero PDF and write hidden sidecar OCR/RAG artifacts. Provider read from Zotero settings unless --provider is given.
     #[command(name = "process")]
     Process {
-        #[arg(long, default_value = "mineru")]
-        provider: String,
+        /// Override OCR provider (default: read from Zotero settings ocr.provider).
+        #[arg(long)]
+        provider: Option<String>,
         /// Parent Zotero item key.
         #[arg(long)]
         parent: String,
@@ -292,12 +293,12 @@ enum OcrCommand {
         /// Already-downloaded MinerU result zip, used by tests/offline replay.
         #[arg(long = "result-zip")]
         result_zip: Option<String>,
-        /// Override MinerU submit endpoint.
+        /// Override provider endpoint (default: read from Zotero settings ocr.apiUrl).
         #[arg(long = "provider-endpoint")]
         provider_endpoint: Option<String>,
-        /// Environment variable containing the MinerU bearer token.
-        #[arg(long = "api-key-env", default_value = "ZOTRON_MINERU_API_KEY")]
-        api_key_env: String,
+        /// Environment variable containing the provider bearer token (fallback: Zotero settings ocr.apiKey).
+        #[arg(long = "api-key-env")]
+        api_key_env: Option<String>,
         #[arg(long = "poll-interval-seconds", default_value_t = 5)]
         poll_interval_seconds: u64,
         #[arg(long = "timeout-seconds", default_value_t = 900)]
@@ -1315,22 +1316,36 @@ fn run_ocr_command(command: OcrCommand, client: &mut impl RpcCaller) -> Result<S
             timeout_seconds,
             chunk_chars,
             ..
-        } => run_ocr_process_command(
-            client,
-            OcrProcessOptions {
-                provider,
-                parent,
-                attachment,
-                source_url,
-                result_dir,
-                result_zip,
-                provider_endpoint,
-                api_key_env,
-                poll_interval_seconds,
-                timeout_seconds,
-                chunk_chars,
-            },
-        )?,
+        } => {
+            let resolved_provider = match provider {
+                Some(p) => p,
+                None => fetch_ocr_provider_from_settings(client)?,
+            };
+            let resolved_env = api_key_env.unwrap_or_else(|| "ZOTRON_OCR_API_KEY".to_string());
+            let needs_auth = result_dir.is_none() && result_zip.is_none();
+            if needs_auth && env::var(&resolved_env).ok().filter(|v| !v.is_empty()).is_none() {
+                let key = fetch_ocr_api_key_from_settings(client);
+                if !key.is_empty() {
+                    unsafe { env::set_var(&resolved_env, &key); }
+                }
+            }
+            run_ocr_process_command(
+                client,
+                OcrProcessOptions {
+                    provider: resolved_provider,
+                    parent,
+                    attachment,
+                    source_url,
+                    result_dir,
+                    result_zip,
+                    provider_endpoint,
+                    api_key_env: resolved_env,
+                    poll_interval_seconds,
+                    timeout_seconds,
+                    chunk_chars,
+                },
+            )?
+        }
     };
     format_json(&value, JsonStyle::PythonCompact)
 }
@@ -1416,6 +1431,27 @@ fn run_ocr_run_command(options: OcrRunOptions) -> Result<Value, String> {
         "provider": request.provider,
         "blocks": blocks,
     }))
+}
+
+fn fetch_ocr_provider_from_settings(client: &mut impl RpcCaller) -> Result<String, String> {
+    let settings = client.call("settings.getAll", None)?;
+    let provider = settings
+        .get("ocr.provider")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    if provider.is_empty() {
+        return Err("MISSING_CONFIG: ocr.provider not configured — set it in Zotero → Settings → Zotron → OCR Settings".to_string());
+    }
+    Ok(provider)
+}
+
+fn fetch_ocr_api_key_from_settings(client: &mut impl RpcCaller) -> String {
+    client
+        .call("settings.getRaw", Some(serde_json::json!({"key": "ocr.apiKey"})))
+        .ok()
+        .and_then(|raw| raw.get("ocr.apiKey").and_then(Value::as_str).map(String::from))
+        .unwrap_or_default()
 }
 
 fn run_ocr_process_command(

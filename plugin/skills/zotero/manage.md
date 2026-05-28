@@ -171,6 +171,8 @@ zotron items find-pdfs --collection "数字经济" --limit 20
 
 ## Push prepared items
 
+**Input must be Zotero-format JSON** with a valid `itemType` field (e.g. `"journalArticle"`). Raw output from other tools (e.g. `cnki paper get`) uses different schemas and is NOT compatible — use `cnki export` to push CNKI papers to Zotero instead.
+
 ```bash
 # Push a JSON file of items to Zotero
 zotron push items.json --collection "数字经济"

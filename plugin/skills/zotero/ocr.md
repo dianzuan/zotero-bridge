@@ -24,20 +24,17 @@ zotron ocr status --collection "数字经济"
 # Inspect configured providers
 zotron ocr providers
 
-# Parse a Zotero PDF through MinerU and write hidden sidecar blocks/chunks
-zotron ocr process --provider mineru --parent ITEMKEY --attachment ATTACHKEY
+# Parse a Zotero PDF and write hidden sidecar blocks/chunks (provider from Zotero settings)
+zotron ocr process --parent ITEMKEY
 
-# Use a public PDF URL instead of MinerU's local-file upload flow
-zotron ocr process --provider mineru --parent ITEMKEY --attachment ATTACHKEY --source-url "https://example.com/paper.pdf"
+# Attachment key auto-resolved from --parent; specify explicitly if multiple PDFs
+zotron ocr process --parent ITEMKEY --attachment ATTACHKEY
 
-# Replay an already-downloaded/unzipped MinerU result without another provider call
-zotron ocr process --provider mineru --parent ITEMKEY --attachment ATTACHKEY --result-dir /tmp/mineru-result
-
-# Run one provider request from an explicit JSON payload
-zotron ocr run --provider mineru --input /tmp/request.json
+# Replay an already-downloaded MinerU result without another provider call
+zotron ocr process --parent ITEMKEY --result-dir /tmp/mineru-result
 ```
 
-Use `process` for the real pipeline. `run` is only a low-level transport/debug command and may return a submitted async task instead of persisted artifacts.
+Use `process` for the real pipeline. `run` is only a low-level transport/debug command.
 
 ## When to use
 
@@ -45,13 +42,7 @@ OCR is not mandatory for every PDF. Zotero's built-in text extraction is the fir
 
 ## Configuration
 
-Needs provider API keys. Keep them in ignored environment files or shell env, not in commands or docs:
-
-```bash
-export ZOTRON_MINERU_API_KEY=...
-export ZOTRON_PADDLE_OCR_TOKEN=...
-export ZOTRON_GLM_API_KEY=...
-```
+OCR provider, API key, model, and URL are configured in **Zotero → Settings → Zotron → OCR Settings**. The CLI reads these automatically via RPC — no flags or environment variables needed.
 
 ## Output
 

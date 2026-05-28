@@ -97,6 +97,6 @@ With RAG: get 10 relevant paragraphs → ~5K tokens per query
 Embedding provider and retrieval mode (hybrid/dense/lexical) are configured in Zotero → Settings → Zotron panel. API tokens are user-provided and should not be hardcoded in commands or skill docs.
 
 ```bash
-zotron ocr process --provider mineru --parent ITEMKEY --attachment ATTACHKEY
+zotron ocr process --parent ITEMKEY
 zotron rag search --key ITEMKEY --output jsonl "研究问题"
 ```
