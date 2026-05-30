@@ -31,7 +31,7 @@ Once installed, your agent can:
 
 - **Export** citations as BibTeX, APA, Chicago, or any CSL style. Export a single item, multiple items, or an entire collection. Output goes to stdout, redirect to a file as needed.
 
-- **OCR** scanned PDFs with pluggable providers (MinerU, GLM, PaddleOCR). OCR results are stored as sidecar files per attachment. After OCR, `rag search` runs hybrid retrieval: BM25 lexical matching + cosine vector similarity + Reciprocal Rank Fusion, all local.
+- **OCR** scanned PDFs with pluggable providers (MinerU, GLM, PaddleOCR). OCR results are stored as sidecar files per attachment. After OCR, `rag search` runs hybrid retrieval: BM25 lexical matching + cosine vector similarity + Reciprocal Rank Fusion, all local. An optional reranker re-scores the fused candidates, a dynamic relevance cutoff trims weak hits, and MMR diversifies the final results.
 
 - **Manage** collections, tags, and attachments. Create collections, move items between them, add/remove tags in batch, attach files by URL or local path, find missing PDFs.
 
