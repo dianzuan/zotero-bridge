@@ -1,6 +1,6 @@
 # Zotron CLI Command Reference
 
-Generated: 2026-05-12
+Generated: 2026-05-30
 
 ## zotron ping
 ```
@@ -242,7 +242,32 @@ Commands:
   run        Execute an OCR provider request from JSON and emit normalized blocks
   status     Show OCR statistics for a collection
   process    Parse a Zotero PDF through MinerU and write hidden sidecar OCR/RAG artifacts
+  reindex    Re-chunk and re-embed existing OCR results without re-running OCR
 ```
+
+### zotron ocr reindex
+```
+Re-chunk and re-embed existing OCR results without re-running OCR
+
+Usage: zotron ocr reindex [OPTIONS]
+
+Options:
+      --collection <COLLECTION>
+      --key <KEY>
+      --stale-only                 Only reindex items with stale schema version
+      --chunk-chars <CHUNK_CHARS>  [default: 1200]
+      --url <URL>                  [default: http://127.0.0.1:23119/zotron/rpc]
+  -h, --help                       Print help
+```
+
+Rebuilds chunk sidecars and embedding vectors from already-extracted blocks — no
+OCR provider call, so it is free. Chunk sidecars carry a `schema_version` header
+line; `--stale-only` reads it and skips sidecars already at the current schema,
+so it only rebuilds what is out of date. **Run `zotron ocr reindex --stale-only`
+once after upgrading** so pre-schema-versioning v1 sidecars are rebuilt to the
+current schema (otherwise stale chunks get mixed into retrieval). Reindex also
+(re)generates embedding vectors, enabling semantic retrieval for documents that
+were only chunked before.
 
 ## zotron rag
 ```
@@ -285,6 +310,35 @@ Hybrid retrieval (BM25 + vector + RRF fusion) is the default. Falls back to
 keyword matching when no vector index exists. Embedding provider is configured
 in Zotero → Settings → Zotron panel. 10 providers supported: Ollama (default),
 OpenAI, Volcengine, DashScope, Zhipu, Jina, SiliconFlow, Voyage, Cohere, Custom.
+
+After fusion the results pass through a quality pipeline: an optional cross-encoder
+**rerank**; a **dynamic cutoff** (score floor + largest-gap trim, active when a
+reranker is configured) that returns only as many hits as are relevant instead of
+a fixed count; **MMR diversity** that drops near-duplicate spans (relevance scores
+are min-max normalized to 0..1 first, so diversity works in every mode); and a
+**token budget** bounded by min/max K.
+
+Output fields:
+- `mode` (top-level) — the retrieval path actually used: `hybrid`, `dense`, or
+  `lexical`. If embedding vectors or the query embedding are unavailable the
+  search falls back to lexical (BM25) and reports `lexical` here instead of
+  silently returning nothing.
+- `score_kind` (per hit) — origin/scale of the hit's `score`: `rerank` (0..1
+  reranker score), `rrf` (fused rank score), `cosine` (vector similarity), or
+  `bm25` (keyword score).
+
+`zotron rag status` reports `embeddings_available` / `total_vectors` so you can
+tell whether semantic (dense) retrieval is possible before searching.
+
+Retrieval pipeline settings (Zotero → Settings → Zotron panel):
+- `rag.retrievalMode` — `hybrid` (default) | `dense` | `lexical`
+- `rag.minK` (default 3) / `rag.maxK` (default 20) — result-count bounds
+- `rag.tokenBudget` (default 6000) — total token cap for returned spans
+- `rag.mmrLambda` (default 0.7) — diversity trade-off (higher favors relevance)
+- `rerank.provider` / `rerank.apiKey` / `rerank.model` / `rerank.apiUrl` — reranker config
+- `rerank.candidateCount` (default 30) — how many fused candidates to rerank
+- `rerank.scoreFloor` (default 0.1) — drop reranked hits below this score
+- `rerank.gapThreshold` (default 0.15) — trim the tail at the largest score gap
 
 ## zotron find-pdfs
 ```

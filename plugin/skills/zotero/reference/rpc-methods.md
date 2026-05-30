@@ -33,7 +33,7 @@ zotron system methods
 | `export` | `zotron export --format bibtex/ris/csl-json/bibliography` | Export citations in various formats |
 | `settings` | `zotron settings <verb>` | Get, set, list preferences |
 | `system` | `zotron system <verb>` | Version, libraries, library-stats, schema, current-collection, methods |
-| `ocr` | `zotron ocr <verb>` | providers, run, status, process |
+| `ocr` | `zotron ocr <verb>` | providers, run, status, process, reindex |
 | `rag` | `zotron rag <verb>` | providers, embed, status, search |
 
 ## Identifiers

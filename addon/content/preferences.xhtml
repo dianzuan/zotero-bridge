@@ -37,14 +37,12 @@
   <hbox align="center">
     <label id="zotron-ocr-model-label" value="Model:" style="width: 120px;" />
     <html:input id="zotron-ocr-model" type="text"
-                readonly="readonly"
-                style="flex: 1; color: #888;"></html:input>
+                style="flex: 1;"></html:input>
   </hbox>
   <hbox align="center">
     <label id="zotron-ocr-url-label" value="API URL:" style="width: 120px;" />
     <html:input id="zotron-ocr-apiurl" type="text"
-                readonly="readonly"
-                style="flex: 1; color: #888;"></html:input>
+                style="flex: 1;"></html:input>
   </hbox>
 </groupbox>
 
@@ -78,14 +76,47 @@
   <hbox align="center">
     <label id="zotron-emb-model-label" value="Model:" style="width: 120px;" />
     <html:input id="zotron-emb-model" type="text"
-                readonly="readonly"
-                style="flex: 1; color: #888;"></html:input>
+                style="flex: 1;"></html:input>
   </hbox>
   <hbox align="center">
     <label id="zotron-emb-url-label" value="API URL:" style="width: 120px;" />
     <html:input id="zotron-emb-apiurl" type="text"
-                readonly="readonly"
-                style="flex: 1; color: #888;"></html:input>
+                style="flex: 1;"></html:input>
+  </hbox>
+</groupbox>
+
+<groupbox>
+  <label><html:h2 id="zotron-rerank-title">Reranker Settings</html:h2></label>
+  <hbox align="center">
+    <label id="zotron-rerank-provider-label" value="Provider:" style="width: 120px;" />
+    <menulist id="zotron-rerank-provider">
+      <menupopup>
+        <menuitem label="Jina" value="jina" />
+        <menuitem label="Cohere" value="cohere" />
+        <menuitem label="Voyage" value="voyage" />
+        <menuitem label="DashScope" value="dashscope" />
+        <menuitem label="SiliconFlow" value="siliconflow" />
+        <menuitem label="Custom" value="openai-compatible" />
+      </menupopup>
+    </menulist>
+  </hbox>
+  <hbox align="center">
+    <label id="zotron-rerank-key-label" value="API Key:" style="width: 120px;" />
+    <html:input id="zotron-rerank-apikey" type="password"
+                placeholder="Leave empty to disable reranking"
+                style="flex: 1;"></html:input>
+    <button id="zotron-rerank-test" label="Test" />
+  </hbox>
+  <html:p id="zotron-rerank-status" style="font-size: 11px; color: #888; margin: 2px 0 0 124px;"></html:p>
+  <hbox align="center">
+    <label id="zotron-rerank-model-label" value="Model:" style="width: 120px;" />
+    <html:input id="zotron-rerank-model" type="text"
+                style="flex: 1;"></html:input>
+  </hbox>
+  <hbox align="center">
+    <label id="zotron-rerank-url-label" value="API URL:" style="width: 120px;" />
+    <html:input id="zotron-rerank-url" type="text"
+                style="flex: 1;"></html:input>
   </hbox>
 </groupbox>
 

@@ -73,6 +73,26 @@ Hybrid search runs BM25 + vector + RRF fusion locally, then calls the XPI for me
 
 Do not collapse these hits into final paper cards unless the caller explicitly asks. `academic-zh` consumes hits JSONL and builds `paper_cards.jsonl` plus `citation_map.json` itself.
 
+## Retrieval pipeline: rerank + dynamic cutoff + diversity
+
+After the BM25 + vector + RRF fusion, `rag search` runs a quality pipeline before returning hits:
+
+1. **Rerank** (optional) — when a reranker is configured in Zotero → Settings → Zotron, the top candidates are re-scored by a cross-encoder. Reranker scores land in a clean 0..1 relevance range. Configured via `rerank.provider`, `rerank.apiKey`, `rerank.candidateCount`.
+2. **Dynamic cutoff** — when a reranker is active, a score floor (`rerank.scoreFloor`) drops weak hits and a gap cutoff (`rerank.gapThreshold`) trims the long tail at the largest score drop, so you get only as many hits as are actually relevant instead of a fixed `k`.
+3. **Diversity (MMR)** — near-duplicate spans are removed so the same passage repeated across papers does not crowd out distinct evidence. Tuned with `rag.mmrLambda` (higher = favor relevance, lower = favor diversity). Relevance scores are normalized to a 0..1 scale before this step so diversity works in every mode, including when no reranker is configured.
+4. **Token budget + bounds** — the result set is capped by `rag.tokenBudget` and bounded by `rag.minK` / `rag.maxK`.
+
+### New output fields
+
+Every `rag search` result now reports how it was actually produced:
+
+- **`mode`** (top-level) — the retrieval path actually used: `hybrid`, `dense`, or `lexical`. This can differ from the configured mode: if embedding vectors or the query embedding are unavailable, the search transparently falls back to lexical (BM25) and reports `lexical` here instead of silently returning nothing.
+- **`score_kind`** (per hit) — the origin/scale of that hit's `score`: `rerank` (0..1 reranker score), `rrf` (fused rank score), `cosine` (vector similarity), or `bm25` (keyword score). Use this to interpret the `score` value, since the scale differs by path.
+
+Check `zotron rag status` before searching: `embeddings_available` and `total_vectors` tell you whether semantic (dense) retrieval is actually possible for the collection, or whether the search will run lexical-only.
+
+> **After upgrading:** old v1 chunk sidecars are not schema-versioned and will be treated as stale. Run `zotron ocr reindex --stale-only` (optionally scoped with `--collection` or `--key`) once after upgrading so old sidecars are rebuilt to the current schema. Skipping this mixes stale chunks into retrieval. `--stale-only` only rebuilds out-of-date sidecars, so it is safe and cheap to run.
+
 For a real fixture matching this contract, see:
 
 ```bash
@@ -97,6 +117,6 @@ With RAG: get 10 relevant paragraphs → ~5K tokens per query
 Embedding provider and retrieval mode (hybrid/dense/lexical) are configured in Zotero → Settings → Zotron panel. API tokens are user-provided and should not be hardcoded in commands or skill docs.
 
 ```bash
-zotron ocr process --provider mineru --parent ITEMKEY --attachment ATTACHKEY
+zotron ocr process --parent ITEMKEY
 zotron rag search --key ITEMKEY --output jsonl "研究问题"
 ```

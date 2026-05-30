@@ -171,6 +171,8 @@ zotron items find-pdfs --collection "数字经济" --limit 20
 
 ## Push prepared items
 
+**Input must be Zotero-format JSON** with a valid `itemType` field (e.g. `"journalArticle"`). Raw output from external source tools may use a different schema and is NOT compatible — convert it to Zotero item JSON before pushing.
+
 ```bash
 # Push a JSON file of items to Zotero
 zotron push items.json --collection "数字经济"

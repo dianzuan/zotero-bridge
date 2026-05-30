@@ -707,13 +707,13 @@ fn ocr_parse_pdf_ingests_mineru_result_dir_into_hidden_sidecars() {
     assert_eq!(payload["status"], "indexed");
     assert_eq!(payload["blocks"], 3);
     assert_eq!(payload["chunks"], 2);
-    assert_eq!(
-        client.calls,
-        vec![(
-            "attachments.getPath".to_string(),
-            Some(json!({"key": "ATTACHKEY"}))
-        )]
-    );
+    // MinerU path now auto-embeds (mirrors the sync path); with no embedding
+    // settings queued the embed step is a no-op (0 vectors) but the field exists.
+    assert_eq!(payload["embeddings"], 0);
+    // First RPC resolves the attachment path; the embed step then calls
+    // settings.getAll to discover the embedding provider.
+    assert_eq!(client.calls[0].0, "attachments.getPath");
+    assert_eq!(client.calls[0].1, Some(json!({"key": "ATTACHKEY"})));
 
     let blocks_path = storage_dir.join(".zotron/ocr/latest.blocks.jsonl");
     let chunks_path = storage_dir.join(".zotron/chunks/chunks.v1.jsonl");
@@ -733,9 +733,129 @@ fn ocr_parse_pdf_ingests_mineru_result_dir_into_hidden_sidecars() {
     assert!(!blocks.contains("item_id"));
     assert!(!blocks.contains("attachment_id"));
     let chunks = fs::read_to_string(&chunks_path).expect("read chunks");
-    assert_eq!(chunks.lines().count(), 2);
+    // First line is the {"schema_version":N} header, followed by 2 chunk lines.
+    assert_eq!(chunks.lines().count(), 3);
+    assert!(chunks.lines().next().unwrap().contains("\"schema_version\":2"));
     assert!(chunks.contains("\"chunk_key\":\"ATTACHKEY:c0\""));
     assert!(chunks.contains("\"block_keys\""));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn ocr_reindex_stale_only_skips_current_schema_sidecar() {
+    // A chunks sidecar that already carries the current {"schema_version":2}
+    // header must be treated as current: --stale-only must skip it (no paid
+    // re-embed), reporting skipped=1, reindexed=0.
+    let root = std::env::temp_dir().join(format!(
+        "zotron-reindex-skip-{}-{}",
+        std::process::id(),
+        thread_id_suffix()
+    ));
+    let storage_dir = root.join("storage").join("ATTACHKEY");
+    let chunks_dir = storage_dir.join(".zotron").join("chunks");
+    fs::create_dir_all(&chunks_dir).expect("create chunks dir");
+    let pdf_path = storage_dir.join("paper.pdf");
+    fs::write(&pdf_path, b"%PDF-1").expect("write pdf placeholder");
+    // Current v2 sidecar (header present).
+    fs::write(
+        chunks_dir.join("chunks.v1.jsonl"),
+        b"{\"schema_version\":2}\n",
+    )
+    .expect("write current chunks sidecar");
+
+    let mut client = FakeClient::with_responses(vec![
+        // resolve_sidecar_paths: items.get for --key
+        json!({"key": "ITEMKEY"}),
+        // resolve_sidecar_paths: attachments.list for the item
+        json!([{ "key": "ATTACHKEY", "contentType": "application/pdf",
+                 "path": pdf_path.to_string_lossy() }]),
+    ]);
+
+    let out = run_with_client(
+        [
+            "zotron",
+            "ocr",
+            "reindex",
+            "--key",
+            "ITEMKEY",
+            "--stale-only",
+        ],
+        &mut client,
+    )
+    .expect("ocr reindex --stale-only succeeds");
+    let payload: Value = serde_json::from_str(&out).expect("reindex output is JSON");
+
+    assert_eq!(payload["skipped"], 1, "current-schema sidecar must be skipped");
+    assert_eq!(payload["reindexed"], 0, "no re-embed should happen");
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn ocr_reindex_rebuilds_legacy_sidecar_with_schema_header() {
+    // A legacy v1 chunks sidecar (no schema_version header) is stale and must be
+    // re-chunked + rewritten with the current header even under --stale-only.
+    let root = std::env::temp_dir().join(format!(
+        "zotron-reindex-rebuild-{}-{}",
+        std::process::id(),
+        thread_id_suffix()
+    ));
+    let storage_dir = root.join("storage").join("ATTACHKEY");
+    let chunks_dir = storage_dir.join(".zotron").join("chunks");
+    let ocr_dir = storage_dir.join(".zotron").join("ocr");
+    fs::create_dir_all(&chunks_dir).expect("create chunks dir");
+    fs::create_dir_all(&ocr_dir).expect("create ocr dir");
+    let pdf_path = storage_dir.join("paper.pdf");
+    fs::write(&pdf_path, b"%PDF-1").expect("write pdf placeholder");
+
+    // Legacy v1 sidecar: a plain chunk line, no schema_version header.
+    fs::write(
+        chunks_dir.join("chunks.v1.jsonl"),
+        b"{\"chunk_key\":\"ATTACHKEY:c0\",\"item_key\":\"ITEMKEY\",\"attachment_key\":\"ATTACHKEY\",\"block_keys\":[],\"section_path\":[],\"text\":\"old\",\"page_range\":[0,0],\"evidence_refs\":[]}\n",
+    )
+    .expect("write legacy chunks sidecar");
+
+    // Blocks sidecar so reindex can re-chunk.
+    fs::write(
+        ocr_dir.join("latest.blocks.jsonl"),
+        b"{\"block_key\":\"ATTACHKEY:b0\",\"item_key\":\"ITEMKEY\",\"attachment_key\":\"ATTACHKEY\",\"page_idx\":0,\"block_type\":\"paragraph\",\"section_path\":[],\"text\":\"Reindexed body paragraph.\"}\n",
+    )
+    .expect("write blocks sidecar");
+
+    let mut client = FakeClient::with_responses(vec![
+        json!({"key": "ITEMKEY"}),
+        json!([{ "key": "ATTACHKEY", "contentType": "application/pdf",
+                 "path": pdf_path.to_string_lossy() }]),
+        // embed_sidecar_chunks -> settings.getAll (no provider configured => no-op)
+        json!({}),
+    ]);
+
+    let out = run_with_client(
+        [
+            "zotron",
+            "ocr",
+            "reindex",
+            "--key",
+            "ITEMKEY",
+            "--stale-only",
+        ],
+        &mut client,
+    )
+    .expect("ocr reindex --stale-only succeeds");
+    let payload: Value = serde_json::from_str(&out).expect("reindex output is JSON");
+
+    assert_eq!(payload["reindexed"], 1, "legacy sidecar must be reindexed");
+    assert_eq!(payload["skipped"], 0);
+
+    // The rewritten sidecar now carries the v2 header.
+    let rewritten = fs::read_to_string(chunks_dir.join("chunks.v1.jsonl"))
+        .expect("read rewritten chunks");
+    assert!(
+        rewritten.lines().next().unwrap().contains("\"schema_version\":2"),
+        "rewritten sidecar must start with v2 header, got: {rewritten}"
+    );
+    assert!(rewritten.contains("Reindexed body paragraph."));
 
     let _ = fs::remove_dir_all(root);
 }
@@ -1444,6 +1564,9 @@ fn rag_status_detects_hidden_attachment_sidecar_chunks() {
     let mut client = FakeClient::with_responses(vec![
         json!([{"key": "COL1", "name": "Research", "children": []}]),
         json!({"items": [{"key": "ITEM1", "title": "Paper"}]}),
+        // fetch_embedding_settings: settings.getAll then settings.getRaw
+        json!({"embedding.provider": "", "embedding.model": ""}),
+        json!({"embedding.apiKey": ""}),
         json!([{"key": "ATT1", "path": pdf_path.to_string_lossy(), "contentType": "application/pdf"}]),
     ]);
 
@@ -1458,6 +1581,9 @@ fn rag_status_detects_hidden_attachment_sidecar_chunks() {
     assert_eq!(payload["collection"], "Research");
     assert_eq!(payload["total_items"], 1);
     assert_eq!(payload["total_chunks"], 2);
+    // No embedding vectors on disk => semantic retrieval unavailable.
+    assert_eq!(payload["total_vectors"], 0);
+    assert_eq!(payload["embeddings_available"], false);
     assert_eq!(
         client.calls,
         vec![
@@ -1465,6 +1591,11 @@ fn rag_status_detects_hidden_attachment_sidecar_chunks() {
             (
                 "collections.getItems".to_string(),
                 Some(json!({"key": "COL1", "limit": 500, "offset": 0}))
+            ),
+            ("settings.getAll".to_string(), None),
+            (
+                "settings.getRaw".to_string(),
+                Some(json!({"key": "embedding.apiKey"}))
             ),
             (
                 "attachments.list".to_string(),
@@ -1518,6 +1649,9 @@ fn rag_status_sidecar_accepts_collection_key() {
     let mut client = FakeClient::with_responses(vec![
         json!([{"key": "COL1", "name": "Research", "children": []}]),
         json!({"items": [{"key": "ITEM1", "title": "Paper"}]}),
+        // fetch_embedding_settings: settings.getAll then settings.getRaw
+        json!({"embedding.provider": "", "embedding.model": ""}),
+        json!({"embedding.apiKey": ""}),
         json!([{"key": "ATT1", "path": pdf_path.to_string_lossy(), "contentType": "application/pdf"}]),
     ]);
 
@@ -1531,6 +1665,7 @@ fn rag_status_sidecar_accepts_collection_key() {
     assert_eq!(payload["status"], "indexed");
     assert_eq!(payload["collection"], "COL1");
     assert_eq!(payload["total_chunks"], 1);
+    assert_eq!(payload["embeddings_available"], false);
 
     match original_home {
         Some(value) => std::env::set_var("HOME", value),
@@ -1576,6 +1711,135 @@ fn rag_search_falls_back_to_xpi_when_no_sidecars_on_disk() {
     assert!(payload["items"].as_array().is_some());
     // Should have called rag.searchHits as fallback
     assert!(client.calls.iter().any(|(method, _)| method == "rag.searchHits"));
+}
+
+#[test]
+fn rag_search_local_lexical_reports_mode_and_score_kind() {
+    // With sidecar chunks on disk and retrievalMode=lexical (no dense), the local
+    // hybrid pipeline runs BM25 and must report mode=lexical + score_kind=bm25.
+    let root = std::env::temp_dir().join(format!(
+        "zotron-rag-local-lexical-{}-{}",
+        std::process::id(),
+        thread_id_suffix()
+    ));
+    let storage_dir = root.join("storage").join("ATT1");
+    let chunks_dir = storage_dir.join(".zotron").join("chunks");
+    fs::create_dir_all(&chunks_dir).expect("create chunks dir");
+    let pdf_path = storage_dir.join("paper.pdf");
+    fs::write(&pdf_path, b"%PDF-1").expect("write pdf placeholder");
+    fs::write(
+        chunks_dir.join("chunks.v1.jsonl"),
+        b"{\"schema_version\":2}\n{\"chunk_key\":\"ATT1:c0\",\"item_key\":\"ITEM1\",\"attachment_key\":\"ATT1\",\"block_keys\":[],\"section_path\":[],\"text\":\"employment elasticity measurement and analysis\",\"page_range\":[0,0],\"evidence_refs\":[]}\n",
+    )
+    .expect("write chunks sidecar");
+
+    let mut client = FakeClient::with_responses(vec![
+        // resolve_sidecar_paths (--key): items.get
+        json!({"key": "ITEM1"}),
+        // resolve_sidecar_paths: attachments.list
+        json!([{ "key": "ATT1", "contentType": "application/pdf",
+                 "path": pdf_path.to_string_lossy() }]),
+        // fetch_embedding_settings: settings.getAll + settings.getRaw
+        json!({"embedding.provider": "", "embedding.model": ""}),
+        json!({"embedding.apiKey": ""}),
+        // fetch_retrieval_mode: settings.get
+        json!({"rag.retrievalMode": "lexical"}),
+        // fetch_rerank_settings: settings.getAll + settings.getRaw (no provider)
+        json!({}),
+        json!({"rerank.apiKey": ""}),
+        // fetch_rag_cutoff_settings: settings.getAll
+        json!({}),
+        // per-hit metadata: items.get
+        json!({"title": "Employment Elasticity", "creators": [], "date": "2024"}),
+    ]);
+
+    let out = run_with_client(
+        [
+            "zotron",
+            "rag",
+            "search",
+            "employment elasticity",
+            "--key",
+            "ITEM1",
+        ],
+        &mut client,
+    )
+    .expect("local lexical rag search succeeds");
+    let payload: Value = serde_json::from_str(&out).expect("rag search output is JSON");
+
+    assert_eq!(payload["mode"], "lexical", "actual retrieval path is lexical");
+    let items = payload["items"].as_array().expect("items array");
+    assert!(!items.is_empty(), "BM25 should return the matching chunk");
+    assert_eq!(items[0]["score_kind"], "bm25");
+    assert_eq!(items[0]["item_key"], "ITEM1");
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn rag_search_dense_mode_falls_back_to_lexical_without_vectors() {
+    // retrievalMode=dense but no embedding vectors on disk: the pipeline must
+    // NOT return a silent empty set — it falls back to a lexical BM25 pass and
+    // reports the actual path used (mode=lexical, score_kind=bm25).
+    let root = std::env::temp_dir().join(format!(
+        "zotron-rag-dense-fallback-{}-{}",
+        std::process::id(),
+        thread_id_suffix()
+    ));
+    let storage_dir = root.join("storage").join("ATT1");
+    let chunks_dir = storage_dir.join(".zotron").join("chunks");
+    fs::create_dir_all(&chunks_dir).expect("create chunks dir");
+    let pdf_path = storage_dir.join("paper.pdf");
+    fs::write(&pdf_path, b"%PDF-1").expect("write pdf placeholder");
+    fs::write(
+        chunks_dir.join("chunks.v1.jsonl"),
+        b"{\"schema_version\":2}\n{\"chunk_key\":\"ATT1:c0\",\"item_key\":\"ITEM1\",\"attachment_key\":\"ATT1\",\"block_keys\":[],\"section_path\":[],\"text\":\"employment elasticity measurement and analysis\",\"page_range\":[0,0],\"evidence_refs\":[]}\n",
+    )
+    .expect("write chunks sidecar");
+
+    let mut client = FakeClient::with_responses(vec![
+        // resolve_sidecar_paths (--key): items.get + attachments.list
+        json!({"key": "ITEM1"}),
+        json!([{ "key": "ATT1", "contentType": "application/pdf",
+                 "path": pdf_path.to_string_lossy() }]),
+        // fetch_embedding_settings: settings.getAll + settings.getRaw (none)
+        json!({"embedding.provider": "", "embedding.model": ""}),
+        json!({"embedding.apiKey": ""}),
+        // fetch_retrieval_mode: settings.get -> dense (but no vectors exist)
+        json!({"rag.retrievalMode": "dense"}),
+        // fetch_rerank_settings: settings.getAll + settings.getRaw (no provider)
+        json!({}),
+        json!({"rerank.apiKey": ""}),
+        // fetch_rag_cutoff_settings: settings.getAll
+        json!({}),
+        // per-hit metadata: items.get
+        json!({"title": "Employment Elasticity", "creators": [], "date": "2024"}),
+    ]);
+
+    let out = run_with_client(
+        [
+            "zotron",
+            "rag",
+            "search",
+            "employment elasticity",
+            "--key",
+            "ITEM1",
+        ],
+        &mut client,
+    )
+    .expect("dense-mode rag search falls back instead of failing");
+    let payload: Value = serde_json::from_str(&out).expect("rag search output is JSON");
+
+    assert_eq!(
+        payload["mode"], "lexical",
+        "dense mode with no vectors must fall back to lexical, not return silent empty"
+    );
+    let items = payload["items"].as_array().expect("items array");
+    assert!(!items.is_empty(), "lexical fallback must return the matching chunk");
+    assert_eq!(items[0]["score_kind"], "bm25");
+    assert_eq!(items[0]["item_key"], "ITEM1");
+
+    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
@@ -2092,4 +2356,30 @@ fn test_is_wsl() -> bool {
         || fs::read_to_string("/proc/sys/kernel/osrelease")
             .map(|release| release.to_ascii_lowercase().contains("microsoft"))
             .unwrap_or(false)
+}
+
+#[test]
+fn fetch_rerank_settings_returns_defaults_for_jina() {
+    let settings_response = json!({
+        "rerank.provider": "jina",
+        "rerank.model": "",
+        "rerank.apiUrl": "",
+        "rerank.candidateCount": "30",
+    });
+    let raw_response = json!({
+        "rerank.apiKey": "test-key-123"
+    });
+    let mut client = FakeClient::with_responses(vec![settings_response, raw_response]);
+    let result = zotron_cli::fetch_rerank_settings(&mut client);
+    assert!(
+        result.is_ok(),
+        "fetch_rerank_settings failed: {:?}",
+        result.err()
+    );
+    let rs = result.unwrap();
+    assert_eq!(rs.provider, "jina");
+    assert_eq!(rs.model, "jina-reranker-v2-base-multilingual");
+    assert!(rs.api_url.contains("jina.ai"));
+    assert_eq!(rs.api_key, "test-key-123");
+    assert_eq!(rs.candidate_count, 30);
 }

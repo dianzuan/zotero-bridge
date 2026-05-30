@@ -247,6 +247,79 @@ pub struct EmbeddingProviderSpec {
     pub document_task: Option<&'static str>,
 }
 
+/// Score normalization strategy for reranking providers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RerankScoreNorm {
+    /// Scores are already in [0, 1] — use as-is.
+    Identity,
+    /// Provider returns logits — apply sigmoid to normalize to [0, 1].
+    Sigmoid,
+}
+
+/// Static reranking provider contract, parallel to [`EmbeddingProviderSpec`].
+#[derive(Debug, Clone)]
+pub struct RerankProviderSpec {
+    pub id: &'static str,
+    pub provider_key: &'static str,
+    pub default_url: &'static str,
+    pub default_model: &'static str,
+    pub auth: &'static str,
+    pub score_norm: RerankScoreNorm,
+}
+
+pub fn builtin_rerank_provider_specs() -> Vec<RerankProviderSpec> {
+    vec![
+        RerankProviderSpec {
+            id: "jina",
+            provider_key: "jina",
+            default_url: "https://api.jina.ai/v1/rerank",
+            default_model: "jina-reranker-v2-base-multilingual",
+            auth: "bearer",
+            score_norm: RerankScoreNorm::Identity,
+        },
+        RerankProviderSpec {
+            id: "cohere",
+            provider_key: "cohere",
+            default_url: "https://api.cohere.com/v2/rerank",
+            default_model: "rerank-v3.5",
+            auth: "bearer",
+            score_norm: RerankScoreNorm::Identity,
+        },
+        RerankProviderSpec {
+            id: "voyage",
+            provider_key: "voyage",
+            default_url: "https://api.voyageai.com/v1/rerank",
+            default_model: "rerank-2",
+            auth: "bearer",
+            score_norm: RerankScoreNorm::Identity,
+        },
+        RerankProviderSpec {
+            id: "dashscope",
+            provider_key: "dashscope",
+            default_url: "https://dashscope.aliyuncs.com/compatible-api/v1/reranks",
+            default_model: "qwen3-rerank",
+            auth: "bearer",
+            score_norm: RerankScoreNorm::Identity,
+        },
+        RerankProviderSpec {
+            id: "siliconflow",
+            provider_key: "siliconflow",
+            default_url: "https://api.siliconflow.cn/v1/rerank",
+            default_model: "BAAI/bge-reranker-v2-m3",
+            auth: "bearer",
+            score_norm: RerankScoreNorm::Sigmoid,
+        },
+        RerankProviderSpec {
+            id: "openai-compatible",
+            provider_key: "openai-compatible",
+            default_url: "",
+            default_model: "",
+            auth: "bearer",
+            score_norm: RerankScoreNorm::Identity,
+        },
+    ]
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EmbeddingChunkInput {
     pub chunk_key: String,
@@ -342,11 +415,17 @@ impl StructureChunk {
             .max()
             .unwrap_or(page_start);
         let section_path = first.map(|b| b.section_path.clone()).unwrap_or_default();
-        let text = blocks
+        let body = blocks
             .iter()
             .map(|b| b.text.as_str())
             .collect::<Vec<_>>()
             .join("\n\n");
+        let section = &blocks[0].section_path;
+        let text = if section.is_empty() {
+            body
+        } else {
+            format!("{}: {}", section.join(" > "), body)
+        };
 
         Self {
             chunk_key,
@@ -855,6 +934,56 @@ pub fn parse_embedding_provider_response(
             })
         })
         .collect()
+}
+
+#[derive(Debug, Clone)]
+pub struct RerankResult {
+    pub index: usize,
+    pub score: f64,
+}
+
+pub fn build_rerank_provider_request(
+    model: &str,
+    query: &str,
+    documents: &[&str],
+    top_n: usize,
+) -> serde_json::Value {
+    serde_json::json!({
+        "model": model,
+        "query": query,
+        "documents": documents,
+        "top_n": top_n,
+    })
+}
+
+fn sigmoid(x: f64) -> f64 {
+    1.0 / (1.0 + (-x).exp())
+}
+
+pub fn parse_rerank_provider_response(
+    spec: &RerankProviderSpec,
+    payload: &serde_json::Value,
+) -> Result<Vec<RerankResult>, String> {
+    let results = payload
+        .get("results")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| "missing 'results' array in rerank response".to_string())?;
+
+    let mut parsed: Vec<RerankResult> = results
+        .iter()
+        .filter_map(|r| {
+            let index = r.get("index")?.as_u64()? as usize;
+            let raw_score = r.get("relevance_score")?.as_f64()?;
+            let score = match spec.score_norm {
+                RerankScoreNorm::Identity => raw_score,
+                RerankScoreNorm::Sigmoid => sigmoid(raw_score),
+            };
+            Some(RerankResult { index, score })
+        })
+        .collect();
+
+    parsed.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    Ok(parsed)
 }
 
 pub fn execute_ocr_provider_request(
@@ -1745,7 +1874,7 @@ pub fn chunks_from_blocks(blocks: &[PdfEvidenceBlock], max_chars: usize) -> Vec<
         let mut block = block.clone();
         block.section_path = block_section;
 
-        if is_table_type(&block.block_type) {
+        if is_table_type(&block.block_type) || is_figure_type(&block.block_type) {
             flush_chunk(&mut chunks, &mut current, &attachment_key);
             current_chars = 0;
             chunks.push(StructureChunk::from_blocks(
@@ -1941,12 +2070,17 @@ fn normalize_block_type(block_type: &str) -> &str {
         "title" | "doc_title" | "paragraph_title" | "heading" | "section" => "heading",
         "text" => "paragraph",
         "table" | "table_body" | "table_caption" | "table_footnote" => "table",
+        "image" | "figure" | "image_caption" => "figure",
         other => other,
     }
 }
 
 fn is_table_type(block_type: &str) -> bool {
     normalize_block_type(block_type) == "table"
+}
+
+fn is_figure_type(block_type: &str) -> bool {
+    normalize_block_type(block_type) == "figure"
 }
 
 fn same_section(a: &[String], b: &[String]) -> bool {
@@ -2046,6 +2180,125 @@ pub fn rrf_merge(
     merged.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     merged.truncate(limit);
     merged
+}
+
+pub fn score_floor_filter(ranked: &[(usize, f64)], floor: f64) -> Vec<(usize, f64)> {
+    ranked.iter().filter(|(_, s)| *s >= floor).copied().collect()
+}
+
+pub fn gap_cutoff(ranked: &[(usize, f64)], threshold: f64) -> Vec<(usize, f64)> {
+    if ranked.len() <= 1 {
+        return ranked.to_vec();
+    }
+    for i in 0..ranked.len() - 1 {
+        let gap = ranked[i].1 - ranked[i + 1].1;
+        if gap > threshold {
+            return ranked[..=i].to_vec();
+        }
+    }
+    ranked.to_vec()
+}
+
+pub fn token_budget_filter(
+    ranked: &[(usize, f64)],
+    text_lens: &[usize],
+    budget: usize,
+) -> Vec<(usize, f64)> {
+    let mut total = 0usize;
+    let mut result = Vec::new();
+    for &(idx, score) in ranked {
+        let tokens = text_lens.get(idx).copied().unwrap_or(0) / 3;
+        if !result.is_empty() && total + tokens > budget {
+            break;
+        }
+        total += tokens;
+        result.push((idx, score));
+    }
+    result
+}
+
+pub fn max_k_truncate(
+    mut ranked: Vec<(usize, f64)>,
+    max_k: usize,
+) -> Vec<(usize, f64)> {
+    ranked.truncate(max_k);
+    ranked
+}
+
+/// Min-max normalize a slice of scores into the [0,1] range.
+///
+/// Maps `min -> 0.0` and `max -> 1.0` via a linear transform. This lets
+/// downstream relevance thresholds (e.g. the MMR cutoff) operate on a stable
+/// [0,1] scale regardless of the upstream score origin (RRF ~0.016, raw BM25,
+/// cosine, or 0..1 reranker scores).
+///
+/// Edge cases:
+/// - empty input -> empty output
+/// - single element -> `[1.0]`
+/// - all-equal (`max == min`) -> all `1.0` (no division by zero)
+/// - NaN values are ignored when computing min/max and passed through as the
+///   max-mapped value (`1.0`) so they never produce NaN/inf in the output.
+pub fn min_max_normalize(scores: &[f32]) -> Vec<f32> {
+    if scores.is_empty() {
+        return Vec::new();
+    }
+    let mut min = f32::INFINITY;
+    let mut max = f32::NEG_INFINITY;
+    for &s in scores {
+        if s.is_nan() {
+            continue;
+        }
+        if s < min {
+            min = s;
+        }
+        if s > max {
+            max = s;
+        }
+    }
+    // All-NaN, single element, or all-equal: collapse to 1.0 (no /0).
+    let range = max - min;
+    if !range.is_finite() || range <= f32::EPSILON {
+        return vec![1.0; scores.len()];
+    }
+    scores
+        .iter()
+        .map(|&s| {
+            if s.is_nan() {
+                1.0
+            } else {
+                (s - min) / range
+            }
+        })
+        .collect()
+}
+
+pub fn mmr_select(
+    ranked: &[(usize, f64)],
+    vectors: &std::collections::HashMap<usize, &[f64]>,
+    lambda: f64,
+    threshold: f64,
+) -> Vec<(usize, f64)> {
+    if ranked.is_empty() {
+        return Vec::new();
+    }
+    let mut selected: Vec<(usize, f64)> = vec![ranked[0]];
+
+    for &(idx, score) in &ranked[1..] {
+        let Some(vec_candidate) = vectors.get(&idx) else {
+            selected.push((idx, score));
+            continue;
+        };
+        let max_sim = selected
+            .iter()
+            .filter_map(|(sel_idx, _)| vectors.get(sel_idx))
+            .map(|sel_vec| cosine_similarity(vec_candidate, sel_vec))
+            .fold(0.0f64, f64::max);
+        let mmr_score = lambda * score - (1.0 - lambda) * max_sim;
+        if mmr_score > threshold {
+            selected.push((idx, score));
+        }
+    }
+    selected
 }
 
 fn tokenize_query(text: &str) -> Vec<String> {

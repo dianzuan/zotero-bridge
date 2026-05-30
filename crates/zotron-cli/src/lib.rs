@@ -15,10 +15,12 @@ use zotron_rpc::{StdProviderCommandRunner, UreqProviderHttpTransport, ZoteroRpc}
 use zotron_types::{
     bm25_score_chunks, build_embedding_provider_request, build_ocr_provider_request,
     builtin_ocr_provider_specs, cosine_similarity, execute_embedding_provider_request,
-    is_zotron_evidence_artifact, machine_artifact_exists_for_item,
+    gap_cutoff, is_zotron_evidence_artifact, machine_artifact_exists_for_item,
     machine_artifact_exists_in_sidecar, machine_artifact_store_root,
+    max_k_truncate, mmr_select,
     ocr_provider_spec as raw_ocr_provider_spec, parse_embedding_provider_response,
     parse_ocr_provider_response, read_machine_artifact_sidecar, rrf_merge,
+    score_floor_filter, token_budget_filter,
     write_machine_artifact_sidecar, ArtifactStorePlatform, EmbeddingChunkInput,
     EmbeddingRequestInput, EmbeddingVector, MachineArtifactKind, OcrRequestInput,
     ProviderCommandRunner, ProviderHttpInvocation, ProviderHttpTransport, StructureChunk,
@@ -259,11 +261,25 @@ enum OcrCommand {
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
-    /// Parse a Zotero PDF through MinerU and write hidden sidecar OCR/RAG artifacts.
+    /// Re-chunk and re-embed existing OCR results without re-running OCR.
+    Reindex {
+        #[arg(long)]
+        collection: Option<String>,
+        #[arg(long)]
+        key: Option<String>,
+        #[arg(long, help = "Only reindex items with stale schema version")]
+        stale_only: bool,
+        #[arg(long = "chunk-chars", default_value_t = 1200)]
+        chunk_chars: usize,
+        #[arg(long, default_value = DEFAULT_RPC_URL)]
+        url: String,
+    },
+    /// Parse a Zotero PDF and write hidden sidecar OCR/RAG artifacts. Provider read from Zotero settings unless --provider is given.
     #[command(name = "process")]
     Process {
-        #[arg(long, default_value = "mineru")]
-        provider: String,
+        /// Override OCR provider (default: read from Zotero settings ocr.provider).
+        #[arg(long)]
+        provider: Option<String>,
         /// Parent Zotero item key.
         #[arg(long)]
         parent: String,
@@ -279,12 +295,12 @@ enum OcrCommand {
         /// Already-downloaded MinerU result zip, used by tests/offline replay.
         #[arg(long = "result-zip")]
         result_zip: Option<String>,
-        /// Override MinerU submit endpoint.
+        /// Override provider endpoint (default: read from Zotero settings ocr.apiUrl).
         #[arg(long = "provider-endpoint")]
         provider_endpoint: Option<String>,
-        /// Environment variable containing the MinerU bearer token.
-        #[arg(long = "api-key-env", default_value = "ZOTRON_MINERU_API_KEY")]
-        api_key_env: String,
+        /// Environment variable containing the provider bearer token (fallback: Zotero settings ocr.apiKey).
+        #[arg(long = "api-key-env")]
+        api_key_env: Option<String>,
         #[arg(long = "poll-interval-seconds", default_value_t = 5)]
         poll_interval_seconds: u64,
         #[arg(long = "timeout-seconds", default_value_t = 900)]
@@ -1176,6 +1192,7 @@ fn command_url(command: &Command) -> String {
             OcrCommand::Providers => DEFAULT_RPC_URL.to_string(),
             OcrCommand::Run { .. } => DEFAULT_RPC_URL.to_string(),
             OcrCommand::Status { url, .. } => url.clone(),
+            OcrCommand::Reindex { url, .. } => url.clone(),
             OcrCommand::Process { url, .. } => url.clone(),
         },
         Command::Rag { command } => rag_command_url(command),
@@ -1285,6 +1302,9 @@ fn run_ocr_command(command: OcrCommand, client: &mut impl RpcCaller) -> Result<S
             api_key_env,
         })?,
         OcrCommand::Status { collection, .. } => run_ocr_status_command(client, collection)?,
+        OcrCommand::Reindex { collection, key, stale_only, chunk_chars, .. } => {
+            return run_ocr_reindex_command(client, collection, key, stale_only, chunk_chars);
+        }
         OcrCommand::Process {
             provider,
             parent,
@@ -1298,22 +1318,36 @@ fn run_ocr_command(command: OcrCommand, client: &mut impl RpcCaller) -> Result<S
             timeout_seconds,
             chunk_chars,
             ..
-        } => run_ocr_process_command(
-            client,
-            OcrProcessOptions {
-                provider,
-                parent,
-                attachment,
-                source_url,
-                result_dir,
-                result_zip,
-                provider_endpoint,
-                api_key_env,
-                poll_interval_seconds,
-                timeout_seconds,
-                chunk_chars,
-            },
-        )?,
+        } => {
+            let resolved_provider = match provider {
+                Some(p) => p,
+                None => fetch_ocr_provider_from_settings(client)?,
+            };
+            let resolved_env = api_key_env.unwrap_or_else(|| "ZOTRON_OCR_API_KEY".to_string());
+            let needs_auth = result_dir.is_none() && result_zip.is_none();
+            if needs_auth && env::var(&resolved_env).ok().filter(|v| !v.is_empty()).is_none() {
+                let key = fetch_ocr_api_key_from_settings(client);
+                if !key.is_empty() {
+                    unsafe { env::set_var(&resolved_env, &key); }
+                }
+            }
+            run_ocr_process_command(
+                client,
+                OcrProcessOptions {
+                    provider: resolved_provider,
+                    parent,
+                    attachment,
+                    source_url,
+                    result_dir,
+                    result_zip,
+                    provider_endpoint,
+                    api_key_env: resolved_env,
+                    poll_interval_seconds,
+                    timeout_seconds,
+                    chunk_chars,
+                },
+            )?
+        }
     };
     format_json(&value, JsonStyle::PythonCompact)
 }
@@ -1401,6 +1435,27 @@ fn run_ocr_run_command(options: OcrRunOptions) -> Result<Value, String> {
     }))
 }
 
+fn fetch_ocr_provider_from_settings(client: &mut impl RpcCaller) -> Result<String, String> {
+    let settings = client.call("settings.getAll", None)?;
+    let provider = settings
+        .get("ocr.provider")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    if provider.is_empty() {
+        return Err("MISSING_CONFIG: ocr.provider not configured — set it in Zotero → Settings → Zotron → OCR Settings".to_string());
+    }
+    Ok(provider)
+}
+
+fn fetch_ocr_api_key_from_settings(client: &mut impl RpcCaller) -> String {
+    client
+        .call("settings.getRaw", Some(serde_json::json!({"key": "ocr.apiKey"})))
+        .ok()
+        .and_then(|raw| raw.get("ocr.apiKey").and_then(Value::as_str).map(String::from))
+        .unwrap_or_default()
+}
+
 fn run_ocr_process_command(
     client: &mut impl RpcCaller,
     mut options: OcrProcessOptions,
@@ -1447,11 +1502,15 @@ fn run_ocr_process_command(
                 &storage_dir, &options.parent, &attachment,
                 &options.provider, &source, options.chunk_chars,
             )?;
+            let embedding_count = embed_sidecar_chunks(
+                client, &storage_dir, &options.parent, &attachment, &artifacts.chunks,
+            );
             Ok(serde_json::json!({
                 "provider": spec.provider_key,
                 "status": "indexed",
                 "item_key": options.parent,
                 "attachment_key": attachment,
+                "embeddings": embedding_count,
                 "attachment_path": attachment_path,
                 "storage_dir": storage_dir,
                 "task_id": source.task_id,
@@ -1578,9 +1637,8 @@ fn run_ocr_process_sync(
             storage_dir, &options.parent, attachment_key,
             MachineArtifactKind::Blocks, &blocks,
         )?,
-        write_sidecar_jsonl(
-            storage_dir, &options.parent, attachment_key,
-            MachineArtifactKind::Chunks, &chunks,
+        write_chunks_sidecar(
+            storage_dir, &options.parent, attachment_key, &chunks,
         )?,
     ];
 
@@ -1598,6 +1656,111 @@ fn run_ocr_process_sync(
         "chunks": chunks.len(),
         "artifacts": artifacts,
     }))
+}
+
+/// Schema version written as the first line of chunks.v1.jsonl by reindex.
+const CHUNK_SCHEMA_VERSION: u32 = 2;
+
+fn run_ocr_reindex_command(
+    client: &mut impl RpcCaller,
+    collection: Option<String>,
+    key: Option<String>,
+    stale_only: bool,
+    chunk_chars: usize,
+) -> Result<String, String> {
+    // Resolve sidecar paths using the same logic as RAG search.
+    let keys: Vec<String> = key.into_iter().collect();
+    let sidecars = resolve_sidecar_paths(
+        client,
+        collection.as_deref(),
+        &keys,
+    )?;
+
+    if sidecars.is_empty() {
+        return format_json(
+            &serde_json::json!({
+                "reindexed": 0,
+                "skipped": 0,
+                "message": "no sidecars found"
+            }),
+            JsonStyle::Pretty,
+        );
+    }
+
+    let mut reindexed: Vec<Value> = Vec::new();
+    let mut skipped = 0usize;
+
+    for (item_key, att_key, sidecar_root) in &sidecars {
+        // sidecar_root is storage_dir/.zotron
+        // storage_dir is sidecar_root's parent
+        let storage_dir = match sidecar_root.parent() {
+            Some(p) => p,
+            None => {
+                skipped += 1;
+                continue;
+            }
+        };
+
+        let chunks_path = sidecar_root.join(zotron_types::MachineArtifactKind::Chunks.sidecar_relative_path());
+        if stale_only {
+            if let Ok(f) = fs::File::open(&chunks_path) {
+                use std::io::BufRead;
+                let mut reader = std::io::BufReader::new(f);
+                let mut first_line = String::new();
+                if reader.read_line(&mut first_line).is_ok() {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&first_line) {
+                        if v.get("schema_version").and_then(|v| v.as_u64()) == Some(CHUNK_SCHEMA_VERSION as u64) {
+                            skipped += 1;
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+
+        let blocks_path = sidecar_root.join(zotron_types::MachineArtifactKind::Blocks.sidecar_relative_path());
+        let blocks_content = match fs::read_to_string(&blocks_path) {
+            Ok(c) => c,
+            Err(_) => {
+                skipped += 1;
+                continue;
+            }
+        };
+        let blocks: Vec<zotron_types::PdfEvidenceBlock> = blocks_content
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .filter_map(|line| serde_json::from_str(line).ok())
+            .collect();
+        if blocks.is_empty() {
+            skipped += 1;
+            continue;
+        }
+
+        // Re-chunk (same chunk-size handling as `ocr process`).
+        let chunks = zotron_types::chunks_from_blocks(&blocks, chunk_chars);
+
+        // Write chunks via the unified writer (adds the schema-version header).
+        write_chunks_sidecar(storage_dir, item_key, att_key, &chunks)?;
+
+        // Re-embed.
+        let embedding_count = embed_sidecar_chunks(client, storage_dir, item_key, att_key, &chunks);
+
+        reindexed.push(serde_json::json!({
+            "item_key": item_key,
+            "attachment_key": att_key,
+            "chunks": chunks.len(),
+            "embeddings": embedding_count,
+        }));
+    }
+
+    format_json(
+        &serde_json::json!({
+            "reindexed": reindexed.len(),
+            "skipped": skipped,
+            "items": reindexed,
+        }),
+        JsonStyle::Pretty,
+    )
 }
 
 fn embed_sidecar_chunks(
@@ -1623,10 +1786,17 @@ fn embed_sidecar_chunks(
     if emb_chunks.is_empty() {
         return 0;
     }
-    // Batch in groups of 20 to avoid API limits
+    // Batch in groups of 20 to avoid API limits. On ANY batch failure we must
+    // NOT clobber a complete existing vectors file with a truncated partial
+    // result — that silently degrades future retrieval while the caller reports
+    // a normal count. We collect into a temp file and atomically rename only if
+    // every batch succeeded; on partial failure we warn and leave the existing
+    // (complete) file untouched.
     let batch_size = 20;
+    let total_batches = emb_chunks.chunks(batch_size).count();
     let mut all_vectors: Vec<EmbeddingVector> = Vec::new();
-    for batch in emb_chunks.chunks(batch_size) {
+    let mut failed = false;
+    for (i, batch) in emb_chunks.chunks(batch_size).enumerate() {
         let input = EmbeddingRequestInput {
             item_key: item_key.to_string(),
             chunks: batch.to_vec(),
@@ -1634,32 +1804,76 @@ fn embed_sidecar_chunks(
             url: if api_url.is_empty() { None } else { Some(api_url.clone()) },
             input_type: Some("document".to_string()),
         };
-        let Ok(request) = build_embedding_provider_request(&provider, &input) else {
+        let request = match build_embedding_provider_request(&provider, &input) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("warning: embedding batch {}/{total_batches} request build failed: {e}", i + 1);
+                failed = true;
+                break;
+            }
+        };
+        let Some(url) = request.url.as_deref() else {
+            eprintln!("warning: embedding batch {}/{total_batches} has no provider URL configured", i + 1);
+            failed = true;
             break;
         };
-        let Some(url) = request.url.as_deref() else { break };
         let mut http = ureq::post(url).set("Content-Type", "application/json");
         if let Some(auth) = request.auth_header {
             if !api_key.is_empty() {
                 http = http.set(auth, &format!("Bearer {api_key}"));
             }
         }
-        let Ok(resp) = http.send_json(&request.body) else { break };
-        let Ok(payload): Result<Value, _> = resp.into_json() else { break };
-        let Ok(vectors) = parse_embedding_provider_response(&provider, &payload, item_key, batch)
-        else {
-            break;
+        let resp = match http.send_json(&request.body) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("warning: embedding batch {}/{total_batches} request failed: {e}", i + 1);
+                failed = true;
+                break;
+            }
         };
-        all_vectors.extend(vectors);
+        let payload: Value = match resp.into_json() {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("warning: embedding batch {}/{total_batches} response parse failed: {e}", i + 1);
+                failed = true;
+                break;
+            }
+        };
+        match parse_embedding_provider_response(&provider, &payload, item_key, batch) {
+            Ok(vectors) => all_vectors.extend(vectors),
+            Err(e) => {
+                eprintln!("warning: embedding batch {}/{total_batches} parse failed: {e}", i + 1);
+                failed = true;
+                break;
+            }
+        }
     }
+
+    if failed {
+        let filename = embedding_vector_filename(&provider, &model);
+        let vectors_path = storage_dir.join(".zotron").join("embeddings").join(&filename);
+        let preserved = if vectors_path.exists() {
+            " — existing vectors left untouched"
+        } else {
+            ""
+        };
+        eprintln!(
+            "warning: embedding incomplete ({} of {} chunks); not writing partial vectors{preserved}",
+            all_vectors.len(),
+            emb_chunks.len(),
+        );
+        // Signal partial/failed state to the caller (0 == nothing reliably written).
+        return 0;
+    }
+
     let count = all_vectors.len();
     if count > 0 {
         let filename = embedding_vector_filename(&provider, &model);
         let vectors_dir = storage_dir.join(".zotron").join("embeddings");
-        fs::create_dir_all(&vectors_dir).map_err(|e| {
+        if let Err(e) = fs::create_dir_all(&vectors_dir) {
             eprintln!("warning: cannot create embeddings dir {}: {e}", vectors_dir.display());
-            e
-        }).ok();
+            return 0;
+        }
         let vectors_path = vectors_dir.join(&filename);
         let mut out = String::new();
         for v in &all_vectors {
@@ -1668,8 +1882,16 @@ fn embed_sidecar_chunks(
                 out.push('\n');
             }
         }
-        if let Err(e) = fs::write(&vectors_path, &out) {
+        // Atomic write: temp file in the same dir, then rename over the target.
+        let tmp_path = vectors_dir.join(format!("{filename}.tmp"));
+        if let Err(e) = fs::write(&tmp_path, &out) {
+            eprintln!("warning: failed to write temp embeddings {}: {e}", tmp_path.display());
+            return 0;
+        }
+        if let Err(e) = fs::rename(&tmp_path, &vectors_path) {
             eprintln!("warning: failed to persist embeddings to {}: {e}", vectors_path.display());
+            let _ = fs::remove_file(&tmp_path);
+            return 0;
         }
     }
     count
@@ -1690,6 +1912,7 @@ struct PersistedOcrArtifacts {
     block_count: usize,
     chunk_count: usize,
     artifacts: Vec<Value>,
+    chunks: Vec<zotron_types::StructureChunk>,
 }
 
 fn resolve_attachment_path(
@@ -2169,11 +2392,10 @@ fn persist_mineru_result_sidecars(
         MachineArtifactKind::Blocks,
         &blocks,
     )?);
-    artifacts.push(write_sidecar_jsonl(
+    artifacts.push(write_chunks_sidecar(
         storage_dir,
         item_key,
         attachment_key,
-        MachineArtifactKind::Chunks,
         &chunks,
     )?);
     if let Some(markdown) = source.markdown.as_deref() {
@@ -2204,6 +2426,7 @@ fn persist_mineru_result_sidecars(
         block_count: blocks.len(),
         chunk_count: chunks.len(),
         artifacts,
+        chunks,
     })
 }
 
@@ -2231,6 +2454,33 @@ fn write_sidecar_jsonl<T: serde::Serialize>(
         out.push('\n');
     }
     write_sidecar_bytes(storage_dir, item_key, attachment_key, kind, out.as_bytes())
+}
+
+/// Write the Chunks sidecar with a `{"schema_version":N}` header line followed
+/// by one chunk per line. The header lets `ocr reindex --stale-only` detect
+/// freshly-produced (current-schema) sidecars and skip re-embedding them.
+/// This is the single writer for the Chunks artifact — `ocr process` (sync +
+/// MinerU) and `ocr reindex` all go through here so the on-disk format stays
+/// consistent.
+fn write_chunks_sidecar(
+    storage_dir: &Path,
+    item_key: &str,
+    attachment_key: &str,
+    chunks: &[zotron_types::StructureChunk],
+) -> Result<Value, String> {
+    let mut out = String::new();
+    out.push_str(&format!("{{\"schema_version\":{CHUNK_SCHEMA_VERSION}}}\n"));
+    for chunk in chunks {
+        out.push_str(&serde_json::to_string(chunk).map_err(|err| err.to_string())?);
+        out.push('\n');
+    }
+    write_sidecar_bytes(
+        storage_dir,
+        item_key,
+        attachment_key,
+        MachineArtifactKind::Chunks,
+        out.as_bytes(),
+    )
 }
 
 fn write_sidecar_bytes(
@@ -2800,6 +3050,186 @@ fn fetch_embedding_settings(
     Ok((provider, model, api_url, api_key))
 }
 
+#[derive(Debug)]
+pub struct RerankSettings {
+    pub provider: String,
+    pub model: String,
+    pub api_url: String,
+    pub api_key: String,
+    pub candidate_count: usize,
+}
+
+pub fn fetch_rerank_settings(
+    client: &mut impl RpcCaller,
+) -> Result<RerankSettings, String> {
+    let settings = client.call("settings.getAll", None)?;
+    let provider = settings
+        .get("rerank.provider")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let model = settings
+        .get("rerank.model")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let api_url = settings
+        .get("rerank.apiUrl")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let candidate_count = settings
+        .get("rerank.candidateCount")
+        .and_then(Value::as_str)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(30);
+
+    let raw = client.call(
+        "settings.getRaw",
+        Some(serde_json::json!({"key": "rerank.apiKey"})),
+    )?;
+    let api_key = raw
+        .get("rerank.apiKey")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+
+    let specs = zotron_types::builtin_rerank_provider_specs();
+    let spec = specs.iter().find(|s| s.id == provider);
+
+    let api_url = if api_url.is_empty() {
+        spec.map(|s| s.default_url.to_string()).unwrap_or_default()
+    } else {
+        api_url
+    };
+
+    let model = if model.is_empty() {
+        spec.map(|s| s.default_model.to_string()).unwrap_or_default()
+    } else {
+        model
+    };
+
+    Ok(RerankSettings {
+        provider,
+        model,
+        api_url,
+        api_key,
+        candidate_count,
+    })
+}
+
+struct RagCutoffSettings {
+    min_k: usize,
+    max_k: usize,
+    token_budget: usize,
+    mmr_lambda: f64,
+    score_floor: f64,
+    gap_threshold: f64,
+}
+
+fn fetch_rag_cutoff_settings(client: &mut impl RpcCaller) -> RagCutoffSettings {
+    let settings = client.call("settings.getAll", None).unwrap_or_default();
+    let get = |key: &str, default: &str| -> String {
+        settings
+            .get(key)
+            .and_then(|v| v.as_str())
+            .unwrap_or(default)
+            .to_string()
+    };
+    let legacy_top_k: Option<usize> = settings
+        .get("rag.topK")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse().ok());
+    let max_k = get("rag.maxK", "")
+        .parse()
+        .ok()
+        .or(legacy_top_k)
+        .unwrap_or(20);
+    if legacy_top_k.is_some()
+        && settings
+            .get("rag.maxK")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .is_empty()
+    {
+        eprintln!("warning: rag.topK is deprecated, use rag.maxK instead");
+    }
+    RagCutoffSettings {
+        min_k: get("rag.minK", "3").parse().unwrap_or(3),
+        max_k,
+        token_budget: get("rag.tokenBudget", "6000").parse().unwrap_or(6000),
+        mmr_lambda: get("rag.mmrLambda", "0.7").parse().unwrap_or(0.7),
+        score_floor: get("rerank.scoreFloor", "0.1").parse().unwrap_or(0.1),
+        gap_threshold: get("rerank.gapThreshold", "0.15").parse().unwrap_or(0.15),
+    }
+}
+
+fn rerank_chunks(
+    query: &str,
+    chunks: &[StructureChunk],
+    ranked: &[(usize, f64)],
+    settings: &RerankSettings,
+) -> Result<Vec<(usize, f64)>, String> {
+    let specs = zotron_types::builtin_rerank_provider_specs();
+    let spec = specs
+        .iter()
+        .find(|s| s.id == settings.provider)
+        .ok_or_else(|| format!("unknown rerank provider: {}", settings.provider))?;
+
+    let candidate_count = settings.candidate_count.min(ranked.len());
+    let candidates: Vec<(usize, f64)> = ranked.iter().take(candidate_count).copied().collect();
+    let documents: Vec<&str> = candidates
+        .iter()
+        .map(|(idx, _)| chunks[*idx].text.as_str())
+        .collect();
+
+    let request_body = zotron_types::build_rerank_provider_request(
+        &settings.model,
+        query,
+        &documents,
+        candidate_count,
+    );
+
+    let body_str = serde_json::to_string(&request_body)
+        .map_err(|e| format!("rerank request serialize error: {e}"))?;
+
+    let agent = ureq::AgentBuilder::new()
+        .timeout(Duration::from_secs(10))
+        .build();
+
+    let send = |agent: &ureq::Agent| -> Result<ureq::Response, (bool, String)> {
+        agent
+            .post(&settings.api_url)
+            .set("Content-Type", "application/json")
+            .set("Authorization", &format!("Bearer {}", settings.api_key))
+            .send_string(&body_str)
+            .map_err(|e| {
+                let transient = matches!(&e, ureq::Error::Status(code, _) if *code == 429 || *code >= 500);
+                (transient, e.to_string())
+            })
+    };
+
+    let response = match send(&agent) {
+        Ok(r) => r,
+        Err((true, _)) => {
+            std::thread::sleep(Duration::from_secs(1));
+            send(&agent).map_err(|(_, msg)| format!("rerank API retry failed: {msg}"))?
+        }
+        Err((_, msg)) => return Err(format!("rerank API failed: {msg}")),
+    };
+
+    let payload: serde_json::Value = response
+        .into_json()
+        .map_err(|e| format!("rerank response parse error: {e}"))?;
+
+    let reranked = zotron_types::parse_rerank_provider_response(spec, &payload)?;
+
+    Ok(reranked
+        .into_iter()
+        .map(|r| (candidates[r.index].0, r.score))
+        .collect())
+}
+
 fn fetch_retrieval_mode(client: &mut impl RpcCaller) -> String {
     client
         .call(
@@ -2877,14 +3307,27 @@ fn resolve_sidecar_paths(
     Ok(results)
 }
 
+/// True if a sidecar line is the `{"schema_version":N}` header line written by
+/// `write_chunks_sidecar`. Detected by PARSING the line and checking for a
+/// top-level numeric `schema_version` key — not by substring-matching the
+/// token, which would drop a legitimate chunk whose text contains it.
+fn is_chunk_schema_header(line: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(line)
+        .ok()
+        .and_then(|v| v.get("schema_version").map(serde_json::Value::is_number))
+        .unwrap_or(false)
+}
+
 fn load_sidecar_chunks(sidecar_root: &Path) -> Vec<StructureChunk> {
-    let chunks_path = sidecar_root.join("chunks").join("chunks.v1.jsonl");
+    let chunks_path =
+        sidecar_root.join(MachineArtifactKind::Chunks.sidecar_relative_path());
     let Ok(content) = fs::read_to_string(&chunks_path) else {
         return Vec::new();
     };
     content
         .lines()
         .filter(|line| !line.trim().is_empty())
+        .filter(|line| !is_chunk_schema_header(line))
         .filter_map(|line| serde_json::from_str::<StructureChunk>(line).ok())
         .collect()
 }
@@ -3076,18 +3519,18 @@ fn run_rag_search_command(
         return run_rag_search_xpi_fallback(client, &options);
     }
 
-    // Step 3: determine retrieval mode.
-    let mode = fetch_retrieval_mode(client);
+    // Step 3: determine requested retrieval mode.
+    let requested_mode = fetch_retrieval_mode(client);
 
     // Step 4: BM25 scoring (unless mode is "dense").
-    let bm25_ranked = if mode != "dense" {
+    let mut bm25_ranked = if requested_mode != "dense" {
         bm25_score_chunks(&all_chunks, &options.query, 1.2, 0.75)
     } else {
         Vec::new()
     };
 
     // Step 5: dense vector scoring (unless mode is "lexical" or no vectors).
-    let dense_ranked = if mode != "lexical" && !all_vectors.is_empty() {
+    let dense_ranked = if requested_mode != "lexical" && !all_vectors.is_empty() {
         match embed_query_text(&options.query, &emb_provider, &emb_model, &emb_url, &emb_key) {
             Ok(query_vec) => {
                 let vec_map: std::collections::HashMap<&str, &[f64]> = all_vectors
@@ -3107,21 +3550,160 @@ fn run_rag_search_command(
                 scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
                 scores
             }
-            Err(_) => Vec::new(),
+            Err(e) => {
+                // Query embedding failed: don't silently swallow it.
+                eprintln!("warning: dense retrieval unavailable (query embedding failed): {e}");
+                Vec::new()
+            }
         }
     } else {
+        if requested_mode == "dense" && all_vectors.is_empty() {
+            eprintln!("warning: dense retrieval requested but no embedding vectors found for this scope");
+        }
         Vec::new()
     };
 
-    // Step 6: merge results.
+    // Step 6: merge results. Determine the ACTUAL retrieval path used so the
+    // output can report it (the requested mode may not be achievable).
     let limit = options.top_k as usize;
-    let ranked = if !bm25_ranked.is_empty() && !dense_ranked.is_empty() {
+    let actual_mode: &str;
+    let rrf_ranked = if !bm25_ranked.is_empty() && !dense_ranked.is_empty() {
+        actual_mode = "hybrid";
         rrf_merge(&bm25_ranked, &dense_ranked, 60.0, limit)
-    } else if !bm25_ranked.is_empty() {
-        bm25_ranked.into_iter().take(limit).collect()
-    } else {
+    } else if !dense_ranked.is_empty() {
+        actual_mode = "dense";
         dense_ranked.into_iter().take(limit).collect()
+    } else if !bm25_ranked.is_empty() {
+        actual_mode = "lexical";
+        bm25_ranked.clone().into_iter().take(limit).collect()
+    } else {
+        // Both BM25 and dense produced nothing. In "dense" mode BM25 was never
+        // run, so do a lexical BM25 fallback pass rather than returning a silent
+        // empty set — this covers dense-unavailable (no vectors / query-embed
+        // failed) AND dense-ran-but-matched-nothing. In lexical/hybrid modes
+        // BM25 already ran and was genuinely empty, so we just report the
+        // lexical path with no results.
+        if requested_mode == "dense" {
+            eprintln!("warning: falling back to lexical (BM25) retrieval");
+            bm25_ranked = bm25_score_chunks(&all_chunks, &options.query, 1.2, 0.75);
+        }
+        actual_mode = "lexical";
+        bm25_ranked.clone().into_iter().take(limit).collect()
     };
+
+    // --- Rerank + Dynamic Cutoff Pipeline ---
+
+    let rerank_result = fetch_rerank_settings(client);
+    let rag_cutoff = fetch_rag_cutoff_settings(client);
+
+    let mut pipeline_ranked = rrf_ranked.clone();
+    let mut full_reranked: Option<Vec<(usize, f64)>> = None;
+
+    // Step 6a: Rerank (if configured)
+    if let Ok(ref rs) = rerank_result {
+        if !rs.provider.is_empty() && !rs.api_key.is_empty() {
+            match rerank_chunks(&options.query, &all_chunks, &pipeline_ranked, rs) {
+                Ok(reranked) => {
+                    full_reranked = Some(reranked.clone());
+                    pipeline_ranked = reranked;
+                }
+                Err(e) => {
+                    eprintln!("warning: reranker skipped: {e}");
+                }
+            }
+        }
+    }
+
+    // Step 6b: Score floor + Gap cutoff (only with reranker scores)
+    if full_reranked.is_some() {
+        pipeline_ranked = score_floor_filter(&pipeline_ranked, rag_cutoff.score_floor);
+        pipeline_ranked = gap_cutoff(&pipeline_ranked, rag_cutoff.gap_threshold);
+    }
+
+    // Origin/scale of each hit's final score, so consumers know the score scale
+    // (which varies by path). Reranking, when it succeeds, dominates ordering.
+    let score_kind: &str = if full_reranked.is_some() {
+        "rerank"
+    } else {
+        match actual_mode {
+            "hybrid" => "rrf",
+            "dense" => "cosine",
+            _ => "bm25",
+        }
+    };
+
+    // Step 6c: MMR dedup.
+    //
+    // The 0.05 MMR threshold assumes relevance in [0,1]. Reranker scores are
+    // already sigmoid-normalized to ~[0,1], so they feed MMR directly. Raw RRF
+    // (~0.016) / BM25 are NOT in [0,1]; without rescaling the diversity test
+    // (lambda*rel - (1-lambda)*sim > threshold) nukes almost every candidate on
+    // the no-reranker path and min_k silently re-expands — killing both
+    // diversity and result quality. So min-max normalize ONLY the non-reranked
+    // path; normalizing the reranked path would stretch a uniformly-high set to
+    // [0,1] and make its lowest (still-relevant) member look droppable.
+    let mmr_input: Vec<(usize, f64)> = if full_reranked.is_some() {
+        pipeline_ranked.clone()
+    } else {
+        let normalized_rel = zotron_types::min_max_normalize(
+            &pipeline_ranked.iter().map(|(_, s)| *s as f32).collect::<Vec<_>>(),
+        );
+        pipeline_ranked
+            .iter()
+            .zip(normalized_rel.iter())
+            .map(|((idx, _), norm)| (*idx, *norm as f64))
+            .collect()
+    };
+    let chunk_key_index: std::collections::HashMap<&str, usize> = all_chunks
+        .iter()
+        .enumerate()
+        .map(|(i, c)| (c.chunk_key.as_str(), i))
+        .collect();
+    let vector_map: std::collections::HashMap<usize, &[f64]> = all_vectors
+        .iter()
+        .filter_map(|v| {
+            let &idx = chunk_key_index.get(v.chunk_key.as_str())?;
+            Some((idx, v.vector.as_slice()))
+        })
+        .collect();
+    // MMR selects on normalized relevance; map the survivors back to their
+    // original scores so downstream stages and hit output keep the true scale.
+    let mmr_kept = mmr_select(
+        &mmr_input,
+        &vector_map,
+        rag_cutoff.mmr_lambda,
+        0.05,
+    );
+    let original_score: std::collections::HashMap<usize, f64> =
+        pipeline_ranked.iter().map(|(idx, s)| (*idx, *s)).collect();
+    pipeline_ranked = mmr_kept
+        .into_iter()
+        .map(|(idx, _norm)| (idx, *original_score.get(&idx).unwrap_or(&0.0)))
+        .collect();
+
+    // Step 6d: Token budget
+    let text_lens: Vec<usize> = all_chunks.iter().map(|c| c.text.len()).collect();
+    pipeline_ranked = token_budget_filter(
+        &pipeline_ranked,
+        &text_lens,
+        rag_cutoff.token_budget,
+    );
+
+    // Step 6e: Min/Max K with re-expansion from cached results
+    if pipeline_ranked.len() < rag_cutoff.min_k {
+        let source = full_reranked.as_deref().unwrap_or(&rrf_ranked);
+        for &(idx, score) in source {
+            if pipeline_ranked.len() >= rag_cutoff.min_k {
+                break;
+            }
+            if !pipeline_ranked.iter().any(|(i, _)| *i == idx) {
+                pipeline_ranked.push((idx, score));
+            }
+        }
+    }
+    pipeline_ranked = max_k_truncate(pipeline_ranked, rag_cutoff.max_k);
+
+    let ranked = pipeline_ranked;
 
     // Step 7: apply per-item span limit.
     let mut per_item_count: std::collections::HashMap<&str, u64> =
@@ -3189,6 +3771,7 @@ fn run_rag_search_command(
             "page_range": chunk.page_range,
             "section_path": chunk.section_path,
             "score": score,
+            "score_kind": score_kind,
         });
         if options.include_fulltext_spans {
             hit.as_object_mut().unwrap().insert(
@@ -3199,7 +3782,9 @@ fn run_rag_search_command(
         hits.push(hit);
     }
 
-    // Step 9: format output.
+    // Step 9: format output. `mode` reports the ACTUAL retrieval path used
+    // (hybrid / dense / lexical), which may differ from the requested mode when
+    // dense vectors or query embeddings were unavailable.
     if options.output == "jsonl" {
         let mut out = String::new();
         for hit in &hits {
@@ -3211,7 +3796,7 @@ fn run_rag_search_command(
         let total = hits.len() as u64;
         format_json(
             &normalize_list_envelope(
-                serde_json::json!({"items": hits, "total": total}),
+                serde_json::json!({"items": hits, "total": total, "mode": actual_mode}),
                 "items",
                 Some(options.top_k),
                 0,
@@ -3308,14 +3893,30 @@ fn rag_status_from_zotero_sidecars(
         .ok_or_else(|| "collections.getItems returned non-array/non-items result".to_string())?
         .clone();
 
+    // Embedding provider/model decide which vector file counts as "available".
+    // Only fetched when there is at least one item to inspect (avoids an RPC
+    // round-trip when the collection is empty / not indexed). A failure (no
+    // settings) just yields empty provider/model and a zero vector count.
+    let (emb_provider, emb_model) = if items.is_empty() {
+        (String::new(), String::new())
+    } else {
+        fetch_embedding_settings(client)
+            .map(|(p, m, _, _)| (p, m))
+            .unwrap_or_default()
+    };
+
     let mut indexed_items = 0usize;
     let mut total_chunks = 0usize;
+    let mut total_vectors = 0usize;
     for item in &items {
         let item_key = item.get("key").cloned().unwrap_or(Value::Null);
-        let chunk_count = sidecar_chunk_count_for_item(client, &item_key)?;
+        // One attachments.list call yields both chunk and vector counts.
+        let (chunk_count, vector_count) =
+            sidecar_counts_for_item(client, &item_key, &emb_provider, &emb_model)?;
         if chunk_count > 0 {
             indexed_items += 1;
             total_chunks += chunk_count;
+            total_vectors += vector_count;
         }
     }
 
@@ -3334,23 +3935,35 @@ fn rag_status_from_zotero_sidecars(
         "total_chunks": total_chunks,
         "total_items": indexed_items,
         "collection_items": items.len(),
+        // Whether semantic (dense) retrieval is actually available for this
+        // scope+provider — lets a user tell before searching whether they'll get
+        // hybrid retrieval or just lexical BM25.
+        "total_vectors": total_vectors,
+        "embeddings_available": total_vectors > 0,
+        "embedding_provider": emb_provider,
+        "embedding_model": emb_model,
         "source": "zotero-sidecar",
     }))
 }
 
-fn sidecar_chunk_count_for_item(
+/// Count both chunk lines and stored embedding vectors for an item, using a
+/// single `attachments.list` call. Returns `(chunks, vectors)`.
+fn sidecar_counts_for_item(
     client: &mut impl RpcCaller,
     item_key: &Value,
-) -> Result<usize, String> {
+    emb_provider: &str,
+    emb_model: &str,
+) -> Result<(usize, usize), String> {
     let attachments = client.call(
         "attachments.list",
         Some(serde_json::json!({"parentKey": item_key.clone()})),
     )?;
     let Some(attachments) = attachments.as_array() else {
-        return Ok(0);
+        return Ok((0, 0));
     };
 
-    let mut count = 0usize;
+    let mut chunk_count = 0usize;
+    let mut vector_count = 0usize;
     for attachment in attachments {
         let Some(path) = attachment.get("path").and_then(Value::as_str) else {
             continue;
@@ -3359,13 +3972,19 @@ fn sidecar_chunk_count_for_item(
         let Some(dir) = Path::new(&local).parent() else {
             continue;
         };
-        let Ok(bytes) = read_machine_artifact_sidecar(dir, MachineArtifactKind::Chunks) else {
-            continue;
-        };
-        let text = String::from_utf8_lossy(&bytes);
-        count += text.lines().filter(|line| !line.trim().is_empty()).count();
+        if let Ok(bytes) = read_machine_artifact_sidecar(dir, MachineArtifactKind::Chunks) {
+            let text = String::from_utf8_lossy(&bytes);
+            // Subtract the {"schema_version":N} header line if present.
+            chunk_count += text
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+                .filter(|line| !is_chunk_schema_header(line))
+                .count();
+        }
+        let sidecar_root = dir.join(".zotron");
+        vector_count += load_sidecar_vectors(&sidecar_root, emb_provider, emb_model).len();
     }
-    Ok(count)
+    Ok((chunk_count, vector_count))
 }
 
 fn rag_store_path(collection: &str) -> PathBuf {
@@ -5483,5 +6102,30 @@ fn to_python_compact_json(value: &Value) -> String {
                 .join(", ");
             format!("{{{inner}}}")
         }
+    }
+}
+
+#[cfg(test)]
+mod sidecar_header_tests {
+    use super::is_chunk_schema_header;
+
+    #[test]
+    fn detects_schema_version_header_line() {
+        assert!(is_chunk_schema_header("{\"schema_version\":2}"));
+        assert!(is_chunk_schema_header("{\"schema_version\": 1}"));
+    }
+
+    #[test]
+    fn does_not_flag_a_chunk_whose_text_is_the_token() {
+        // Regression: the old substring filter dropped any line containing the
+        // quoted token "schema_version" — including a legitimate chunk whose
+        // text value is exactly that. Parsing for a top-level key avoids this.
+        let chunk_line = "{\"chunk_key\":\"ATT1:c0\",\"item_key\":\"ITEM1\",\"attachment_key\":\"ATT1\",\"block_keys\":[],\"section_path\":[],\"text\":\"schema_version\",\"page_range\":[0,0],\"evidence_refs\":[]}";
+        assert!(!is_chunk_schema_header(chunk_line));
+    }
+
+    #[test]
+    fn does_not_flag_a_plain_chunk_line() {
+        assert!(!is_chunk_schema_header("{\"chunk_key\":\"x\",\"text\":\"hello world\"}"));
     }
 }
