@@ -5,7 +5,8 @@ set -euo pipefail
 SELF="$(cd -- "$(dirname -- "$0")" && pwd)/$(basename -- "$0")"
 
 # Find the real binary on PATH (skip this wrapper)
-for dir in $(echo "$PATH" | tr ':' '\n'); do
+IFS=: read -ra _path_dirs <<< "$PATH"
+for dir in "${_path_dirs[@]}"; do
   for name in zotron zotron.exe; do
     candidate="${dir}/${name}"
     [ -x "${candidate}" ] && [ "$(cd -- "$(dirname -- "${candidate}")" && pwd)/$(basename -- "${candidate}")" != "${SELF}" ] && exec "${candidate}" "$@"
