@@ -14,6 +14,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\n  \"extensions.zotero.openURL.resolver\": \"https://www.worldcat.org/search\",\n  \"extensions.zotero.debug.log\": false\n}\n"
+    "stdout": "{\"extensions.zotero.openURL.resolver\":\"https://www.worldcat.org/search\",\"extensions.zotero.debug.log\":false}\n"
   }
 }

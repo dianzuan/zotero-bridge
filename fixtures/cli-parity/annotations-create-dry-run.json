@@ -18,6 +18,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"ok\": true, \"dryRun\": true, \"wouldCall\": \"annotations.create\", \"wouldCallParams\": {\"parentKey\": \"ATTACH1\", \"type\": \"note\", \"color\": \"#ffd400\", \"position\": {\"pageIndex\": 0, \"rects\": [[1, 2, 3, 4]]}, \"comment\": \"margin note\"}}\n"
+    "stdout": "{\"ok\":true,\"dryRun\":true,\"wouldCall\":\"annotations.create\",\"wouldCallParams\":{\"parentKey\":\"ATTACH1\",\"type\":\"note\",\"color\":\"#ffd400\",\"position\":{\"pageIndex\":0,\"rects\":[[1,2,3,4]]},\"comment\":\"margin note\"}}\n"
   }
 }

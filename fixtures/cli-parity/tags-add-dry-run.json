@@ -14,6 +14,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"ok\": true, \"dryRun\": true, \"wouldCall\": \"tags.add\", \"wouldCallParams\": {\"key\": \"YR5BUGHG\", \"tags\": [\"reviewed\"]}}\n"
+    "stdout": "{\"ok\":true,\"dryRun\":true,\"wouldCall\":\"tags.add\",\"wouldCallParams\":{\"key\":\"YR5BUGHG\",\"tags\":[\"reviewed\"]}}\n"
   }
 }

@@ -20,6 +20,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"ok\": true, \"renamed\": 3}\n"
+    "stdout": "{\"ok\":true,\"renamed\":3}\n"
   }
 }

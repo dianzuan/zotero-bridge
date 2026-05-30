@@ -30,6 +30,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"ok\": true, \"key\": \"NOTE2\"}\n"
+    "stdout": "{\"ok\":true,\"key\":\"NOTE2\"}\n"
   }
 }

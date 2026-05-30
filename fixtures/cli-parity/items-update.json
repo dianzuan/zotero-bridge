@@ -27,6 +27,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"ok\": true, \"key\": \"NEWITEM1\", \"updated\": true}\n"
+    "stdout": "{\"ok\":true,\"key\":\"NEWITEM1\",\"updated\":true}\n"
   }
 }

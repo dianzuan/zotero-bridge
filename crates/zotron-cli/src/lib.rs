@@ -1093,14 +1093,6 @@ enum CollectionsCommand {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum JsonStyle {
-    /// Matches Python's top-level `ping` command (`json.dumps` defaults).
-    PythonCompact,
-    /// Matches namespace commands that route through Python `emit(..., indent=2)`.
-    Pretty,
-}
-
 enum ParseOutcome<T> {
     Command(T),
     Display(String),
@@ -1118,8 +1110,7 @@ where
             if matches!(
                 err.kind(),
                 ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
-            ) =>
-        {
+            ) => {
             Ok(ParseOutcome::Display(err.to_string()))
         }
         Err(err) => Err(err.to_string()),
@@ -1275,10 +1266,7 @@ fn command_url(command: &Command) -> String {
 
 fn run_ocr_command(command: OcrCommand, client: &mut impl RpcCaller) -> Result<String, String> {
     if let OcrCommand::Providers = &command {
-        return format_json(
-            &serde_json::json!({ "providers": ocr_provider_specs() }),
-            JsonStyle::Pretty,
-        );
+        return format_json(&serde_json::json!({ "providers": ocr_provider_specs() }));
     }
     let value = match command {
         OcrCommand::Providers => unreachable!(),
@@ -1349,7 +1337,7 @@ fn run_ocr_command(command: OcrCommand, client: &mut impl RpcCaller) -> Result<S
             )?
         }
     };
-    format_json(&value, JsonStyle::PythonCompact)
+    format_json(&value)
 }
 
 struct OcrProcessOptions {
@@ -1682,9 +1670,7 @@ fn run_ocr_reindex_command(
                 "reindexed": 0,
                 "skipped": 0,
                 "message": "no sidecars found"
-            }),
-            JsonStyle::Pretty,
-        );
+            }));
     }
 
     let mut reindexed: Vec<Value> = Vec::new();
@@ -1758,9 +1744,7 @@ fn run_ocr_reindex_command(
             "reindexed": reindexed.len(),
             "skipped": skipped,
             "items": reindexed,
-        }),
-        JsonStyle::Pretty,
-    )
+        }))
 }
 
 fn embed_sidecar_chunks(
@@ -2828,11 +2812,8 @@ fn run_command(command: Command, client: &mut impl RpcCaller) -> Result<String, 
         return run_export(args, client);
     }
 
-    let (value, style) = match command {
-        Command::Ping { .. } => (
-            call_json(client, "system.ping", None)?,
-            JsonStyle::PythonCompact,
-        ),
+    let value = match command {
+        Command::Ping { .. } => call_json(client, "system.ping", None)?,
         Command::Rpc {
             method,
             params_json,
@@ -2846,12 +2827,9 @@ fn run_command(command: Command, client: &mut impl RpcCaller) -> Result<String, 
                 return Err("INVALID_JSON: params must be a JSON object".to_string());
             }
             if paginate {
-                (
-                    paginate_rpc(client, &method, params, page_size)?,
-                    JsonStyle::Pretty,
-                )
+                paginate_rpc(client, &method, params, page_size)?
             } else {
-                (call_json(client, &method, Some(params))?, JsonStyle::Pretty)
+                call_json(client, &method, Some(params))?
             }
         }
         Command::Push {
@@ -2885,7 +2863,7 @@ fn run_command(command: Command, client: &mut impl RpcCaller) -> Result<String, 
         Command::Export(_) => unreachable!("export commands return raw output above"),
     };
 
-    format_json(&value, style)
+    format_json(&value)
 }
 
 fn run_rag_command(command: RagCommand, client: &mut impl RpcCaller) -> Result<String, String> {
@@ -2897,9 +2875,7 @@ fn run_rag_command(command: RagCommand, client: &mut impl RpcCaller) -> Result<S
                     embedding_provider_spec("alibaba")?,
                     embedding_provider_spec("custom")?,
                 ],
-            }),
-            JsonStyle::Pretty,
-        ),
+            })),
         RagCommand::Embed {
             provider,
             input,
@@ -2916,11 +2892,11 @@ fn run_rag_command(command: RagCommand, client: &mut impl RpcCaller) -> Result<S
                 input_type,
                 api_key_env,
             )?;
-            format_json(&value, JsonStyle::PythonCompact)
+            format_json(&value)
         }
         RagCommand::Status { collection, .. } => {
             let value = rag_status_value(client, &collection)?;
-            format_json(&value, JsonStyle::PythonCompact)
+            format_json(&value)
         }
         RagCommand::Search {
             query,
@@ -3224,10 +3200,23 @@ fn rerank_chunks(
 
     let reranked = zotron_types::parse_rerank_provider_response(spec, &payload)?;
 
-    Ok(reranked
+    Ok(map_reranked_to_candidates(reranked, &candidates))
+}
+
+/// Map reranker results back onto the original candidate list.
+///
+/// The reranker API returns indices into the documents we sent, but a
+/// misbehaving (or malicious) provider can return an `index` that is out of
+/// range for `candidates`. Bounds-check every result and silently drop any
+/// out-of-range entry instead of panicking.
+fn map_reranked_to_candidates(
+    reranked: Vec<zotron_types::RerankResult>,
+    candidates: &[(usize, f64)],
+) -> Vec<(usize, f64)> {
+    reranked
         .into_iter()
-        .map(|r| (candidates[r.index].0, r.score))
-        .collect())
+        .filter_map(|r| candidates.get(r.index).map(|c| (c.0, r.score)))
+        .collect()
 }
 
 fn fetch_retrieval_mode(client: &mut impl RpcCaller) -> String {
@@ -3466,9 +3455,7 @@ fn run_rag_search_xpi_fallback(
                 "items",
                 Some(options.top_k),
                 0,
-            ),
-            JsonStyle::Pretty,
-        )
+            ))
     }
 }
 
@@ -3800,9 +3787,7 @@ fn run_rag_search_command(
                 "items",
                 Some(options.top_k),
                 0,
-            ),
-            JsonStyle::Pretty,
-        )
+            ))
     }
 }
 
@@ -4112,9 +4097,7 @@ fn run_push_command(
                     "pdfPath": pdf,
                     "onDuplicate": on_duplicate,
                 }
-            }),
-            JsonStyle::PythonCompact,
-        );
+            }));
     }
 
     let result = push_item(
@@ -4124,7 +4107,7 @@ fn run_push_command(
         collection.as_deref(),
         &on_duplicate,
     )?;
-    format_json(&result, JsonStyle::PythonCompact)
+    format_json(&result)
 }
 
 fn push_item(
@@ -4447,7 +4430,7 @@ fn push_result(
 fn run_search(
     args: SearchArgs,
     client: &mut impl RpcCaller,
-) -> Result<(Value, JsonStyle), String> {
+) -> Result<Value, String> {
     let SearchArgs {
         query, fulltext, author, after, before, journal, tag,
         doi, isbn, issn, collection, limit, offset, ..
@@ -4460,7 +4443,7 @@ fn run_search(
         if let Some(isbn) = isbn { params.insert("isbn".into(), Value::String(isbn)); }
         if let Some(issn) = issn { params.insert("issn".into(), Value::String(issn)); }
         let value = client.call("search.byIdentifier", Some(Value::Object(params)))?;
-        return Ok((normalize_list_envelope(value, "items", None, 0), JsonStyle::Pretty));
+        return Ok(normalize_list_envelope(value, "items", None, 0));
     }
 
     if fulltext {
@@ -4470,7 +4453,7 @@ fn run_search(
             map.insert("collection".into(), resolve_collection(client, &col)?);
         }
         let value = client.call("search.fulltext", Some(params))?;
-        return Ok((normalize_list_envelope(value, "items", Some(limit), 0), JsonStyle::Pretty));
+        return Ok(normalize_list_envelope(value, "items", Some(limit), 0));
     }
 
     let has_filters = author.is_some() || after.is_some() || before.is_some()
@@ -4518,7 +4501,7 @@ fn run_search(
                 "offset": offset,
             })),
         )?;
-        return Ok((normalize_list_envelope(value, "items", Some(limit), offset), JsonStyle::Pretty));
+        return Ok(normalize_list_envelope(value, "items", Some(limit), offset));
     }
 
     let query = query.ok_or(
@@ -4537,17 +4520,19 @@ fn run_search(
             Some(serde_json::json!({"query": query, "limit": limit})),
         )?)
     };
-    Ok((normalize_list_envelope(value, "items", Some(limit), 0), JsonStyle::Pretty))
+    Ok(normalize_list_envelope(value, "items", Some(limit), 0))
 }
 
 fn run_search_management_command(
     command: SearchManagementCommand,
     client: &mut impl RpcCaller,
-) -> Result<(Value, JsonStyle), String> {
+) -> Result<Value, String> {
     match command {
-        SearchManagementCommand::SavedSearches { .. } => Ok((
-            normalize_list_envelope(client.call("search.savedSearches", None)?, "items", None, 0),
-            JsonStyle::Pretty,
+        SearchManagementCommand::SavedSearches { .. } => Ok(normalize_list_envelope(
+            client.call("search.savedSearches", None)?,
+            "items",
+            None,
+            0,
         )),
         SearchManagementCommand::CreateSaved {
             name, condition, dry_run, ..
@@ -4558,9 +4543,9 @@ fn run_search_management_command(
                 .collect::<Result<Vec<_>, _>>()?;
             let params = serde_json::json!({"name": name, "conditions": conditions});
             if dry_run {
-                Ok((dry_run_value("search.createSavedSearch", params), JsonStyle::PythonCompact))
+                Ok(dry_run_value("search.createSavedSearch", params))
             } else {
-                Ok((client.call("search.createSavedSearch", Some(params))?, JsonStyle::PythonCompact))
+                Ok(client.call("search.createSavedSearch", Some(params))?)
             }
         }
         SearchManagementCommand::DeleteSaved {
@@ -4568,9 +4553,9 @@ fn run_search_management_command(
         } => {
             let params = serde_json::json!({"key": search_key});
             if dry_run {
-                Ok((dry_run_value("search.deleteSavedSearch", params), JsonStyle::PythonCompact))
+                Ok(dry_run_value("search.deleteSavedSearch", params))
             } else {
-                Ok((client.call("search.deleteSavedSearch", Some(params))?, JsonStyle::PythonCompact))
+                Ok(client.call("search.deleteSavedSearch", Some(params))?)
             }
         }
     }
@@ -4789,7 +4774,7 @@ fn run_find_pdfs_command(
     client: &mut impl RpcCaller,
     collection: String,
     limit: usize,
-) -> Result<(Value, JsonStyle), String> {
+) -> Result<Value, String> {
     let collection_key = resolve_collection(client, &collection)?;
     let response = client.call(
         "collections.getItems",
@@ -4836,14 +4821,11 @@ fn run_find_pdfs_command(
         }));
     }
 
-    Ok((
-        serde_json::json!({
-            "scanned": items.len(),
-            "attempted": missing.len(),
-            "results": results,
-        }),
-        JsonStyle::Pretty,
-    ))
+    Ok(serde_json::json!({
+        "scanned": items.len(),
+        "attempted": missing.len(),
+        "results": results,
+    }))
 }
 
 fn collection_items(response: &Value) -> Vec<Value> {
@@ -4887,7 +4869,7 @@ fn call_json(
 fn run_system_command(
     command: SystemCommand,
     client: &mut impl RpcCaller,
-) -> Result<(Value, JsonStyle), String> {
+) -> Result<Value, String> {
     let value = match command {
         SystemCommand::Version { .. } => client.call("system.version", None)?,
         SystemCommand::Libraries { .. } => client.call("system.libraries", None)?,
@@ -4930,14 +4912,14 @@ fn run_system_command(
             }
         }
     };
-    Ok((value, JsonStyle::Pretty))
+    Ok(value)
 }
 
 fn run_items_command(
     command: ItemsCommand,
     client: &mut impl RpcCaller,
-) -> Result<(Value, JsonStyle), String> {
-    let (value, style) = match command {
+) -> Result<Value, String> {
+    let value = match command {
         ItemsCommand::Add {
             doi,
             isbn,
@@ -5051,10 +5033,7 @@ fn run_items_command(
             serde_json::json!({"key": key, "targetKey": target}),
             dry_run,
         )?,
-        ItemsCommand::Get { item, .. } => (
-            client.call("items.get", Some(serde_json::json!({"key": item})))?,
-            JsonStyle::Pretty,
-        ),
+        ItemsCommand::Get { item, .. } => client.call("items.get", Some(serde_json::json!({"key": item})))?,
         ItemsCommand::List {
             limit,
             offset,
@@ -5068,7 +5047,7 @@ fn run_items_command(
                     "items.getTrash",
                     Some(serde_json::json!({"limit": limit, "offset": offset})),
                 )?;
-                (normalize_list_envelope(value, "items", Some(limit), offset), JsonStyle::Pretty)
+                normalize_list_envelope(value, "items", Some(limit), offset)
             } else {
                 let mut params = serde_json::json!({
                     "limit": limit,
@@ -5079,13 +5058,10 @@ fn run_items_command(
                     map.insert("sort".to_string(), Value::String(sort));
                 }
                 let value = client.call("items.list", Some(params))?;
-                (normalize_list_envelope(value, "items", Some(limit), offset), JsonStyle::Pretty)
+                normalize_list_envelope(value, "items", Some(limit), offset)
             }
         }
-        ItemsCommand::FindDuplicates { .. } => (
-            client.call("items.findDuplicates", None)?,
-            JsonStyle::Pretty,
-        ),
+        ItemsCommand::FindDuplicates { .. } => client.call("items.findDuplicates", None)?,
         ItemsCommand::Recent {
             limit,
             offset,
@@ -5103,30 +5079,18 @@ fn run_items_command(
                     serde_json::json!({"limit": limit, "offset": offset, "type": recent_type}),
                 ),
             )?;
-            (normalize_list_envelope(value, "items", Some(limit), offset), JsonStyle::Pretty)
+            normalize_list_envelope(value, "items", Some(limit), offset)
         }
-        ItemsCommand::Fulltext { key, .. } => (
-            client.call("items.getFullText", Some(serde_json::json!({"key": key})))?,
-            JsonStyle::Pretty,
+        ItemsCommand::Fulltext { key, .. } => client.call("items.getFullText", Some(serde_json::json!({"key": key})))?,
+        ItemsCommand::Related { key, .. } => normalize_list_envelope(
+            client.call("items.getRelated", Some(serde_json::json!({"key": key})))?,
+            "items",
+            None,
+            0,
         ),
-        ItemsCommand::Related { key, .. } => (
-            normalize_list_envelope(
-                client.call("items.getRelated", Some(serde_json::json!({"key": key})))?,
-                "items",
-                None,
-                0,
-            ),
-            JsonStyle::Pretty,
-        ),
-        ItemsCommand::CitationKey { key, .. } => (
-            client.call("items.citationKey", Some(serde_json::json!({"key": key})))?,
-            JsonStyle::Pretty,
-        ),
-        ItemsCommand::Path { key, .. } => (
-            localize_attachment_path_response(
-                client.call("attachments.getPath", Some(serde_json::json!({"key": key})))?,
-            ),
-            JsonStyle::Pretty,
+        ItemsCommand::CitationKey { key, .. } => client.call("items.citationKey", Some(serde_json::json!({"key": key})))?,
+        ItemsCommand::Path { key, .. } => localize_attachment_path_response(
+            client.call("attachments.getPath", Some(serde_json::json!({"key": key})))?,
         ),
         ItemsCommand::Attachments { key, offset, .. } => {
             let value = client.call(
@@ -5137,13 +5101,13 @@ fn run_items_command(
                 .get("items")
                 .and_then(Value::as_array)
                 .map_or(0, |a| a.len()) as u64;
-            (normalize_list_envelope(value, "items", Some(total), offset), JsonStyle::Pretty)
+            normalize_list_envelope(value, "items", Some(total), offset)
         }
         ItemsCommand::FindPdfs { collection, limit, .. } => {
             run_find_pdfs_command(client, collection, limit)?
         }
     };
-    Ok((value, style))
+    Ok(value)
 }
 
 fn run_add_identifier_command(
@@ -5153,7 +5117,7 @@ fn run_add_identifier_command(
     param_value: String,
     collection: Option<String>,
     dry_run: bool,
-) -> Result<(Value, JsonStyle), String> {
+) -> Result<Value, String> {
     let mut params = Value::Object(serde_json::Map::from_iter([(
         param_name.to_string(),
         Value::String(param_value),
@@ -5167,7 +5131,7 @@ fn run_mutation_command(
     method: &str,
     params: Value,
     dry_run: bool,
-) -> Result<(Value, JsonStyle), String> {
+) -> Result<Value, String> {
     let value = if dry_run {
         serde_json::json!({
             "ok": true,
@@ -5178,7 +5142,7 @@ fn run_mutation_command(
     } else {
         client.call(method, Some(params))?
     };
-    Ok((value, JsonStyle::PythonCompact))
+    Ok(value)
 }
 
 fn parse_field_options(fields: &[String]) -> Result<serde_json::Map<String, Value>, String> {
@@ -5218,13 +5182,10 @@ fn maybe_insert_collection(
 fn run_settings_command(
     command: SettingsCommand,
     client: &mut impl RpcCaller,
-) -> Result<(Value, JsonStyle), String> {
-    let (value, style) = match command {
-        SettingsCommand::Get { key, .. } => (
-            client.call("settings.get", Some(serde_json::json!({"key": key})))?,
-            JsonStyle::Pretty,
-        ),
-        SettingsCommand::List { .. } => (client.call("settings.getAll", None)?, JsonStyle::Pretty),
+) -> Result<Value, String> {
+    let value = match command {
+        SettingsCommand::Get { key, .. } => client.call("settings.get", Some(serde_json::json!({"key": key})))?,
+        SettingsCommand::List { .. } => client.call("settings.getAll", None)?,
         SettingsCommand::Set {
             pairs,
             file,
@@ -5238,15 +5199,11 @@ fn run_settings_command(
                 let settings: Value = serde_json::from_str(&raw)
                     .map_err(|err| format!("INVALID_JSON: Could not parse JSON: {err}"))?;
                 if dry_run {
-                    (
-                        dry_run_value("settings.setAll", settings),
-                        JsonStyle::PythonCompact,
-                    )
+
+                        dry_run_value("settings.setAll", settings)
                 } else {
-                    (
-                        client.call("settings.setAll", Some(settings))?,
-                        JsonStyle::PythonCompact,
-                    )
+
+                        client.call("settings.setAll", Some(settings))?
                 }
             } else if pairs.len() == 2 {
                 // Single key=value: settings.set
@@ -5256,15 +5213,11 @@ fn run_settings_command(
                     .unwrap_or(Value::String(value.clone()));
                 let params = serde_json::json!({"key": key, "value": parsed_value});
                 if dry_run {
-                    (
-                        dry_run_value("settings.set", params),
-                        JsonStyle::PythonCompact,
-                    )
+
+                        dry_run_value("settings.set", params)
                 } else {
-                    (
-                        client.call("settings.set", Some(params))?,
-                        JsonStyle::PythonCompact,
-                    )
+
+                        client.call("settings.set", Some(params))?
                 }
             } else if pairs.len() > 2 && pairs.len() % 2 == 0 {
                 // Multiple pairs: build a map and call settings.setAll
@@ -5276,15 +5229,11 @@ fn run_settings_command(
                 }
                 let settings = Value::Object(map);
                 if dry_run {
-                    (
-                        dry_run_value("settings.setAll", settings),
-                        JsonStyle::PythonCompact,
-                    )
+
+                        dry_run_value("settings.setAll", settings)
                 } else {
-                    (
-                        client.call("settings.setAll", Some(settings))?,
-                        JsonStyle::PythonCompact,
-                    )
+
+                        client.call("settings.setAll", Some(settings))?
                 }
             } else {
                 return Err(
@@ -5293,17 +5242,17 @@ fn run_settings_command(
             }
         }
     };
-    Ok((value, style))
+    Ok(value)
 }
 
 fn run_tags_command(
     command: TagsCommand,
     client: &mut impl RpcCaller,
-) -> Result<(Value, JsonStyle), String> {
-    let (value, style) = match command {
+) -> Result<Value, String> {
+    let value = match command {
         TagsCommand::List { limit, .. } => {
             let value = client.call("tags.list", Some(serde_json::json!({"limit": limit})))?;
-            (normalize_list_envelope(value, "items", Some(limit), 0), JsonStyle::Pretty)
+            normalize_list_envelope(value, "items", Some(limit), 0)
         }
         TagsCommand::Rename {
             old, new, dry_run, ..
@@ -5358,7 +5307,7 @@ fn run_tags_command(
             }
         }
     };
-    Ok((value, style))
+    Ok(value)
 }
 
 fn run_tag_mutation(
@@ -5366,11 +5315,11 @@ fn run_tag_mutation(
     method: &str,
     params: Value,
     dry_run: bool,
-) -> Result<(Value, JsonStyle), String> {
+) -> Result<Value, String> {
     if dry_run {
-        Ok((dry_run_value(method, params), JsonStyle::PythonCompact))
+        Ok(dry_run_value(method, params))
     } else {
-        Ok((client.call(method, Some(params))?, JsonStyle::PythonCompact))
+        Ok(client.call(method, Some(params))?)
     }
 }
 
@@ -5386,8 +5335,8 @@ fn dry_run_value(method: &str, params: Value) -> Value {
 fn run_annotations_command(
     command: AnnotationsCommand,
     client: &mut impl RpcCaller,
-) -> Result<(Value, JsonStyle), String> {
-    let (value, style) = match command {
+) -> Result<Value, String> {
+    let value = match command {
         AnnotationsCommand::List { parent, attachment, context, .. } => {
             let mut params = serde_json::json!({"parentKey": parent});
             if let Some(att) = attachment {
@@ -5401,7 +5350,7 @@ fn run_annotations_command(
                 .get("items")
                 .and_then(Value::as_array)
                 .map_or(0, |a| a.len()) as u64;
-            (normalize_list_envelope(value, "items", Some(total), 0), JsonStyle::Pretty)
+            normalize_list_envelope(value, "items", Some(total), 0)
         }
         AnnotationsCommand::Create {
             parent,
@@ -5526,8 +5475,7 @@ fn run_annotations_command(
             if let Some(page_idx) = page {
                 params["pageIndex"] = Value::Number(page_idx.into());
             }
-            let value = client.call("annotations.locate", Some(params))?;
-            (value, JsonStyle::Pretty)
+            client.call("annotations.locate", Some(params))?
         }
         AnnotationsCommand::Delete {
             annotation_key,
@@ -5540,7 +5488,7 @@ fn run_annotations_command(
             dry_run,
         )?,
     };
-    Ok((value, style))
+    Ok(value)
 }
 
 fn validate_annotation_position(annotation_type: &str, position: &Value) -> Result<(), String> {
@@ -5632,8 +5580,8 @@ fn localize_attachment_path_response(mut value: Value) -> Value {
 fn run_notes_command(
     command: NotesCommand,
     client: &mut impl RpcCaller,
-) -> Result<(Value, JsonStyle), String> {
-    let (value, style) = match command {
+) -> Result<Value, String> {
+    let value = match command {
         NotesCommand::List {
             parent,
             limit,
@@ -5644,11 +5592,10 @@ fn run_notes_command(
                 "notes.list",
                 Some(serde_json::json!({"parentKey": parent})),
             )?;
-            (normalize_list_envelope(value, "items", Some(limit), offset), JsonStyle::Pretty)
+            normalize_list_envelope(value, "items", Some(limit), offset)
         }
         NotesCommand::Get { note_key, .. } => {
-            let value = client.call("notes.get", Some(serde_json::json!({"key": note_key})))?;
-            (value, JsonStyle::Pretty)
+            client.call("notes.get", Some(serde_json::json!({"key": note_key})))?
         }
         NotesCommand::Create {
             parent,
@@ -5695,10 +5642,10 @@ fn run_notes_command(
                 "notes.search",
                 Some(serde_json::json!({"query": query, "limit": limit})),
             )?;
-            (normalize_list_envelope(value, "items", Some(limit), 0), JsonStyle::Pretty)
+            normalize_list_envelope(value, "items", Some(limit), 0)
         }
     };
-    Ok((value, style))
+    Ok(value)
 }
 
 fn run_mutating_command(
@@ -5706,28 +5653,23 @@ fn run_mutating_command(
     method: &str,
     params: Value,
     dry_run: bool,
-) -> Result<(Value, JsonStyle), String> {
+) -> Result<Value, String> {
     if dry_run {
-        Ok((
-            serde_json::json!({
-                "ok": true,
-                "dryRun": true,
-                "wouldCall": method,
-                "wouldCallParams": params,
-            }),
-            JsonStyle::PythonCompact,
-        ))
+        Ok(serde_json::json!({
+            "ok": true,
+            "dryRun": true,
+            "wouldCall": method,
+            "wouldCallParams": params,
+        }))
     } else {
-        client
-            .call(method, Some(params))
-            .map(|value| (value, JsonStyle::PythonCompact))
+        client.call(method, Some(params))
     }
 }
 
 fn run_collections_command(
     command: CollectionsCommand,
     client: &mut impl RpcCaller,
-) -> Result<(Value, JsonStyle), String> {
+) -> Result<Value, String> {
     let value = match command {
         CollectionsCommand::List { .. } => normalize_list_envelope(
             client.call("collections.list", None)?,
@@ -5776,15 +5718,9 @@ fn run_collections_command(
             let key = resolve_mutable_collection(client, &old_name, "rename")?;
             let params = serde_json::json!({"key": key, "name": new_name});
             if dry_run {
-                return Ok((
-                    dry_run_value("collections.rename", params),
-                    JsonStyle::PythonCompact,
-                ));
+                return Ok(dry_run_value("collections.rename", params));
             }
-            return Ok((
-                client.call("collections.rename", Some(params))?,
-                JsonStyle::PythonCompact,
-            ));
+            return client.call("collections.rename", Some(params));
         }
         CollectionsCommand::Create {
             name,
@@ -5800,15 +5736,9 @@ fn run_collections_command(
                 }
             }
             if dry_run {
-                return Ok((
-                    dry_run_value("collections.create", params),
-                    JsonStyle::PythonCompact,
-                ));
+                return Ok(dry_run_value("collections.create", params));
             }
-            return Ok((
-                client.call("collections.create", Some(params))?,
-                JsonStyle::PythonCompact,
-            ));
+            return client.call("collections.create", Some(params));
         }
         CollectionsCommand::Delete {
             name_or_id,
@@ -5818,15 +5748,9 @@ fn run_collections_command(
             let key = resolve_mutable_collection(client, &name_or_id, "delete")?;
             let params = serde_json::json!({"key": key});
             if dry_run {
-                return Ok((
-                    dry_run_value("collections.delete", params),
-                    JsonStyle::PythonCompact,
-                ));
+                return Ok(dry_run_value("collections.delete", params));
             }
-            return Ok((
-                client.call("collections.delete", Some(params))?,
-                JsonStyle::PythonCompact,
-            ));
+            return client.call("collections.delete", Some(params));
         }
         CollectionsCommand::AddItems {
             collection,
@@ -5837,15 +5761,9 @@ fn run_collections_command(
             let key = resolve_mutable_collection(client, &collection, "add to")?;
             let params = serde_json::json!({"key": key, "keys": item_keys});
             if dry_run {
-                return Ok((
-                    dry_run_value("collections.addItems", params),
-                    JsonStyle::PythonCompact,
-                ));
+                return Ok(dry_run_value("collections.addItems", params));
             }
-            return Ok((
-                client.call("collections.addItems", Some(params))?,
-                JsonStyle::PythonCompact,
-            ));
+            return client.call("collections.addItems", Some(params));
         }
         CollectionsCommand::RemoveItems {
             collection,
@@ -5856,18 +5774,12 @@ fn run_collections_command(
             let key = resolve_mutable_collection(client, &collection, "operate on")?;
             let params = serde_json::json!({"key": key, "keys": item_keys});
             if dry_run {
-                return Ok((
-                    dry_run_value("collections.removeItems", params),
-                    JsonStyle::PythonCompact,
-                ));
+                return Ok(dry_run_value("collections.removeItems", params));
             }
-            return Ok((
-                client.call("collections.removeItems", Some(params))?,
-                JsonStyle::PythonCompact,
-            ));
+            return client.call("collections.removeItems", Some(params));
         }
     };
-    Ok((value, JsonStyle::Pretty))
+    Ok(value)
 }
 
 fn resolve_export_keys(
@@ -5905,9 +5817,9 @@ fn run_export(args: ExportArgs, client: &mut impl RpcCaller) -> Result<String, S
             let response =
                 client.call("export.cslJson", Some(serde_json::json!({"keys": keys})))?;
             if let Some(content) = response.get("content") {
-                format_json(content, JsonStyle::Pretty)
+                format_json(content)
             } else {
-                format_json(&response, JsonStyle::PythonCompact)
+                format_json(&response)
             }
         }
         "bibliography" => {
@@ -5923,7 +5835,7 @@ fn run_export(args: ExportArgs, client: &mut impl RpcCaller) -> Result<String, S
                     );
                 }
             }
-            format_json(&response, JsonStyle::PythonCompact)
+            format_json(&response)
         }
         other => Err(format!(
             "INVALID_ARGS: unknown format {other:?}, expected bibtex/ris/csl-json/bibliography"
@@ -5940,51 +5852,20 @@ fn run_export_content_command(
     if let Some(content) = response.get("content") {
         raw_value_output(content)
     } else {
-        format_json(&response, JsonStyle::PythonCompact)
+        format_json(&response)
     }
 }
 
 fn raw_value_output(value: &Value) -> Result<String, String> {
+    // Raw export content (bibtex/ris) arrives as a JSON string and must stay
+    // verbatim. Any other value type is serialized as compact JSON.
     let mut out = match value {
         Value::Null => String::new(),
         Value::String(content) => content.clone(),
-        other => to_python_repr(other),
+        other => serde_json::to_string(other).map_err(|e| e.to_string())?,
     };
     out.push('\n');
     Ok(out)
-}
-
-fn to_python_repr(value: &Value) -> String {
-    match value {
-        Value::Null => "None".to_string(),
-        Value::Bool(value) => {
-            if *value {
-                "True".to_string()
-            } else {
-                "False".to_string()
-            }
-        }
-        Value::Number(value) => value.to_string(),
-        Value::String(value) => format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'")),
-        Value::Array(values) => {
-            let inner = values
-                .iter()
-                .map(to_python_repr)
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("[{inner}]")
-        }
-        Value::Object(entries) => {
-            let inner = entries
-                .iter()
-                .map(|(key, value)| {
-                    format!("'{}': {}", key.replace('\'', "\\'"), to_python_repr(value))
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("{{{inner}}}")
-        }
-    }
 }
 
 fn resolve_collection(client: &mut impl RpcCaller, name_or_id: &str) -> Result<Value, String> {
@@ -6066,43 +5947,10 @@ fn normalize_collection_name(name: &str) -> String {
         .to_lowercase()
 }
 
-fn format_json(value: &Value, style: JsonStyle) -> Result<String, String> {
-    let mut out = match style {
-        JsonStyle::PythonCompact => to_python_compact_json(value),
-        JsonStyle::Pretty => serde_json::to_string_pretty(value).map_err(|err| err.to_string())?,
-    };
+fn format_json(value: &Value) -> Result<String, String> {
+    let mut out = serde_json::to_string(value).map_err(|e| e.to_string())?;
     out.push('\n');
     Ok(out)
-}
-
-fn to_python_compact_json(value: &Value) -> String {
-    match value {
-        Value::Null => "null".to_string(),
-        Value::Bool(value) => value.to_string(),
-        Value::Number(value) => value.to_string(),
-        Value::String(value) => {
-            serde_json::to_string(value).expect("string serialization cannot fail")
-        }
-        Value::Array(values) => {
-            let inner = values
-                .iter()
-                .map(to_python_compact_json)
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("[{inner}]")
-        }
-        Value::Object(entries) => {
-            let inner = entries
-                .iter()
-                .map(|(key, value)| {
-                    let key = serde_json::to_string(key).expect("string serialization cannot fail");
-                    format!("{key}: {}", to_python_compact_json(value))
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("{{{inner}}}")
-        }
-    }
 }
 
 #[cfg(test)]
@@ -6127,5 +5975,41 @@ mod sidecar_header_tests {
     #[test]
     fn does_not_flag_a_plain_chunk_line() {
         assert!(!is_chunk_schema_header("{\"chunk_key\":\"x\",\"text\":\"hello world\"}"));
+    }
+}
+
+#[cfg(test)]
+mod rerank_bounds_tests {
+    use super::map_reranked_to_candidates;
+    use zotron_types::RerankResult;
+
+    #[test]
+    fn drops_out_of_range_indices_without_panicking() {
+        // candidates[i].0 is the original chunk index; .1 the prior score.
+        let candidates = vec![(10_usize, 0.1_f64), (20, 0.2), (30, 0.3)];
+        let reranked = vec![
+            RerankResult { index: 1, score: 0.9 },   // in range -> maps to candidates[1].0 == 20
+            RerankResult { index: 5, score: 0.8 },   // out of range -> dropped
+            RerankResult { index: 0, score: 0.7 },   // in range -> maps to candidates[0].0 == 10
+        ];
+
+        let mapped = map_reranked_to_candidates(reranked, &candidates);
+
+        // (b) the out-of-range entry was dropped
+        assert_eq!(mapped.len(), 2);
+        // (c) in-range entries map to the correct candidates[i].0 value and score
+        assert_eq!(mapped[0], (20, 0.9));
+        assert_eq!(mapped[1], (10, 0.7));
+    }
+
+    #[test]
+    fn all_out_of_range_yields_empty() {
+        let candidates = vec![(10_usize, 0.1_f64)];
+        let reranked = vec![
+            RerankResult { index: 1, score: 0.9 },
+            RerankResult { index: 99, score: 0.8 },
+        ];
+        let mapped = map_reranked_to_candidates(reranked, &candidates);
+        assert!(mapped.is_empty());
     }
 }

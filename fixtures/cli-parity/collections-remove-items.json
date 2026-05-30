@@ -39,6 +39,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"removed\": [\"ITEM2\"], \"collectionKey\": \"COL1\"}\n"
+    "stdout": "{\"removed\":[\"ITEM2\"],\"collectionKey\":\"COL1\"}\n"
   }
 }

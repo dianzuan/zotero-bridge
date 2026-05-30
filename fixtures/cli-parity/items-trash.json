@@ -19,6 +19,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"ok\": true, \"trashed\": true, \"key\": \"TRASHME1\"}\n"
+    "stdout": "{\"ok\":true,\"trashed\":true,\"key\":\"TRASHME1\"}\n"
   }
 }

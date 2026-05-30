@@ -15,6 +15,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "[\n  \"system.ping\",\n  \"system.listMethods\",\n  \"search.quick\",\n  \"items.get\",\n  \"collections.tree\"\n]\n"
+    "stdout": "[\"system.ping\",\"system.listMethods\",\"search.quick\",\"items.get\",\"collections.tree\"]\n"
   }
 }

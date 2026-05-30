@@ -21,6 +21,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"ok\": true, \"key\": \"extensions.zotero.debug.log\", \"value\": false}\n"
+    "stdout": "{\"ok\":true,\"key\":\"extensions.zotero.debug.log\",\"value\":false}\n"
   }
 }

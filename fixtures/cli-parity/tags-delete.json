@@ -18,6 +18,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"ok\": true, \"deleted\": 2}\n"
+    "stdout": "{\"ok\":true,\"deleted\":2}\n"
   }
 }

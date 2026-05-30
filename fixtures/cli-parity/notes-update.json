@@ -22,6 +22,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"key\": \"NOTE2\", \"itemType\": \"note\", \"note\": \"<p>Updated note</p>\"}\n"
+    "stdout": "{\"key\":\"NOTE2\",\"itemType\":\"note\",\"note\":\"<p>Updated note</p>\"}\n"
   }
 }

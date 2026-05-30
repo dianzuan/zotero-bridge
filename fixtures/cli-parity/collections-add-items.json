@@ -42,6 +42,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"added\": [\"ITEM1\", \"ITEM2\"], \"collectionKey\": \"COL1\"}\n"
+    "stdout": "{\"added\":[\"ITEM1\",\"ITEM2\"],\"collectionKey\":\"COL1\"}\n"
   }
 }

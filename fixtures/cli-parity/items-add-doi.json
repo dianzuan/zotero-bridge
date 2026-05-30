@@ -20,6 +20,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"ok\": true, \"key\": \"DOIITEM1\", \"title\": \"A DOI Paper\"}\n"
+    "stdout": "{\"ok\":true,\"key\":\"DOIITEM1\",\"title\":\"A DOI Paper\"}\n"
   }
 }

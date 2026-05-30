@@ -22,6 +22,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"ok\": true, \"dryRun\": true, \"wouldPush\": {\"title\": \"Rust Migration Parity Paper\", \"itemType\": \"journalArticle\", \"collectionKey\": \"COLL1\", \"pdfPath\": null, \"onDuplicate\": \"skip\"}}\n"
+    "stdout": "{\"ok\":true,\"dryRun\":true,\"wouldPush\":{\"title\":\"Rust Migration Parity Paper\",\"itemType\":\"journalArticle\",\"collectionKey\":\"COLL1\",\"pdfPath\":null,\"onDuplicate\":\"skip\"}}\n"
   }
 }

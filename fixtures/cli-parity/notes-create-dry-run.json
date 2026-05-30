@@ -17,6 +17,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"ok\": true, \"dryRun\": true, \"wouldCall\": \"notes.create\", \"wouldCallParams\": {\"parentKey\": \"ITEM1\", \"content\": \"<p>New note</p>\", \"tags\": [\"research\"]}}\n"
+    "stdout": "{\"ok\":true,\"dryRun\":true,\"wouldCall\":\"notes.create\",\"wouldCallParams\":{\"parentKey\":\"ITEM1\",\"content\":\"<p>New note</p>\",\"tags\":[\"research\"]}}\n"
   }
 }

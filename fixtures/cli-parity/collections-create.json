@@ -37,6 +37,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"key\": \"COL3\", \"name\": \"Reading List\", \"parentKey\": \"COL1\"}\n"
+    "stdout": "{\"key\":\"COL3\",\"name\":\"Reading List\",\"parentKey\":\"COL1\"}\n"
   }
 }

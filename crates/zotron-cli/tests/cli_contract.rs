@@ -52,9 +52,10 @@ fn ping_calls_system_ping_and_prints_python_compact_json() {
     let out = run_with_client(["zotron", "ping"], &mut client).expect("ping succeeds");
 
     assert_eq!(client.calls, vec![("system.ping".to_string(), None)]);
+    // Output is compact single-line JSON (no Python-style ", "/": " spacing).
     assert_eq!(
         out,
-        "{\"status\": \"ok\", \"timestamp\": \"2026-04-22T12:00:00Z\"}\n"
+        "{\"status\":\"ok\",\"timestamp\":\"2026-04-22T12:00:00Z\"}\n"
     );
 }
 

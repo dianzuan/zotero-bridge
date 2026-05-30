@@ -14,6 +14,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"ok\": true, \"dryRun\": true, \"wouldCall\": \"search.createSavedSearch\", \"wouldCallParams\": {\"name\": \"Recent AI\", \"conditions\": [{\"field\": \"tag\", \"operator\": \"contains\", \"value\": \"AI\"}]}}\n"
+    "stdout": "{\"ok\":true,\"dryRun\":true,\"wouldCall\":\"search.createSavedSearch\",\"wouldCallParams\":{\"name\":\"Recent AI\",\"conditions\":[{\"field\":\"tag\",\"operator\":\"contains\",\"value\":\"AI\"}]}}\n"
   }
 }

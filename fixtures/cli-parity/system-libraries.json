@@ -23,6 +23,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "[\n  {\n    \"id\": 1,\n    \"type\": \"user\",\n    \"name\": \"My Library\"\n  },\n  {\n    \"id\": 42,\n    \"type\": \"group\",\n    \"name\": \"产业研究组\"\n  }\n]\n"
+    "stdout": "[{\"id\":1,\"type\":\"user\",\"name\":\"My Library\"},{\"id\":42,\"type\":\"group\",\"name\":\"产业研究组\"}]\n"
   }
 }

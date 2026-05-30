@@ -30,6 +30,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\n  \"items\": [\n    {\n      \"key\": \"ITEM3\",\n      \"title\": \"Recent Paper\"\n    }\n  ],\n  \"total\": 1,\n  \"limit\": 2,\n  \"offset\": 0,\n  \"hasMore\": false\n}\n"
+    "stdout": "{\"items\":[{\"key\":\"ITEM3\",\"title\":\"Recent Paper\"}],\"total\":1,\"limit\":2,\"offset\":0,\"hasMore\":false}\n"
   }
 }

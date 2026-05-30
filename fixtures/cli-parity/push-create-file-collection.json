@@ -72,6 +72,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"status\": \"created\", \"zotero_item_key\": \"NEW123\", \"pdf_attached\": false, \"pdf_size_bytes\": 0, \"error\": null}\n"
+    "stdout": "{\"status\":\"created\",\"zotero_item_key\":\"NEW123\",\"pdf_attached\":false,\"pdf_size_bytes\":0,\"error\":null}\n"
   }
 }

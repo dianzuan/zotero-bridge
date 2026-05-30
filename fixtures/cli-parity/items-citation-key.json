@@ -18,6 +18,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\n  \"key\": \"ITEM1\",\n  \"citationKey\": \"zhang2024rural\"\n}\n"
+    "stdout": "{\"key\":\"ITEM1\",\"citationKey\":\"zhang2024rural\"}\n"
   }
 }

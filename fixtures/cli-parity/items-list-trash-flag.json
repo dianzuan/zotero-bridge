@@ -28,6 +28,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\n  \"items\": [\n    {\n      \"key\": \"TRASH1\",\n      \"title\": \"Deleted draft\"\n    }\n  ],\n  \"total\": 1,\n  \"limit\": 10,\n  \"offset\": 0,\n  \"hasMore\": false\n}\n"
+    "stdout": "{\"items\":[{\"key\":\"TRASH1\",\"title\":\"Deleted draft\"}],\"total\":1,\"limit\":10,\"offset\":0,\"hasMore\":false}\n"
   }
 }

@@ -25,6 +25,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "[\n  \"journalArticle\",\n  \"book\",\n  \"report\"\n]\n"
+    "stdout": "[\"journalArticle\",\"book\",\"report\"]\n"
   }
 }
