@@ -3224,10 +3224,23 @@ fn rerank_chunks(
 
     let reranked = zotron_types::parse_rerank_provider_response(spec, &payload)?;
 
-    Ok(reranked
+    Ok(map_reranked_to_candidates(reranked, &candidates))
+}
+
+/// Map reranker results back onto the original candidate list.
+///
+/// The reranker API returns indices into the documents we sent, but a
+/// misbehaving (or malicious) provider can return an `index` that is out of
+/// range for `candidates`. Bounds-check every result and silently drop any
+/// out-of-range entry instead of panicking.
+fn map_reranked_to_candidates(
+    reranked: Vec<zotron_types::RerankResult>,
+    candidates: &[(usize, f64)],
+) -> Vec<(usize, f64)> {
+    reranked
         .into_iter()
-        .map(|r| (candidates[r.index].0, r.score))
-        .collect())
+        .filter_map(|r| candidates.get(r.index).map(|c| (c.0, r.score)))
+        .collect()
 }
 
 fn fetch_retrieval_mode(client: &mut impl RpcCaller) -> String {
@@ -6127,5 +6140,41 @@ mod sidecar_header_tests {
     #[test]
     fn does_not_flag_a_plain_chunk_line() {
         assert!(!is_chunk_schema_header("{\"chunk_key\":\"x\",\"text\":\"hello world\"}"));
+    }
+}
+
+#[cfg(test)]
+mod rerank_bounds_tests {
+    use super::map_reranked_to_candidates;
+    use zotron_types::RerankResult;
+
+    #[test]
+    fn drops_out_of_range_indices_without_panicking() {
+        // candidates[i].0 is the original chunk index; .1 the prior score.
+        let candidates = vec![(10_usize, 0.1_f64), (20, 0.2), (30, 0.3)];
+        let reranked = vec![
+            RerankResult { index: 1, score: 0.9 },   // in range -> maps to candidates[1].0 == 20
+            RerankResult { index: 5, score: 0.8 },   // out of range -> dropped
+            RerankResult { index: 0, score: 0.7 },   // in range -> maps to candidates[0].0 == 10
+        ];
+
+        let mapped = map_reranked_to_candidates(reranked, &candidates);
+
+        // (b) the out-of-range entry was dropped
+        assert_eq!(mapped.len(), 2);
+        // (c) in-range entries map to the correct candidates[i].0 value and score
+        assert_eq!(mapped[0], (20, 0.9));
+        assert_eq!(mapped[1], (10, 0.7));
+    }
+
+    #[test]
+    fn all_out_of_range_yields_empty() {
+        let candidates = vec![(10_usize, 0.1_f64)];
+        let reranked = vec![
+            RerankResult { index: 1, score: 0.9 },
+            RerankResult { index: 99, score: 0.8 },
+        ];
+        let mapped = map_reranked_to_candidates(reranked, &candidates);
+        assert!(mapped.is_empty());
     }
 }
