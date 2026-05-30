@@ -10,7 +10,7 @@ import { sanitizePath } from "../utils/safe-path";
 
 /** Normalize a creator entry. CJK full names with empty firstName are stored
  *  in single-field mode (fieldMode=1) instead of being split — matches
- *  Jasminum/CNKI translator behavior. */
+ *  common CJK translator behavior. */
 function normalizeCreator(c: { firstName: string; lastName: string; creatorType: string; fieldMode?: number }) {
   if (c.firstName && c.firstName.length > 0) return c;
   if (!c.lastName || !CJK_REGEX.test(c.lastName)) return c;
