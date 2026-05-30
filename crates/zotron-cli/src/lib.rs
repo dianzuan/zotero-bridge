@@ -269,6 +269,8 @@ enum OcrCommand {
         key: Option<String>,
         #[arg(long, help = "Only reindex items with stale schema version")]
         stale_only: bool,
+        #[arg(long = "chunk-chars", default_value_t = 1200)]
+        chunk_chars: usize,
         #[arg(long, default_value = DEFAULT_RPC_URL)]
         url: String,
     },
@@ -1300,8 +1302,8 @@ fn run_ocr_command(command: OcrCommand, client: &mut impl RpcCaller) -> Result<S
             api_key_env,
         })?,
         OcrCommand::Status { collection, .. } => run_ocr_status_command(client, collection)?,
-        OcrCommand::Reindex { collection, key, stale_only, .. } => {
-            return run_ocr_reindex_command(client, collection, key, stale_only);
+        OcrCommand::Reindex { collection, key, stale_only, chunk_chars, .. } => {
+            return run_ocr_reindex_command(client, collection, key, stale_only, chunk_chars);
         }
         OcrCommand::Process {
             provider,
@@ -1631,9 +1633,8 @@ fn run_ocr_process_sync(
             storage_dir, &options.parent, attachment_key,
             MachineArtifactKind::Blocks, &blocks,
         )?,
-        write_sidecar_jsonl(
-            storage_dir, &options.parent, attachment_key,
-            MachineArtifactKind::Chunks, &chunks,
+        write_chunks_sidecar(
+            storage_dir, &options.parent, attachment_key, &chunks,
         )?,
     ];
 
@@ -1661,6 +1662,7 @@ fn run_ocr_reindex_command(
     collection: Option<String>,
     key: Option<String>,
     stale_only: bool,
+    chunk_chars: usize,
 ) -> Result<String, String> {
     // Resolve sidecar paths using the same logic as RAG search.
     let keys: Vec<String> = key.into_iter().collect();
@@ -1730,22 +1732,11 @@ fn run_ocr_reindex_command(
             continue;
         }
 
-        // Re-chunk.
-        let chunks = zotron_types::chunks_from_blocks(&blocks, 1200);
+        // Re-chunk (same chunk-size handling as `ocr process`).
+        let chunks = zotron_types::chunks_from_blocks(&blocks, chunk_chars);
 
-        // Write chunks with schema version header.
-        let mut out = String::new();
-        out.push_str(&format!("{{\"schema_version\":{CHUNK_SCHEMA_VERSION}}}\n"));
-        for chunk in &chunks {
-            out.push_str(&serde_json::to_string(chunk).map_err(|e| e.to_string())?);
-            out.push('\n');
-        }
-        if let Some(parent) = chunks_path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("create chunks dir {}: {e}", parent.display()))?;
-        }
-        fs::write(&chunks_path, out.as_bytes())
-            .map_err(|e| format!("write chunks {}: {e}", chunks_path.display()))?;
+        // Write chunks via the unified writer (adds the schema-version header).
+        write_chunks_sidecar(storage_dir, item_key, att_key, &chunks)?;
 
         // Re-embed.
         let embedding_count = embed_sidecar_chunks(client, storage_dir, item_key, att_key, &chunks);
@@ -1858,6 +1849,7 @@ struct PersistedOcrArtifacts {
     block_count: usize,
     chunk_count: usize,
     artifacts: Vec<Value>,
+    chunks: Vec<zotron_types::StructureChunk>,
 }
 
 fn resolve_attachment_path(
@@ -2337,11 +2329,10 @@ fn persist_mineru_result_sidecars(
         MachineArtifactKind::Blocks,
         &blocks,
     )?);
-    artifacts.push(write_sidecar_jsonl(
+    artifacts.push(write_chunks_sidecar(
         storage_dir,
         item_key,
         attachment_key,
-        MachineArtifactKind::Chunks,
         &chunks,
     )?);
     if let Some(markdown) = source.markdown.as_deref() {
@@ -2372,6 +2363,7 @@ fn persist_mineru_result_sidecars(
         block_count: blocks.len(),
         chunk_count: chunks.len(),
         artifacts,
+        chunks,
     })
 }
 
@@ -2399,6 +2391,33 @@ fn write_sidecar_jsonl<T: serde::Serialize>(
         out.push('\n');
     }
     write_sidecar_bytes(storage_dir, item_key, attachment_key, kind, out.as_bytes())
+}
+
+/// Write the Chunks sidecar with a `{"schema_version":N}` header line followed
+/// by one chunk per line. The header lets `ocr reindex --stale-only` detect
+/// freshly-produced (current-schema) sidecars and skip re-embedding them.
+/// This is the single writer for the Chunks artifact — `ocr process` (sync +
+/// MinerU) and `ocr reindex` all go through here so the on-disk format stays
+/// consistent.
+fn write_chunks_sidecar(
+    storage_dir: &Path,
+    item_key: &str,
+    attachment_key: &str,
+    chunks: &[zotron_types::StructureChunk],
+) -> Result<Value, String> {
+    let mut out = String::new();
+    out.push_str(&format!("{{\"schema_version\":{CHUNK_SCHEMA_VERSION}}}\n"));
+    for chunk in chunks {
+        out.push_str(&serde_json::to_string(chunk).map_err(|err| err.to_string())?);
+        out.push('\n');
+    }
+    write_sidecar_bytes(
+        storage_dir,
+        item_key,
+        attachment_key,
+        MachineArtifactKind::Chunks,
+        out.as_bytes(),
+    )
 }
 
 fn write_sidecar_bytes(
@@ -3226,7 +3245,8 @@ fn resolve_sidecar_paths(
 }
 
 fn load_sidecar_chunks(sidecar_root: &Path) -> Vec<StructureChunk> {
-    let chunks_path = sidecar_root.join("chunks").join("chunks.v1.jsonl");
+    let chunks_path =
+        sidecar_root.join(MachineArtifactKind::Chunks.sidecar_relative_path());
     let Ok(content) = fs::read_to_string(&chunks_path) else {
         return Vec::new();
     };

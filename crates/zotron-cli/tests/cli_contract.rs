@@ -733,9 +733,129 @@ fn ocr_parse_pdf_ingests_mineru_result_dir_into_hidden_sidecars() {
     assert!(!blocks.contains("item_id"));
     assert!(!blocks.contains("attachment_id"));
     let chunks = fs::read_to_string(&chunks_path).expect("read chunks");
-    assert_eq!(chunks.lines().count(), 2);
+    // First line is the {"schema_version":N} header, followed by 2 chunk lines.
+    assert_eq!(chunks.lines().count(), 3);
+    assert!(chunks.lines().next().unwrap().contains("\"schema_version\":2"));
     assert!(chunks.contains("\"chunk_key\":\"ATTACHKEY:c0\""));
     assert!(chunks.contains("\"block_keys\""));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn ocr_reindex_stale_only_skips_current_schema_sidecar() {
+    // A chunks sidecar that already carries the current {"schema_version":2}
+    // header must be treated as current: --stale-only must skip it (no paid
+    // re-embed), reporting skipped=1, reindexed=0.
+    let root = std::env::temp_dir().join(format!(
+        "zotron-reindex-skip-{}-{}",
+        std::process::id(),
+        thread_id_suffix()
+    ));
+    let storage_dir = root.join("storage").join("ATTACHKEY");
+    let chunks_dir = storage_dir.join(".zotron").join("chunks");
+    fs::create_dir_all(&chunks_dir).expect("create chunks dir");
+    let pdf_path = storage_dir.join("paper.pdf");
+    fs::write(&pdf_path, b"%PDF-1").expect("write pdf placeholder");
+    // Current v2 sidecar (header present).
+    fs::write(
+        chunks_dir.join("chunks.v1.jsonl"),
+        b"{\"schema_version\":2}\n",
+    )
+    .expect("write current chunks sidecar");
+
+    let mut client = FakeClient::with_responses(vec![
+        // resolve_sidecar_paths: items.get for --key
+        json!({"key": "ITEMKEY"}),
+        // resolve_sidecar_paths: attachments.list for the item
+        json!([{ "key": "ATTACHKEY", "contentType": "application/pdf",
+                 "path": pdf_path.to_string_lossy() }]),
+    ]);
+
+    let out = run_with_client(
+        [
+            "zotron",
+            "ocr",
+            "reindex",
+            "--key",
+            "ITEMKEY",
+            "--stale-only",
+        ],
+        &mut client,
+    )
+    .expect("ocr reindex --stale-only succeeds");
+    let payload: Value = serde_json::from_str(&out).expect("reindex output is JSON");
+
+    assert_eq!(payload["skipped"], 1, "current-schema sidecar must be skipped");
+    assert_eq!(payload["reindexed"], 0, "no re-embed should happen");
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn ocr_reindex_rebuilds_legacy_sidecar_with_schema_header() {
+    // A legacy v1 chunks sidecar (no schema_version header) is stale and must be
+    // re-chunked + rewritten with the current header even under --stale-only.
+    let root = std::env::temp_dir().join(format!(
+        "zotron-reindex-rebuild-{}-{}",
+        std::process::id(),
+        thread_id_suffix()
+    ));
+    let storage_dir = root.join("storage").join("ATTACHKEY");
+    let chunks_dir = storage_dir.join(".zotron").join("chunks");
+    let ocr_dir = storage_dir.join(".zotron").join("ocr");
+    fs::create_dir_all(&chunks_dir).expect("create chunks dir");
+    fs::create_dir_all(&ocr_dir).expect("create ocr dir");
+    let pdf_path = storage_dir.join("paper.pdf");
+    fs::write(&pdf_path, b"%PDF-1").expect("write pdf placeholder");
+
+    // Legacy v1 sidecar: a plain chunk line, no schema_version header.
+    fs::write(
+        chunks_dir.join("chunks.v1.jsonl"),
+        b"{\"chunk_key\":\"ATTACHKEY:c0\",\"item_key\":\"ITEMKEY\",\"attachment_key\":\"ATTACHKEY\",\"block_keys\":[],\"section_path\":[],\"text\":\"old\",\"page_range\":[0,0],\"evidence_refs\":[]}\n",
+    )
+    .expect("write legacy chunks sidecar");
+
+    // Blocks sidecar so reindex can re-chunk.
+    fs::write(
+        ocr_dir.join("latest.blocks.jsonl"),
+        b"{\"block_key\":\"ATTACHKEY:b0\",\"item_key\":\"ITEMKEY\",\"attachment_key\":\"ATTACHKEY\",\"page_idx\":0,\"block_type\":\"paragraph\",\"section_path\":[],\"text\":\"Reindexed body paragraph.\"}\n",
+    )
+    .expect("write blocks sidecar");
+
+    let mut client = FakeClient::with_responses(vec![
+        json!({"key": "ITEMKEY"}),
+        json!([{ "key": "ATTACHKEY", "contentType": "application/pdf",
+                 "path": pdf_path.to_string_lossy() }]),
+        // embed_sidecar_chunks -> settings.getAll (no provider configured => no-op)
+        json!({}),
+    ]);
+
+    let out = run_with_client(
+        [
+            "zotron",
+            "ocr",
+            "reindex",
+            "--key",
+            "ITEMKEY",
+            "--stale-only",
+        ],
+        &mut client,
+    )
+    .expect("ocr reindex --stale-only succeeds");
+    let payload: Value = serde_json::from_str(&out).expect("reindex output is JSON");
+
+    assert_eq!(payload["reindexed"], 1, "legacy sidecar must be reindexed");
+    assert_eq!(payload["skipped"], 0);
+
+    // The rewritten sidecar now carries the v2 header.
+    let rewritten = fs::read_to_string(chunks_dir.join("chunks.v1.jsonl"))
+        .expect("read rewritten chunks");
+    assert!(
+        rewritten.lines().next().unwrap().contains("\"schema_version\":2"),
+        "rewritten sidecar must start with v2 header, got: {rewritten}"
+    );
+    assert!(rewritten.contains("Reindexed body paragraph."));
 
     let _ = fs::remove_dir_all(root);
 }
