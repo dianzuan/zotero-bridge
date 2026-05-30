@@ -209,6 +209,9 @@ fn value_bbox4(value: &Value) -> Option<[f64; 4]> {
 #[derive(Debug, Parser)]
 #[command(name = "zotron", about = "Rust client + CLI for the Zotron XPI")]
 struct Cli {
+    /// Zotero JSON-RPC endpoint. Applies to every subcommand.
+    #[arg(long, default_value = DEFAULT_RPC_URL, global = true)]
+    url: String,
     #[command(subcommand)]
     command: Command,
 }
@@ -248,8 +251,6 @@ pub(crate) enum OcrCommand {
     Status {
         #[arg(long)]
         collection: String,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Re-chunk and re-embed existing OCR results without re-running OCR.
     Reindex {
@@ -261,8 +262,6 @@ pub(crate) enum OcrCommand {
         stale_only: bool,
         #[arg(long = "chunk-chars", default_value_t = 1200)]
         chunk_chars: usize,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Parse a Zotero PDF and write hidden sidecar OCR/RAG artifacts. Provider read from Zotero settings unless --provider is given.
     #[command(name = "process")]
@@ -297,25 +296,18 @@ pub(crate) enum OcrCommand {
         timeout_seconds: u64,
         #[arg(long = "chunk-chars", default_value_t = 1200)]
         chunk_chars: usize,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
 }
 
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Check that Zotero is running with the Zotron XPI enabled.
-    Ping {
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
+    Ping,
     /// Generic RPC escape hatch.
     Rpc {
         method: String,
         #[arg(default_value = "{}")]
         params_json: String,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
         #[arg(long)]
         paginate: bool,
         #[arg(long, default_value_t = 100)]
@@ -334,8 +326,6 @@ enum Command {
         /// Duplicate handling: skip | update | create.
         #[arg(long = "on-duplicate", default_value = "skip")]
         on_duplicate: String,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
         /// Parse input + resolve collection only; do not push to Zotero.
         #[arg(long = "dry-run")]
         dry_run: bool,
@@ -432,8 +422,6 @@ pub(crate) enum RagCommand {
     Status {
         #[arg(long)]
         collection: String,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Emit academic-zh retrieval hits with item_key/title/text provenance.
     #[command(name = "search")]
@@ -454,50 +442,33 @@ pub(crate) enum RagCommand {
         top_k: u64,
         #[arg(long, default_value = "json", value_parser = ["json", "jsonl"])]
         output: String,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
 }
 
 #[derive(Debug, Subcommand)]
 enum SystemCommand {
     /// Show XPI version and exposed method metadata.
-    Version {
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
+    Version,
     /// List all libraries (user + groups).
-    Libraries {
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
+    Libraries,
     /// Get statistics for the current (or specified) library.
     #[command(name = "library-stats")]
     LibraryStats {
         #[arg(long)]
         library: Option<i64>,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Show item type schema. Without --type, lists all types. With --type, shows fields and creator types.
     Schema {
         #[arg(long = "type")]
         item_type: Option<String>,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Get the currently selected Zotero collection (or null).
     #[command(name = "current-collection")]
-    CurrentCollection {
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
+    CurrentCollection,
     /// List RPC methods, or describe a specific method.
     Methods {
         /// Method name to describe. Omit to list all methods.
         method: Option<String>,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
 }
 
@@ -539,8 +510,6 @@ struct SearchArgs {
     limit: u64,
     #[arg(long, default_value_t = 0)]
     offset: u64,
-    #[arg(long, default_value = DEFAULT_RPC_URL)]
-    url: String,
     #[command(subcommand)]
     management: Option<SearchManagementCommand>,
 }
@@ -549,10 +518,7 @@ struct SearchArgs {
 enum SearchManagementCommand {
     /// List all saved searches in the library.
     #[command(name = "saved-searches")]
-    SavedSearches {
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
+    SavedSearches,
     /// Create a saved search with one or more conditions.
     #[command(name = "create-saved")]
     CreateSaved {
@@ -561,8 +527,6 @@ enum SearchManagementCommand {
         condition: Vec<String>,
         #[arg(long)]
         dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Delete a saved search by key.
     #[command(name = "delete-saved")]
@@ -570,8 +534,6 @@ enum SearchManagementCommand {
         search_key: String,
         #[arg(long)]
         dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
 }
 
@@ -599,8 +561,6 @@ enum ItemsCommand {
         collection: Option<String>,
         #[arg(long)]
         dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Update fields on an existing item.
     Update {
@@ -609,32 +569,24 @@ enum ItemsCommand {
         fields: Vec<String>,
         #[arg(long)]
         dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Permanently delete an item.
     Delete {
         key: String,
         #[arg(long)]
         dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Move one or more items to trash.
     Trash {
         items: Vec<String>,
         #[arg(long)]
         dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Restore a trashed item.
     Restore {
         item: String,
         #[arg(long)]
         dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Merge a group of duplicate items.
     #[command(name = "merge-duplicates")]
@@ -642,8 +594,6 @@ enum ItemsCommand {
         keys: Vec<String>,
         #[arg(long)]
         dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Add a related-item link between two items.
     #[command(name = "add-related")]
@@ -653,8 +603,6 @@ enum ItemsCommand {
         target: String,
         #[arg(long)]
         dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Remove a related-item link between two items.
     #[command(name = "remove-related")]
@@ -664,14 +612,10 @@ enum ItemsCommand {
         target: String,
         #[arg(long)]
         dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Print the full serialization of an item by key.
     Get {
         item: String,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// List items in the library with optional sorting and pagination.
     List {
@@ -686,15 +630,10 @@ enum ItemsCommand {
         /// List trashed items instead of regular items.
         #[arg(long)]
         trash: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Run Zotero's duplicate scan and print groups.
     #[command(name = "find-duplicates")]
-    FindDuplicates {
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
+    FindDuplicates,
     /// List recently added or modified items.
     Recent {
         #[arg(long, default_value_t = 20)]
@@ -703,41 +642,29 @@ enum ItemsCommand {
         offset: u64,
         #[arg(long = "type", default_value = "added")]
         recent_type: String,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Retrieve the full-text content of an item's attachment.
     Fulltext {
         key: String,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// List items related to the given item.
     Related {
         key: String,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Get the citation key for an item.
     #[command(name = "citation-key")]
     CitationKey {
         key: String,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Get the local filesystem path of an item's PDF attachment.
     Path {
         key: String,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// List attachments belonging to an item.
     Attachments {
         key: String,
         #[arg(long, default_value_t = 0)]
         offset: u64,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Batch find missing PDFs in a collection via Zotero's resolver chain.
     #[command(name = "find-pdfs")]
@@ -746,8 +673,6 @@ enum ItemsCommand {
         collection: String,
         #[arg(long, default_value_t = 0)]
         limit: usize,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
 }
 
@@ -756,15 +681,10 @@ enum SettingsCommand {
     /// Get a single Zotero preference value.
     Get {
         key: String,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// List all Zotero preferences as a key->value dict.
     #[command(visible_alias = "get-all")]
-    List {
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
+    List,
     /// Set one or more Zotero preferences (key value pairs), or bulk-set from a JSON file.
     Set {
         /// key value key value ... (pairs of positional args)
@@ -774,8 +694,6 @@ enum SettingsCommand {
         file: Option<String>,
         #[arg(long)]
         dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
 }
 
@@ -785,8 +703,6 @@ enum TagsCommand {
     List {
         #[arg(long, default_value_t = 200)]
         limit: u64,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Rename a tag across all items.
     Rename {
@@ -794,16 +710,12 @@ enum TagsCommand {
         new: String,
         #[arg(long)]
         dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Delete a tag library-wide.
     Delete {
         tag: String,
         #[arg(long)]
         dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Add tags to one or more items.
     Add {
@@ -812,8 +724,6 @@ enum TagsCommand {
         tags: Vec<String>,
         #[arg(long)]
         dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Remove tags from one or more items.
     Remove {
@@ -822,8 +732,6 @@ enum TagsCommand {
         tags: Vec<String>,
         #[arg(long)]
         dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
 }
 
@@ -843,8 +751,6 @@ struct ExportArgs {
     /// Output HTML instead of plain text (only for bibliography format).
     #[arg(long)]
     html: bool,
-    #[arg(long, default_value = DEFAULT_RPC_URL)]
-    url: String,
 }
 
 #[derive(Debug, Subcommand)]
@@ -859,8 +765,6 @@ enum AnnotationsCommand {
         /// Include N characters of surrounding text for each annotation
         #[arg(long)]
         context: Option<u32>,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Create a new annotation on a PDF. Accepts an item key (auto-resolves to PDF) or attachment key.
     Create {
@@ -893,8 +797,6 @@ enum AnnotationsCommand {
         color: String,
         #[arg(long)]
         dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Batch-create annotations from a JSON array on stdin or --file.
     /// Each entry: {"quote": "...", "color": "#hex", "comment": "...", "type": "highlight"}
@@ -909,8 +811,6 @@ enum AnnotationsCommand {
         file: Option<String>,
         #[arg(long)]
         dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Locate a text quote in a PDF without creating an annotation.
     /// Returns page index and rects if found.
@@ -926,16 +826,12 @@ enum AnnotationsCommand {
         /// Restrict search to a specific page (0-indexed)
         #[arg(long)]
         page: Option<u32>,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Delete an annotation by key.
     Delete {
         annotation_key: String,
         #[arg(long)]
         dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
 }
 
@@ -949,14 +845,10 @@ enum NotesCommand {
         limit: u64,
         #[arg(long, default_value_t = 0)]
         offset: u64,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Get a single note by key.
     Get {
         note_key: String,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Create a note attached to a parent item.
     Create {
@@ -968,8 +860,6 @@ enum NotesCommand {
         tags: Vec<String>,
         #[arg(long)]
         dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Update the content of an existing note.
     Update {
@@ -978,44 +868,30 @@ enum NotesCommand {
         content: String,
         #[arg(long)]
         dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Delete a note by key.
     Delete {
         note_key: String,
         #[arg(long)]
         dry_run: bool,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Search notes by text content.
     Search {
         query: String,
         #[arg(long, default_value_t = 50)]
         limit: u64,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
 }
 
 #[derive(Debug, Subcommand)]
 enum CollectionsCommand {
     /// List all collections in the user library (flat).
-    List {
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
+    List,
     /// Print the collection hierarchy as a tree.
-    Tree {
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
-    },
+    Tree,
     /// Get a single collection's metadata.
     Get {
         name_or_id: String,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// List all items in a collection.
     #[command(name = "get-items", visible_alias = "items")]
@@ -1025,21 +901,15 @@ enum CollectionsCommand {
         limit: Option<u64>,
         #[arg(long, default_value_t = 0)]
         offset: u64,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Show item/attachment/note/subcollection counts for a collection.
     Stats {
         name_or_id: String,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
     },
     /// Rename a collection.
     Rename {
         old_name: String,
         new_name: String,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
         #[arg(long)]
         dry_run: bool,
     },
@@ -1048,16 +918,12 @@ enum CollectionsCommand {
         name: String,
         #[arg(long)]
         parent: Option<String>,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
         #[arg(long)]
         dry_run: bool,
     },
     /// Delete a collection.
     Delete {
         name_or_id: String,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
         #[arg(long)]
         dry_run: bool,
     },
@@ -1066,8 +932,6 @@ enum CollectionsCommand {
     AddItems {
         collection: String,
         item_keys: Vec<String>,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
         #[arg(long)]
         dry_run: bool,
     },
@@ -1076,8 +940,6 @@ enum CollectionsCommand {
     RemoveItems {
         collection: String,
         item_keys: Vec<String>,
-        #[arg(long, default_value = DEFAULT_RPC_URL)]
-        url: String,
         #[arg(long)]
         dry_run: bool,
     },
@@ -1119,8 +981,7 @@ pub fn run(
         ParseOutcome::Command(cli) => cli,
         ParseOutcome::Display(output) => return Ok(output),
     };
-    let url = command_url(&cli.command);
-    let mut client = ZoteroRpc::new(url);
+    let mut client = ZoteroRpc::new(cli.url);
     run_command(cli.command, &mut client)
 }
 
@@ -1133,106 +994,6 @@ pub fn run_with_client(
         ParseOutcome::Display(output) => return Ok(output),
     };
     run_command(cli.command, client)
-}
-
-fn rag_command_url(command: &RagCommand) -> String {
-    match command {
-        RagCommand::Providers => DEFAULT_RPC_URL.to_string(),
-        RagCommand::Embed { .. } => DEFAULT_RPC_URL.to_string(),
-        RagCommand::Status { url, .. } => url.clone(),
-        RagCommand::Search { url, .. } => url.clone(),
-    }
-}
-
-fn command_url(command: &Command) -> String {
-    match command {
-        Command::Ping { url }
-        | Command::Rpc { url, .. }
-        | Command::Push { url, .. }
-        => url.clone(),
-        Command::Ocr { command } => match command {
-            OcrCommand::Providers => DEFAULT_RPC_URL.to_string(),
-            OcrCommand::Run { .. } => DEFAULT_RPC_URL.to_string(),
-            OcrCommand::Status { url, .. } => url.clone(),
-            OcrCommand::Reindex { url, .. } => url.clone(),
-            OcrCommand::Process { url, .. } => url.clone(),
-        },
-        Command::Rag { command } => rag_command_url(command),
-        Command::System { command } => match command {
-            SystemCommand::Version { url }
-            | SystemCommand::Libraries { url }
-            | SystemCommand::LibraryStats { url, .. }
-            | SystemCommand::Schema { url, .. }
-            | SystemCommand::CurrentCollection { url }
-            | SystemCommand::Methods { url, .. } => url.clone(),
-        },
-        Command::Search(ref args) => match &args.management {
-            Some(SearchManagementCommand::SavedSearches { url })
-            | Some(SearchManagementCommand::CreateSaved { url, .. })
-            | Some(SearchManagementCommand::DeleteSaved { url, .. }) => url.clone(),
-            None => args.url.clone(),
-        },
-        Command::Items { command } => match command {
-            ItemsCommand::Add { url, .. }
-            | ItemsCommand::Update { url, .. }
-            | ItemsCommand::Delete { url, .. }
-            | ItemsCommand::Trash { url, .. }
-            | ItemsCommand::Restore { url, .. }
-            | ItemsCommand::MergeDuplicates { url, .. }
-            | ItemsCommand::AddRelated { url, .. }
-            | ItemsCommand::RemoveRelated { url, .. }
-            | ItemsCommand::Get { url, .. }
-            | ItemsCommand::List { url, .. }
-            | ItemsCommand::FindDuplicates { url }
-            | ItemsCommand::Recent { url, .. }
-            | ItemsCommand::Fulltext { url, .. }
-            | ItemsCommand::Related { url, .. }
-            | ItemsCommand::CitationKey { url, .. }
-            | ItemsCommand::Path { url, .. }
-            | ItemsCommand::Attachments { url, .. }
-            | ItemsCommand::FindPdfs { url, .. } => url.clone(),
-        },
-        Command::Collections { command } => match command {
-            CollectionsCommand::List { url }
-            | CollectionsCommand::Tree { url }
-            | CollectionsCommand::Get { url, .. }
-            | CollectionsCommand::GetItems { url, .. }
-            | CollectionsCommand::Stats { url, .. }
-            | CollectionsCommand::Rename { url, .. }
-            | CollectionsCommand::Create { url, .. }
-            | CollectionsCommand::Delete { url, .. }
-            | CollectionsCommand::AddItems { url, .. }
-            | CollectionsCommand::RemoveItems { url, .. } => url.clone(),
-        },
-        Command::Notes { command } => match command {
-            NotesCommand::List { url, .. }
-            | NotesCommand::Get { url, .. }
-            | NotesCommand::Create { url, .. }
-            | NotesCommand::Update { url, .. }
-            | NotesCommand::Delete { url, .. }
-            | NotesCommand::Search { url, .. } => url.clone(),
-        },
-        Command::Settings { command } => match command {
-            SettingsCommand::Get { url, .. }
-            | SettingsCommand::List { url }
-            | SettingsCommand::Set { url, .. } => url.clone(),
-        },
-        Command::Tags { command } => match command {
-            TagsCommand::List { url, .. }
-            | TagsCommand::Rename { url, .. }
-            | TagsCommand::Delete { url, .. }
-            | TagsCommand::Add { url, .. }
-            | TagsCommand::Remove { url, .. } => url.clone(),
-        },
-        Command::Export(ref args) => args.url.clone(),
-        Command::Annotations { command } => match command {
-            AnnotationsCommand::List { url, .. }
-            | AnnotationsCommand::Create { url, .. }
-            | AnnotationsCommand::CreateBatch { url, .. }
-            | AnnotationsCommand::Locate { url, .. }
-            | AnnotationsCommand::Delete { url, .. } => url.clone(),
-        },
-    }
 }
 
 pub(crate) fn local_path_from_zotero_path(path: &str) -> String {
@@ -1284,7 +1045,7 @@ fn run_command(command: Command, client: &mut impl RpcCaller) -> Result<String, 
     }
 
     let value = match command {
-        Command::Ping { .. } => call_json(client, "system.ping", None)?,
+        Command::Ping => call_json(client, "system.ping", None)?,
         Command::Rpc {
             method,
             params_json,
@@ -1816,7 +1577,7 @@ fn run_search_management_command(
     client: &mut impl RpcCaller,
 ) -> Result<Value, String> {
     match command {
-        SearchManagementCommand::SavedSearches { .. } => Ok(normalize_list_envelope(
+        SearchManagementCommand::SavedSearches => Ok(normalize_list_envelope(
             client.call("search.savedSearches", None)?,
             "items",
             None,
@@ -2110,8 +1871,8 @@ fn run_system_command(
     client: &mut impl RpcCaller,
 ) -> Result<Value, String> {
     let value = match command {
-        SystemCommand::Version { .. } => client.call("system.version", None)?,
-        SystemCommand::Libraries { .. } => client.call("system.libraries", None)?,
+        SystemCommand::Version => client.call("system.version", None)?,
+        SystemCommand::Libraries => client.call("system.libraries", None)?,
         SystemCommand::LibraryStats { library, .. } => {
             let params = library.map(|id| serde_json::json!({"id": id}));
             client.call("system.libraryStats", params)?
@@ -2142,7 +1903,7 @@ fn run_system_command(
                 Value::Array(type_names)
             }
         }
-        SystemCommand::CurrentCollection { .. } => client.call("system.currentCollection", None)?,
+        SystemCommand::CurrentCollection => client.call("system.currentCollection", None)?,
         SystemCommand::Methods { method, .. } => {
             if let Some(method) = method {
                 client.call("system.describe", Some(serde_json::json!({"method": method})))?
@@ -2300,7 +2061,7 @@ fn run_items_command(
                 normalize_list_envelope(value, "items", Some(limit), offset)
             }
         }
-        ItemsCommand::FindDuplicates { .. } => client.call("items.findDuplicates", None)?,
+        ItemsCommand::FindDuplicates => client.call("items.findDuplicates", None)?,
         ItemsCommand::Recent {
             limit,
             offset,
@@ -2418,7 +2179,7 @@ fn run_settings_command(
 ) -> Result<Value, String> {
     let value = match command {
         SettingsCommand::Get { key, .. } => client.call("settings.get", Some(serde_json::json!({"key": key})))?,
-        SettingsCommand::List { .. } => client.call("settings.getAll", None)?,
+        SettingsCommand::List => client.call("settings.getAll", None)?,
         SettingsCommand::Set {
             pairs,
             file,
@@ -2873,13 +2634,13 @@ fn run_collections_command(
     client: &mut impl RpcCaller,
 ) -> Result<Value, String> {
     let value = match command {
-        CollectionsCommand::List { .. } => normalize_list_envelope(
+        CollectionsCommand::List => normalize_list_envelope(
             client.call("collections.list", None)?,
             "items",
             None,
             0,
         ),
-        CollectionsCommand::Tree { .. } => client.call("collections.tree", None)?,
+        CollectionsCommand::Tree => client.call("collections.tree", None)?,
         CollectionsCommand::Get { name_or_id, .. } => {
             let key = resolve_collection(client, &name_or_id)?;
             client.call("collections.get", Some(serde_json::json!({"key": key})))?

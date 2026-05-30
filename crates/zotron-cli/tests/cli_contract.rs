@@ -160,7 +160,7 @@ fn top_level_help_returns_text_without_rpc_calls() {
     let out = run_with_client(["zotron", "--help"], &mut client).expect("help succeeds");
 
     assert!(out.contains("Rust client + CLI for the Zotron XPI"));
-    assert!(out.contains("Usage: zotron <COMMAND>"));
+    assert!(out.contains("Usage: zotron [OPTIONS] <COMMAND>"));
     assert!(client.calls.is_empty(), "help should not call RPC");
 }
 
@@ -178,7 +178,7 @@ fn zotron_binary_help_exits_successfully() {
         "stderr should be empty for help: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(String::from_utf8_lossy(&output.stdout).contains("Usage: zotron <COMMAND>"));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Usage: zotron [OPTIONS] <COMMAND>"));
 }
 
 #[test]
