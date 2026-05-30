@@ -1883,6 +1883,10 @@ pub fn chunks_from_blocks(blocks: &[PdfEvidenceBlock], max_chars: usize) -> Vec<
 
     flush_chunk(&mut chunks, &mut current, &attachment_key);
 
+    // Figure/image blocks (and other text-less blocks) yield chunks with empty
+    // text. They have no retrieval value, inflate chunk counts, and break strict
+    // embedding providers that reject blank inputs — drop them at the source.
+    chunks.retain(|chunk| !chunk.text.trim().is_empty());
     chunks
 }
 
