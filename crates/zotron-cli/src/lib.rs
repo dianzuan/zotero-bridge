@@ -2371,17 +2371,11 @@ fn run_mutation_command(
     params: Value,
     dry_run: bool,
 ) -> Result<Value, String> {
-    let value = if dry_run {
-        serde_json::json!({
-            "ok": true,
-            "dryRun": true,
-            "wouldCall": method,
-            "wouldCallParams": params,
-        })
+    if dry_run {
+        Ok(dry_run_value(method, params))
     } else {
-        client.call(method, Some(params))?
-    };
-    Ok(value)
+        client.call(method, Some(params))
+    }
 }
 
 fn parse_field_options(fields: &[String]) -> Result<serde_json::Map<String, Value>, String> {
@@ -2495,13 +2489,13 @@ fn run_tags_command(
         }
         TagsCommand::Rename {
             old, new, dry_run, ..
-        } => run_tag_mutation(
+        } => run_mutation_command(
             client,
             "tags.rename",
             serde_json::json!({"oldName": old, "newName": new}),
             dry_run,
         )?,
-        TagsCommand::Delete { tag, dry_run, .. } => run_tag_mutation(
+        TagsCommand::Delete { tag, dry_run, .. } => run_mutation_command(
             client,
             "tags.delete",
             serde_json::json!({"tag": tag}),
@@ -2511,14 +2505,14 @@ fn run_tags_command(
             keys, tags, dry_run, ..
         } => {
             if keys.len() == 1 {
-                run_tag_mutation(
+                run_mutation_command(
                     client,
                     "tags.add",
                     serde_json::json!({"key": keys[0], "tags": tags}),
                     dry_run,
                 )?
             } else {
-                run_tag_mutation(
+                run_mutation_command(
                     client,
                     "tags.batchUpdate",
                     serde_json::json!({"keys": keys, "add": tags}),
@@ -2530,14 +2524,14 @@ fn run_tags_command(
             keys, tags, dry_run, ..
         } => {
             if keys.len() == 1 {
-                run_tag_mutation(
+                run_mutation_command(
                     client,
                     "tags.remove",
                     serde_json::json!({"key": keys[0], "tags": tags}),
                     dry_run,
                 )?
             } else {
-                run_tag_mutation(
+                run_mutation_command(
                     client,
                     "tags.batchUpdate",
                     serde_json::json!({"keys": keys, "remove": tags}),
@@ -2547,19 +2541,6 @@ fn run_tags_command(
         }
     };
     Ok(value)
-}
-
-fn run_tag_mutation(
-    client: &mut impl RpcCaller,
-    method: &str,
-    params: Value,
-    dry_run: bool,
-) -> Result<Value, String> {
-    if dry_run {
-        Ok(dry_run_value(method, params))
-    } else {
-        Ok(client.call(method, Some(params))?)
-    }
 }
 
 fn dry_run_value(method: &str, params: Value) -> Value {
@@ -2665,7 +2646,7 @@ fn run_annotations_command(
             if let Some(comment) = comment {
                 params.insert("comment".to_string(), Value::String(comment));
             }
-            run_mutating_command(client, "annotations.create", Value::Object(params), dry_run)?
+            run_mutation_command(client, "annotations.create", Value::Object(params), dry_run)?
         }
         AnnotationsCommand::CreateBatch {
             parent,
@@ -2695,7 +2676,7 @@ fn run_annotations_command(
             if let Some(att) = attachment {
                 params["attachmentKey"] = Value::String(att);
             }
-            run_mutating_command(client, "annotations.createBatch", params, dry_run)?
+            run_mutation_command(client, "annotations.createBatch", params, dry_run)?
         }
         AnnotationsCommand::Locate {
             parent,
@@ -2720,7 +2701,7 @@ fn run_annotations_command(
             annotation_key,
             dry_run,
             ..
-        } => run_mutating_command(
+        } => run_mutation_command(
             client,
             "annotations.delete",
             serde_json::json!({"key": annotation_key}),
@@ -2852,14 +2833,14 @@ fn run_notes_command(
                     Value::Array(tags.into_iter().map(Value::String).collect()),
                 );
             }
-            run_mutating_command(client, "notes.create", Value::Object(params), dry_run)?
+            run_mutation_command(client, "notes.create", Value::Object(params), dry_run)?
         }
         NotesCommand::Update {
             note_key,
             content,
             dry_run,
             ..
-        } => run_mutating_command(
+        } => run_mutation_command(
             client,
             "notes.update",
             serde_json::json!({"key": note_key, "content": content}),
@@ -2869,7 +2850,7 @@ fn run_notes_command(
             note_key, dry_run, ..
         } => {
             // Python CLI intentionally routes note deletion through items.delete.
-            run_mutating_command(
+            run_mutation_command(
                 client,
                 "items.delete",
                 serde_json::json!({"key": note_key}),
@@ -2885,24 +2866,6 @@ fn run_notes_command(
         }
     };
     Ok(value)
-}
-
-fn run_mutating_command(
-    client: &mut impl RpcCaller,
-    method: &str,
-    params: Value,
-    dry_run: bool,
-) -> Result<Value, String> {
-    if dry_run {
-        Ok(serde_json::json!({
-            "ok": true,
-            "dryRun": true,
-            "wouldCall": method,
-            "wouldCallParams": params,
-        }))
-    } else {
-        client.call(method, Some(params))
-    }
 }
 
 fn run_collections_command(
