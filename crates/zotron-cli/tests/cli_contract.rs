@@ -872,6 +872,72 @@ fn ocr_parse_pdf_ingests_mineru_result_dir_into_hidden_sidecars() {
 }
 
 #[test]
+fn ocr_process_collection_resolves_and_iterates_items_skipping_pdf_less() {
+    // --collection batch mode resolves the collection, iterates its items, and
+    // skips items with no PDF attachment instead of aborting the whole run.
+    let _guard = ENV_LOCK.lock().expect("env lock");
+    // A non-empty api-key env skips the settings.getRaw auth fallback so the
+    // queued responses line up with the batch-mode RPC sequence.
+    std::env::set_var("ZOTRON_TEST_BATCH_KEY", "mineru-env-key");
+    let mut client = FakeClient::with_responses(vec![
+        // find_collection_in_tree -> collections.tree
+        json!([{"key": "COL9", "name": "Survey", "parentKey": null, "children": []}]),
+        // paginate_rpc -> collections.getItems (single page < 500)
+        json!({"items": [{"key": "I1"}, {"key": "I2"}], "total": 2}),
+        // I1 attachments.list -> no attachments -> NO_PDF_ATTACHMENT
+        json!({"items": [], "total": 0}),
+        // I2 attachments.list -> no attachments -> NO_PDF_ATTACHMENT
+        json!({"items": [], "total": 0}),
+    ]);
+
+    let out = run_with_client(
+        [
+            "zotron",
+            "ocr",
+            "process",
+            "--provider",
+            "mineru",
+            "--collection",
+            "Survey",
+            "--api-key-env",
+            "ZOTRON_TEST_BATCH_KEY",
+        ],
+        &mut client,
+    )
+    .expect("ocr process --collection succeeds");
+
+    let payload: Value = serde_json::from_str(&out).expect("batch output is JSON");
+    assert_eq!(payload["collection"], "Survey");
+    assert_eq!(payload["total"], 2);
+    assert_eq!(payload["processed"], 0);
+    assert_eq!(payload["skipped"], 2);
+    assert_eq!(payload["failed"], 0);
+
+    let methods: Vec<&str> = client.calls.iter().map(|(m, _)| m.as_str()).collect();
+    assert_eq!(
+        methods,
+        vec![
+            "collections.tree",
+            "collections.getItems",
+            "attachments.list",
+            "attachments.list",
+        ]
+    );
+}
+
+#[test]
+fn ocr_process_rejects_neither_parent_nor_collection() {
+    let mut client = FakeClient::default();
+    let err = run_with_client(
+        ["zotron", "ocr", "process", "--provider", "mineru"],
+        &mut client,
+    )
+    .expect_err("process with no target is rejected");
+    assert!(err.contains("--parent") && err.contains("--collection"), "{err}");
+    assert!(client.calls.is_empty(), "no target should not call RPC");
+}
+
+#[test]
 fn ocr_reindex_stale_only_skips_current_schema_sidecar() {
     // A chunks sidecar that already carries the current {"schema_version":2}
     // header must be treated as current: --stale-only must skip it (no paid

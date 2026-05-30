@@ -269,11 +269,14 @@ pub(crate) enum OcrCommand {
         /// Override OCR provider (default: read from Zotero settings ocr.provider).
         #[arg(long)]
         provider: Option<String>,
-        /// Parent Zotero item key.
+        /// Parent Zotero item key. Required unless --collection is given.
+        #[arg(long, conflicts_with = "collection")]
+        parent: Option<String>,
+        /// Collection name (fuzzy) or key: OCR every item in the collection.
         #[arg(long)]
-        parent: String,
-        /// Zotero PDF attachment key (auto-resolved from --parent when omitted).
-        #[arg(long)]
+        collection: Option<String>,
+        /// Zotero PDF attachment key (auto-resolved from --parent when omitted; ignored with --collection).
+        #[arg(long, conflicts_with = "collection")]
         attachment: Option<String>,
         /// Public URL for MinerU cloud parsing. Use --result-dir/--result-zip for offline ingestion.
         #[arg(long = "source-url")]

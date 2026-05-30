@@ -64,6 +64,7 @@ pub(crate) fn run_ocr_command(command: OcrCommand, client: &mut impl RpcCaller) 
         OcrCommand::Process {
             provider,
             parent,
+            collection,
             attachment,
             source_url,
             result_dir,
@@ -75,6 +76,19 @@ pub(crate) fn run_ocr_command(command: OcrCommand, client: &mut impl RpcCaller) 
             chunk_chars,
             ..
         } => {
+            // Validate the target selection before any RPC so pure arg errors
+            // short-circuit. --collection batch mode OCRs every item in the
+            // collection; --result-dir/--result-zip are single-item replay
+            // inputs and cannot fan out across a collection.
+            if collection.is_some() && (result_dir.is_some() || result_zip.is_some()) {
+                return Err("INVALID_ARGS: --collection cannot be combined with --result-dir/--result-zip".to_string());
+            }
+            if collection.is_none() && parent.is_none() {
+                return Err(
+                    "INVALID_ARGS: provide --parent <itemKey> or --collection <name>".to_string(),
+                );
+            }
+
             let resolved_provider = match provider {
                 Some(p) => p,
                 None => fetch_ocr_provider_from_settings(client)?,
@@ -87,6 +101,25 @@ pub(crate) fn run_ocr_command(command: OcrCommand, client: &mut impl RpcCaller) 
                     unsafe { env::set_var(&resolved_env, &key); }
                 }
             }
+
+            if let Some(collection) = collection {
+                return run_ocr_process_collection(
+                    client,
+                    &collection,
+                    OcrProcessBatchOptions {
+                        provider: resolved_provider,
+                        source_url,
+                        provider_endpoint,
+                        api_key_env: resolved_env,
+                        poll_interval_seconds,
+                        timeout_seconds,
+                        chunk_chars,
+                    },
+                );
+            }
+
+            let parent = parent.expect("parent presence validated above");
+
             run_ocr_process_command(
                 client,
                 OcrProcessOptions {
@@ -131,6 +164,108 @@ pub(crate) struct OcrRunOptions {
     mime_type: Option<String>,
     endpoint: Option<String>,
     api_key_env: Option<String>,
+}
+
+/// Per-item OCR options shared across a `--collection` batch run. Each item's
+/// PDF attachment is auto-resolved, so `attachment`/`result_dir`/`result_zip`
+/// (single-item inputs) are intentionally absent.
+pub(crate) struct OcrProcessBatchOptions {
+    provider: String,
+    source_url: Option<String>,
+    provider_endpoint: Option<String>,
+    api_key_env: String,
+    poll_interval_seconds: u64,
+    timeout_seconds: u64,
+    chunk_chars: usize,
+}
+
+/// Resolve a collection (by name or key) and OCR every item in it, skipping
+/// items that have no PDF attachment. Mirrors `ocr status` / `ocr reindex`
+/// collection resolution and iterates one item at a time.
+pub(crate) fn run_ocr_process_collection(
+    client: &mut impl RpcCaller,
+    collection: &str,
+    options: OcrProcessBatchOptions,
+) -> Result<String, String> {
+    let collection_key = find_collection_in_tree(client, collection)?
+        .and_then(|node| node.get("key").cloned())
+        .ok_or_else(|| format!("COLLECTION_NOT_FOUND: Collection not found: {collection:?}"))?;
+    let raw = paginate_rpc(
+        client,
+        "collections.getItems",
+        serde_json::json!({"key": collection_key}),
+        500,
+    )?;
+    let items = raw
+        .get("items")
+        .and_then(Value::as_array)
+        .or_else(|| raw.as_array())
+        .ok_or_else(|| "collections.getItems returned non-array/non-items result".to_string())?
+        .clone();
+
+    let mut processed: Vec<Value> = Vec::new();
+    let mut skipped = 0usize;
+    let mut failed = 0usize;
+    let mut results: Vec<Value> = Vec::new();
+
+    for item in &items {
+        let Some(item_key) = item.get("key").and_then(Value::as_str) else {
+            continue;
+        };
+
+        match run_ocr_process_command(
+            client,
+            OcrProcessOptions {
+                provider: options.provider.clone(),
+                parent: item_key.to_string(),
+                attachment: None,
+                source_url: options.source_url.clone(),
+                result_dir: None,
+                result_zip: None,
+                provider_endpoint: options.provider_endpoint.clone(),
+                api_key_env: options.api_key_env.clone(),
+                poll_interval_seconds: options.poll_interval_seconds,
+                timeout_seconds: options.timeout_seconds,
+                chunk_chars: options.chunk_chars,
+            },
+        ) {
+            Ok(value) => {
+                processed.push(Value::String(item_key.to_string()));
+                results.push(serde_json::json!({
+                    "parent": item_key,
+                    "status": "ok",
+                    "result": value,
+                }));
+            }
+            // Items with no PDF attachment are expected in mixed collections;
+            // skip them instead of aborting the whole batch.
+            Err(err) if err.starts_with("NO_PDF_ATTACHMENT") => {
+                skipped += 1;
+                results.push(serde_json::json!({
+                    "parent": item_key,
+                    "status": "skipped",
+                    "error": err,
+                }));
+            }
+            Err(err) => {
+                failed += 1;
+                results.push(serde_json::json!({
+                    "parent": item_key,
+                    "status": "error",
+                    "error": err,
+                }));
+            }
+        }
+    }
+
+    format_json(&serde_json::json!({
+        "collection": collection,
+        "total": items.len(),
+        "processed": processed.len(),
+        "skipped": skipped,
+        "failed": failed,
+        "items": results,
+    }))
 }
 
 pub(crate) fn run_ocr_run_command(options: OcrRunOptions) -> Result<Value, String> {

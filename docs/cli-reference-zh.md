@@ -161,7 +161,8 @@ zotron search "就业" --collection "数字经济" --author "张三" --after 202
 | `ocr providers` | — | 列出支持的 OCR 提供商 |
 | `ocr run --provider <名称>` | `--input` `--file` `--item-key` `--attachment-key` `--mime-type` `--endpoint` `--api-key-env` | 执行 OCR 请求并输出标准化 blocks |
 | `ocr status --collection <名称>` | — | 查看集合的 OCR 状态 |
-| `ocr process --parent <item key>` | `--attachment` `--provider` `--source-url` `--result-dir` `--result-zip` `--provider-endpoint` `--api-key-env` `--poll-interval-seconds` `--timeout-seconds` `--chunk-chars` | 解析 PDF 并写入隐藏 sidecar。`--attachment` 可选，自动从 parent 查找 |
+| `ocr process --parent <item key>` | `--attachment` `--provider` `--source-url` `--result-dir` `--result-zip` `--provider-endpoint` `--api-key-env` `--poll-interval-seconds` `--timeout-seconds` `--chunk-chars` | 解析单篇 PDF 并写入隐藏 sidecar。`--attachment` 可选，自动从 parent 查找 |
+| `ocr process --collection <名称>` | `--provider` `--source-url` `--provider-endpoint` `--api-key-env` `--poll-interval-seconds` `--timeout-seconds` `--chunk-chars` | 批量 OCR 集合内每个条目，自动逐条解析其 PDF 附件；无 PDF 的条目跳过（不报错），输出含 `processed` / `skipped` / `failed` 计数。不能与 `--result-dir` / `--result-zip` 同用 |
 | `ocr reindex` | `--collection` `--key` `--stale-only` `--chunk-chars` | 在不重新 OCR 的前提下，从已抽取的 blocks 重新切块并重新生成向量（免费） |
 
 chunk sidecar 带有 `schema_version` 头行。`--stale-only` 读取该头行并跳过已是当前 schema 的 sidecar，因此只重建过期的部分。**升级后请运行一次 `zotron ocr reindex --stale-only`**，把升级前未带版本头的旧 v1 sidecar 重建到当前 schema（否则陈旧 chunk 会混入检索）。reindex 还会重新生成向量，使此前只切块未生成向量的文档恢复语义检索能力。

@@ -245,6 +245,31 @@ Commands:
   reindex    Re-chunk and re-embed existing OCR results without re-running OCR
 ```
 
+### zotron ocr process
+```
+Parse a Zotero PDF and write hidden sidecar OCR/RAG artifacts. Provider read
+from Zotero settings unless --provider is given.
+
+Usage: zotron ocr process [OPTIONS]
+
+Options:
+      --provider <PROVIDER>      Override OCR provider (default: Zotero settings ocr.provider)
+      --parent <PARENT>          Parent item key. Required unless --collection is given
+      --collection <COLLECTION>  Collection name (fuzzy) or key: OCR every item in the collection
+      --attachment <ATTACHMENT>  PDF attachment key (auto-resolved from --parent; ignored with --collection)
+      --source-url <SOURCE_URL>  Public URL for MinerU cloud parsing
+      --result-dir <RESULT_DIR>  Already-extracted MinerU result directory (offline replay)
+      --result-zip <RESULT_ZIP>  Already-downloaded MinerU result zip (offline replay)
+      --chunk-chars <CHUNK_CHARS>  [default: 1200]
+```
+
+Pass `--parent <itemKey>` to OCR a single item, or `--collection <name|key>` to
+OCR every item in a collection. In `--collection` mode the attachment is
+auto-resolved per item, items with no PDF attachment are skipped (not errors),
+and the output reports `processed` / `skipped` / `failed` counts plus a per-item
+`items` array. `--collection` cannot be combined with `--result-dir` /
+`--result-zip` (those are single-item replay inputs).
+
 ### zotron ocr reindex
 ```
 Re-chunk and re-embed existing OCR results without re-running OCR

@@ -30,11 +30,16 @@ zotron ocr process --parent ITEMKEY
 # Attachment key auto-resolved from --parent; specify explicitly if multiple PDFs
 zotron ocr process --parent ITEMKEY --attachment ATTACHKEY
 
+# Batch: OCR every item in a collection (PDF auto-resolved per item; items without a PDF are skipped)
+zotron ocr process --collection "数字经济"
+
 # Replay an already-downloaded MinerU result without another provider call
 zotron ocr process --parent ITEMKEY --result-dir /tmp/mineru-result
 ```
 
 Use `process` for the real pipeline. `run` is only a low-level transport/debug command.
+
+Pass `--parent` for a single item or `--collection` to process the whole collection. Batch output reports `processed` / `skipped` / `failed` counts plus a per-item `items` array; `--collection` cannot be combined with `--result-dir` / `--result-zip`.
 
 ## Reindex (re-chunk + re-embed without re-OCR)
 
