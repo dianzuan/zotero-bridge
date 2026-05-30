@@ -31,7 +31,7 @@ Zotron 是一个本地 Rust CLI，直接对接 Zotero 内部 JS API——完整�
 
 - **导出**引用——BibTeX、APA、Chicago 或任何 CSL 样式。可以导出单个条目、多个条目或整个集合。输出到 stdout，按需重定向到文件。
 
-- **OCR** 扫描件——支持多种 provider（MinerU、GLM、PaddleOCR）。OCR 结果以 sidecar 文件存储在附件旁。OCR 之后，`rag search` 运行混合检索：BM25 词法匹配 + 余弦向量相似度 + RRF 融合排序，全部本地执行。
+- **OCR** 扫描件——支持多种 provider（MinerU、GLM、PaddleOCR）。OCR 结果以 sidecar 文件存储在附件旁。OCR 之后，`rag search` 运行混合检索：BM25 词法匹配 + 余弦向量相似度 + RRF 融合排序，全部本地执行。可选的重排器（reranker）对融合后的候选重新打分，动态相关度阈值会裁掉弱命中，MMR 让最终结果更具多样性。
 
 - **管理**集合、标签和附件。创建集合、在集合间移动条目、批量增删标签、通过 URL 或本地路径添加附件、查找缺失的 PDF。
 
