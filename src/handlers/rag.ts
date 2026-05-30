@@ -98,12 +98,25 @@ async function readOptionalText(path: string): Promise<string | null> {
   }
 }
 
-function fileExists(path: string): boolean {
+function baseName(path: string): string {
+  const normalized = path.replace(/\\/g, "/");
+  const index = normalized.lastIndexOf("/");
+  return index >= 0 ? normalized.slice(index + 1) : normalized;
+}
+
+/**
+ * Enumerate `*.jsonl` files under `dir`. The pipeline writes per-provider
+ * embedding files named `embeddings/{provider}--{model}.jsonl`, so probing a
+ * single literal name is wrong — list whatever `.jsonl` artifacts exist.
+ * Returns full paths; an empty array if the directory is missing or unreadable.
+ */
+async function listJsonlFiles(dir: string): Promise<string[]> {
   try {
-    const file = Zotero.File.pathToFile?.(path);
-    return !!file?.exists?.();
+    const children: string[] = await (globalThis as any).IOUtils?.getChildren?.(dir);
+    if (!Array.isArray(children)) return [];
+    return children.filter((child) => baseName(child).toLowerCase().endsWith(".jsonl"));
   } catch {
-    return false;
+    return [];
   }
 }
 
@@ -228,9 +241,9 @@ async function readItemArtifacts(item: any): Promise<ItemArtifacts> {
       const chunksContent = await readOptionalText(chunksPath);
       if (chunksContent) chunks.push(...parseJsonl(chunksContent, chunksPath));
 
-      const vectorsPath = joinPath(sidecarRoot, "embeddings", "vectors.jsonl");
-      if (fileExists(vectorsPath)) {
-        embeddingArtifacts.push({ title: "vectors.jsonl", path: vectorsPath });
+      const embeddingsDir = joinPath(sidecarRoot, "embeddings");
+      for (const vectorsPath of await listJsonlFiles(embeddingsDir)) {
+        embeddingArtifacts.push({ title: baseName(vectorsPath), path: vectorsPath });
       }
     }
 
