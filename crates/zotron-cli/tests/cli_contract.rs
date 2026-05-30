@@ -1770,6 +1770,7 @@ fn rag_search_local_lexical_reports_mode_and_score_kind() {
     assert_eq!(payload["mode"], "lexical", "actual retrieval path is lexical");
     let items = payload["items"].as_array().expect("items array");
     assert!(!items.is_empty(), "BM25 should return the matching chunk");
+    assert_eq!(items[0]["score_kind"], "bm25");
     assert_eq!(items[0]["item_key"], "ITEM1");
 
     let _ = fs::remove_dir_all(root);

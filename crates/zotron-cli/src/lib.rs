@@ -3615,6 +3615,18 @@ fn run_rag_search_command(
         pipeline_ranked = gap_cutoff(&pipeline_ranked, rag_cutoff.gap_threshold);
     }
 
+    // Origin/scale of each hit's final score, so consumers know the score scale
+    // (which varies by path). Reranking, when it succeeds, dominates ordering.
+    let score_kind: &str = if full_reranked.is_some() {
+        "rerank"
+    } else {
+        match actual_mode {
+            "hybrid" => "rrf",
+            "dense" => "cosine",
+            _ => "bm25",
+        }
+    };
+
     // Step 6c: MMR dedup.
     //
     // The MMR threshold (0.05) assumes relevance in [0,1]. Upstream scores vary
@@ -3750,6 +3762,7 @@ fn run_rag_search_command(
             "page_range": chunk.page_range,
             "section_path": chunk.section_path,
             "score": score,
+            "score_kind": score_kind,
         });
         if options.include_fulltext_spans {
             hit.as_object_mut().unwrap().insert(
