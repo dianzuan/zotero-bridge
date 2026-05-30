@@ -128,9 +128,28 @@ fn gap_cutoff_flat_distribution_keeps_all() {
 
 #[test]
 fn token_budget_stops_at_limit() {
-    let text_lens = vec![900usize, 900, 900];
+    // char_lens are character counts; tokens are estimated 1:1 with chars.
+    // 300 + 300 = 600 <= 650 keeps two; adding the third (300) would hit 900 > 650.
+    let char_lens = vec![300usize, 300, 300];
     let input: Vec<(usize, f64)> = vec![(0, 0.9), (1, 0.8), (2, 0.7)];
-    let result = token_budget_filter(&input, &text_lens, 650);
+    let result = token_budget_filter(&input, &char_lens, 650);
+    assert_eq!(result.len(), 2);
+}
+
+#[test]
+fn token_budget_counts_chars_not_bytes() {
+    // A CJK chunk: 4 characters == 4 estimated tokens, regardless of its
+    // 12-byte UTF-8 length. Passing byte length here would have over-counted 3x.
+    let cjk = "中文测试"; // 4 chars, 12 UTF-8 bytes
+    assert_eq!(cjk.chars().count(), 4);
+    assert_eq!(cjk.len(), 12);
+    let char_lens = vec![cjk.chars().count(), cjk.chars().count()];
+    let input: Vec<(usize, f64)> = vec![(0, 0.9), (1, 0.8)];
+    // Budget 5: first chunk (4 tokens) kept; second (4 more -> 8 > 5) breaks.
+    let result = token_budget_filter(&input, &char_lens, 5);
+    assert_eq!(result.len(), 1);
+    // Budget 8: both fit exactly (4 + 4 == 8, not > 8).
+    let result = token_budget_filter(&input, &char_lens, 8);
     assert_eq!(result.len(), 2);
 }
 

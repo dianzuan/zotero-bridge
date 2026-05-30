@@ -2199,15 +2199,23 @@ pub fn gap_cutoff(ranked: &[(usize, f64)], threshold: f64) -> Vec<(usize, f64)> 
     ranked.to_vec()
 }
 
+/// Greedily keep top-ranked chunks until the cumulative token estimate exceeds
+/// `budget`. `char_lens` must hold each chunk's character count (`text.chars().count()`),
+/// the same unit the chunker uses to size chunks — NOT the UTF-8 byte length.
+///
+/// Tokens are estimated as 1 token per character. This is exact for CJK text
+/// (~1 token/char) and a safe over-estimate for Latin text (~4 chars/token),
+/// so the budget is never blown. The previous `bytes / 3` heuristic only held
+/// for CJK and badly mis-budgeted Latin, where bytes == chars.
 pub fn token_budget_filter(
     ranked: &[(usize, f64)],
-    text_lens: &[usize],
+    char_lens: &[usize],
     budget: usize,
 ) -> Vec<(usize, f64)> {
     let mut total = 0usize;
     let mut result = Vec::new();
     for &(idx, score) in ranked {
-        let tokens = text_lens.get(idx).copied().unwrap_or(0) / 3;
+        let tokens = char_lens.get(idx).copied().unwrap_or(0);
         if !result.is_empty() && total + tokens > budget {
             break;
         }

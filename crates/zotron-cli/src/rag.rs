@@ -826,11 +826,12 @@ pub(crate) fn run_rag_search_command(
         .map(|(idx, _norm)| (idx, *original_score.get(&idx).unwrap_or(&0.0)))
         .collect();
 
-    // Step 6d: Token budget
-    let text_lens: Vec<usize> = all_chunks.iter().map(|c| c.text.len()).collect();
+    // Step 6d: Token budget. Pass character counts (matching the chunker's
+    // sizing unit), not UTF-8 byte lengths.
+    let char_lens: Vec<usize> = all_chunks.iter().map(|c| c.text.chars().count()).collect();
     pipeline_ranked = token_budget_filter(
         &pipeline_ranked,
-        &text_lens,
+        &char_lens,
         rag_cutoff.token_budget,
     );
 
