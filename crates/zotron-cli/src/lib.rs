@@ -3525,7 +3525,24 @@ fn run_rag_search_command(
         pipeline_ranked = gap_cutoff(&pipeline_ranked, rag_cutoff.gap_threshold);
     }
 
-    // Step 6c: MMR dedup
+    // Step 6c: MMR dedup.
+    //
+    // The MMR threshold (0.05) assumes relevance in [0,1]. Upstream scores vary
+    // wildly by path: reranker scores are ~0..1, but raw RRF (~0.016) and BM25
+    // are not. Without normalization the MMR diversity test
+    // (lambda*rel - (1-lambda)*sim > threshold) nukes almost everything in the
+    // hybrid-no-reranker mode, then min_k silently re-expands — killing both
+    // diversity AND result quality. Min-max normalize the relevance scores in
+    // EVERY mode so the threshold operates on a stable [0,1] scale. The reranked
+    // path is already ~0..1, so normalizing it is effectively idempotent.
+    let normalized_rel = zotron_types::min_max_normalize(
+        &pipeline_ranked.iter().map(|(_, s)| *s as f32).collect::<Vec<_>>(),
+    );
+    let mmr_input: Vec<(usize, f64)> = pipeline_ranked
+        .iter()
+        .zip(normalized_rel.iter())
+        .map(|((idx, _), norm)| (*idx, *norm as f64))
+        .collect();
     let chunk_key_index: std::collections::HashMap<&str, usize> = all_chunks
         .iter()
         .enumerate()
@@ -3538,12 +3555,20 @@ fn run_rag_search_command(
             Some((idx, v.vector.as_slice()))
         })
         .collect();
-    pipeline_ranked = mmr_select(
-        &pipeline_ranked,
+    // MMR selects on normalized relevance; map the survivors back to their
+    // original scores so downstream stages and hit output keep the true scale.
+    let mmr_kept = mmr_select(
+        &mmr_input,
         &vector_map,
         rag_cutoff.mmr_lambda,
         0.05,
     );
+    let original_score: std::collections::HashMap<usize, f64> =
+        pipeline_ranked.iter().map(|(idx, s)| (*idx, *s)).collect();
+    pipeline_ranked = mmr_kept
+        .into_iter()
+        .map(|(idx, _norm)| (idx, *original_score.get(&idx).unwrap_or(&0.0)))
+        .collect();
 
     // Step 6d: Token budget
     let text_lens: Vec<usize> = all_chunks.iter().map(|c| c.text.len()).collect();

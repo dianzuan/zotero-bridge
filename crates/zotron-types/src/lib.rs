@@ -2225,6 +2225,53 @@ pub fn max_k_truncate(
     ranked
 }
 
+/// Min-max normalize a slice of scores into the [0,1] range.
+///
+/// Maps `min -> 0.0` and `max -> 1.0` via a linear transform. This lets
+/// downstream relevance thresholds (e.g. the MMR cutoff) operate on a stable
+/// [0,1] scale regardless of the upstream score origin (RRF ~0.016, raw BM25,
+/// cosine, or 0..1 reranker scores).
+///
+/// Edge cases:
+/// - empty input -> empty output
+/// - single element -> `[1.0]`
+/// - all-equal (`max == min`) -> all `1.0` (no division by zero)
+/// - NaN values are ignored when computing min/max and passed through as the
+///   max-mapped value (`1.0`) so they never produce NaN/inf in the output.
+pub fn min_max_normalize(scores: &[f32]) -> Vec<f32> {
+    if scores.is_empty() {
+        return Vec::new();
+    }
+    let mut min = f32::INFINITY;
+    let mut max = f32::NEG_INFINITY;
+    for &s in scores {
+        if s.is_nan() {
+            continue;
+        }
+        if s < min {
+            min = s;
+        }
+        if s > max {
+            max = s;
+        }
+    }
+    // All-NaN, single element, or all-equal: collapse to 1.0 (no /0).
+    let range = max - min;
+    if !range.is_finite() || range <= f32::EPSILON {
+        return vec![1.0; scores.len()];
+    }
+    scores
+        .iter()
+        .map(|&s| {
+            if s.is_nan() {
+                1.0
+            } else {
+                (s - min) / range
+            }
+        })
+        .collect()
+}
+
 pub fn mmr_select(
     ranked: &[(usize, f64)],
     vectors: &std::collections::HashMap<usize, &[f64]>,
