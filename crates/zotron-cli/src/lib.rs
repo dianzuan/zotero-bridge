@@ -1786,10 +1786,17 @@ fn embed_sidecar_chunks(
     if emb_chunks.is_empty() {
         return 0;
     }
-    // Batch in groups of 20 to avoid API limits
+    // Batch in groups of 20 to avoid API limits. On ANY batch failure we must
+    // NOT clobber a complete existing vectors file with a truncated partial
+    // result — that silently degrades future retrieval while the caller reports
+    // a normal count. We collect into a temp file and atomically rename only if
+    // every batch succeeded; on partial failure we warn and leave the existing
+    // (complete) file untouched.
     let batch_size = 20;
+    let total_batches = emb_chunks.chunks(batch_size).count();
     let mut all_vectors: Vec<EmbeddingVector> = Vec::new();
-    for batch in emb_chunks.chunks(batch_size) {
+    let mut failed = false;
+    for (i, batch) in emb_chunks.chunks(batch_size).enumerate() {
         let input = EmbeddingRequestInput {
             item_key: item_key.to_string(),
             chunks: batch.to_vec(),
@@ -1797,32 +1804,76 @@ fn embed_sidecar_chunks(
             url: if api_url.is_empty() { None } else { Some(api_url.clone()) },
             input_type: Some("document".to_string()),
         };
-        let Ok(request) = build_embedding_provider_request(&provider, &input) else {
+        let request = match build_embedding_provider_request(&provider, &input) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("warning: embedding batch {}/{total_batches} request build failed: {e}", i + 1);
+                failed = true;
+                break;
+            }
+        };
+        let Some(url) = request.url.as_deref() else {
+            eprintln!("warning: embedding batch {}/{total_batches} has no provider URL configured", i + 1);
+            failed = true;
             break;
         };
-        let Some(url) = request.url.as_deref() else { break };
         let mut http = ureq::post(url).set("Content-Type", "application/json");
         if let Some(auth) = request.auth_header {
             if !api_key.is_empty() {
                 http = http.set(auth, &format!("Bearer {api_key}"));
             }
         }
-        let Ok(resp) = http.send_json(&request.body) else { break };
-        let Ok(payload): Result<Value, _> = resp.into_json() else { break };
-        let Ok(vectors) = parse_embedding_provider_response(&provider, &payload, item_key, batch)
-        else {
-            break;
+        let resp = match http.send_json(&request.body) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("warning: embedding batch {}/{total_batches} request failed: {e}", i + 1);
+                failed = true;
+                break;
+            }
         };
-        all_vectors.extend(vectors);
+        let payload: Value = match resp.into_json() {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("warning: embedding batch {}/{total_batches} response parse failed: {e}", i + 1);
+                failed = true;
+                break;
+            }
+        };
+        match parse_embedding_provider_response(&provider, &payload, item_key, batch) {
+            Ok(vectors) => all_vectors.extend(vectors),
+            Err(e) => {
+                eprintln!("warning: embedding batch {}/{total_batches} parse failed: {e}", i + 1);
+                failed = true;
+                break;
+            }
+        }
     }
+
+    if failed {
+        let filename = embedding_vector_filename(&provider, &model);
+        let vectors_path = storage_dir.join(".zotron").join("embeddings").join(&filename);
+        let preserved = if vectors_path.exists() {
+            " — existing vectors left untouched"
+        } else {
+            ""
+        };
+        eprintln!(
+            "warning: embedding incomplete ({} of {} chunks); not writing partial vectors{preserved}",
+            all_vectors.len(),
+            emb_chunks.len(),
+        );
+        // Signal partial/failed state to the caller (0 == nothing reliably written).
+        return 0;
+    }
+
     let count = all_vectors.len();
     if count > 0 {
         let filename = embedding_vector_filename(&provider, &model);
         let vectors_dir = storage_dir.join(".zotron").join("embeddings");
-        fs::create_dir_all(&vectors_dir).map_err(|e| {
+        if let Err(e) = fs::create_dir_all(&vectors_dir) {
             eprintln!("warning: cannot create embeddings dir {}: {e}", vectors_dir.display());
-            e
-        }).ok();
+            return 0;
+        }
         let vectors_path = vectors_dir.join(&filename);
         let mut out = String::new();
         for v in &all_vectors {
@@ -1831,8 +1882,16 @@ fn embed_sidecar_chunks(
                 out.push('\n');
             }
         }
-        if let Err(e) = fs::write(&vectors_path, &out) {
+        // Atomic write: temp file in the same dir, then rename over the target.
+        let tmp_path = vectors_dir.join(format!("{filename}.tmp"));
+        if let Err(e) = fs::write(&tmp_path, &out) {
+            eprintln!("warning: failed to write temp embeddings {}: {e}", tmp_path.display());
+            return 0;
+        }
+        if let Err(e) = fs::rename(&tmp_path, &vectors_path) {
             eprintln!("warning: failed to persist embeddings to {}: {e}", vectors_path.display());
+            let _ = fs::remove_file(&tmp_path);
+            return 0;
         }
     }
     count
@@ -3449,18 +3508,20 @@ fn run_rag_search_command(
         return run_rag_search_xpi_fallback(client, &options);
     }
 
-    // Step 3: determine retrieval mode.
-    let mode = fetch_retrieval_mode(client);
+    // Step 3: determine requested retrieval mode.
+    let requested_mode = fetch_retrieval_mode(client);
 
     // Step 4: BM25 scoring (unless mode is "dense").
-    let bm25_ranked = if mode != "dense" {
+    let mut bm25_ranked = if requested_mode != "dense" {
         bm25_score_chunks(&all_chunks, &options.query, 1.2, 0.75)
     } else {
         Vec::new()
     };
 
     // Step 5: dense vector scoring (unless mode is "lexical" or no vectors).
-    let dense_ranked = if mode != "lexical" && !all_vectors.is_empty() {
+    // Track WHY the dense path produced nothing so we can fall back + report it.
+    let mut dense_failed = false;
+    let dense_ranked = if requested_mode != "lexical" && !all_vectors.is_empty() {
         match embed_query_text(&options.query, &emb_provider, &emb_model, &emb_url, &emb_key) {
             Ok(query_vec) => {
                 let vec_map: std::collections::HashMap<&str, &[f64]> = all_vectors
@@ -3480,20 +3541,49 @@ fn run_rag_search_command(
                 scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
                 scores
             }
-            Err(_) => Vec::new(),
+            Err(e) => {
+                // Query embedding failed: don't silently swallow it.
+                eprintln!("warning: dense retrieval unavailable (query embedding failed): {e}");
+                dense_failed = true;
+                Vec::new()
+            }
         }
     } else {
+        if requested_mode == "dense" && all_vectors.is_empty() {
+            eprintln!("warning: dense retrieval requested but no embedding vectors found for this scope");
+            dense_failed = true;
+        }
         Vec::new()
     };
 
-    // Step 6: merge results.
+    // Step 6: merge results. Determine the ACTUAL retrieval path used so the
+    // output can report it (the requested mode may not be achievable).
     let limit = options.top_k as usize;
+    let actual_mode: &str;
     let rrf_ranked = if !bm25_ranked.is_empty() && !dense_ranked.is_empty() {
+        actual_mode = "hybrid";
         rrf_merge(&bm25_ranked, &dense_ranked, 60.0, limit)
-    } else if !bm25_ranked.is_empty() {
-        bm25_ranked.into_iter().take(limit).collect()
-    } else {
+    } else if !dense_ranked.is_empty() {
+        actual_mode = "dense";
         dense_ranked.into_iter().take(limit).collect()
+    } else if !bm25_ranked.is_empty() {
+        actual_mode = "lexical";
+        bm25_ranked.clone().into_iter().take(limit).collect()
+    } else {
+        // Nothing yet. If the dense path failed/was unavailable but BM25 wasn't
+        // run (requested mode == "dense"), fall back to lexical BM25 instead of
+        // silently returning an empty set.
+        if dense_failed && bm25_ranked.is_empty() {
+            eprintln!("warning: falling back to lexical (BM25) retrieval");
+            bm25_ranked = bm25_score_chunks(&all_chunks, &options.query, 1.2, 0.75);
+        }
+        if !bm25_ranked.is_empty() {
+            actual_mode = "lexical";
+            bm25_ranked.clone().into_iter().take(limit).collect()
+        } else {
+            actual_mode = "lexical";
+            Vec::new()
+        }
     };
 
     // --- Rerank + Dynamic Cutoff Pipeline ---
@@ -3670,7 +3760,9 @@ fn run_rag_search_command(
         hits.push(hit);
     }
 
-    // Step 9: format output.
+    // Step 9: format output. `mode` reports the ACTUAL retrieval path used
+    // (hybrid / dense / lexical), which may differ from the requested mode when
+    // dense vectors or query embeddings were unavailable.
     if options.output == "jsonl" {
         let mut out = String::new();
         for hit in &hits {
@@ -3682,7 +3774,7 @@ fn run_rag_search_command(
         let total = hits.len() as u64;
         format_json(
             &normalize_list_envelope(
-                serde_json::json!({"items": hits, "total": total}),
+                serde_json::json!({"items": hits, "total": total, "mode": actual_mode}),
                 "items",
                 Some(options.top_k),
                 0,
@@ -3779,14 +3871,30 @@ fn rag_status_from_zotero_sidecars(
         .ok_or_else(|| "collections.getItems returned non-array/non-items result".to_string())?
         .clone();
 
+    // Embedding provider/model decide which vector file counts as "available".
+    // Only fetched when there is at least one item to inspect (avoids an RPC
+    // round-trip when the collection is empty / not indexed). A failure (no
+    // settings) just yields empty provider/model and a zero vector count.
+    let (emb_provider, emb_model) = if items.is_empty() {
+        (String::new(), String::new())
+    } else {
+        fetch_embedding_settings(client)
+            .map(|(p, m, _, _)| (p, m))
+            .unwrap_or_default()
+    };
+
     let mut indexed_items = 0usize;
     let mut total_chunks = 0usize;
+    let mut total_vectors = 0usize;
     for item in &items {
         let item_key = item.get("key").cloned().unwrap_or(Value::Null);
-        let chunk_count = sidecar_chunk_count_for_item(client, &item_key)?;
+        // One attachments.list call yields both chunk and vector counts.
+        let (chunk_count, vector_count) =
+            sidecar_counts_for_item(client, &item_key, &emb_provider, &emb_model)?;
         if chunk_count > 0 {
             indexed_items += 1;
             total_chunks += chunk_count;
+            total_vectors += vector_count;
         }
     }
 
@@ -3805,23 +3913,35 @@ fn rag_status_from_zotero_sidecars(
         "total_chunks": total_chunks,
         "total_items": indexed_items,
         "collection_items": items.len(),
+        // Whether semantic (dense) retrieval is actually available for this
+        // scope+provider — lets a user tell before searching whether they'll get
+        // hybrid retrieval or just lexical BM25.
+        "total_vectors": total_vectors,
+        "embeddings_available": total_vectors > 0,
+        "embedding_provider": emb_provider,
+        "embedding_model": emb_model,
         "source": "zotero-sidecar",
     }))
 }
 
-fn sidecar_chunk_count_for_item(
+/// Count both chunk lines and stored embedding vectors for an item, using a
+/// single `attachments.list` call. Returns `(chunks, vectors)`.
+fn sidecar_counts_for_item(
     client: &mut impl RpcCaller,
     item_key: &Value,
-) -> Result<usize, String> {
+    emb_provider: &str,
+    emb_model: &str,
+) -> Result<(usize, usize), String> {
     let attachments = client.call(
         "attachments.list",
         Some(serde_json::json!({"parentKey": item_key.clone()})),
     )?;
     let Some(attachments) = attachments.as_array() else {
-        return Ok(0);
+        return Ok((0, 0));
     };
 
-    let mut count = 0usize;
+    let mut chunk_count = 0usize;
+    let mut vector_count = 0usize;
     for attachment in attachments {
         let Some(path) = attachment.get("path").and_then(Value::as_str) else {
             continue;
@@ -3830,13 +3950,19 @@ fn sidecar_chunk_count_for_item(
         let Some(dir) = Path::new(&local).parent() else {
             continue;
         };
-        let Ok(bytes) = read_machine_artifact_sidecar(dir, MachineArtifactKind::Chunks) else {
-            continue;
-        };
-        let text = String::from_utf8_lossy(&bytes);
-        count += text.lines().filter(|line| !line.trim().is_empty()).count();
+        if let Ok(bytes) = read_machine_artifact_sidecar(dir, MachineArtifactKind::Chunks) {
+            let text = String::from_utf8_lossy(&bytes);
+            // Subtract the {"schema_version":N} header line if present.
+            chunk_count += text
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+                .filter(|line| !line.contains("\"schema_version\""))
+                .count();
+        }
+        let sidecar_root = dir.join(".zotron");
+        vector_count += load_sidecar_vectors(&sidecar_root, emb_provider, emb_model).len();
     }
-    Ok(count)
+    Ok((chunk_count, vector_count))
 }
 
 fn rag_store_path(collection: &str) -> PathBuf {

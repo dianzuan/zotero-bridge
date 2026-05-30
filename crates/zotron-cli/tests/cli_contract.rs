@@ -1564,6 +1564,9 @@ fn rag_status_detects_hidden_attachment_sidecar_chunks() {
     let mut client = FakeClient::with_responses(vec![
         json!([{"key": "COL1", "name": "Research", "children": []}]),
         json!({"items": [{"key": "ITEM1", "title": "Paper"}]}),
+        // fetch_embedding_settings: settings.getAll then settings.getRaw
+        json!({"embedding.provider": "", "embedding.model": ""}),
+        json!({"embedding.apiKey": ""}),
         json!([{"key": "ATT1", "path": pdf_path.to_string_lossy(), "contentType": "application/pdf"}]),
     ]);
 
@@ -1578,6 +1581,9 @@ fn rag_status_detects_hidden_attachment_sidecar_chunks() {
     assert_eq!(payload["collection"], "Research");
     assert_eq!(payload["total_items"], 1);
     assert_eq!(payload["total_chunks"], 2);
+    // No embedding vectors on disk => semantic retrieval unavailable.
+    assert_eq!(payload["total_vectors"], 0);
+    assert_eq!(payload["embeddings_available"], false);
     assert_eq!(
         client.calls,
         vec![
@@ -1585,6 +1591,11 @@ fn rag_status_detects_hidden_attachment_sidecar_chunks() {
             (
                 "collections.getItems".to_string(),
                 Some(json!({"key": "COL1", "limit": 500, "offset": 0}))
+            ),
+            ("settings.getAll".to_string(), None),
+            (
+                "settings.getRaw".to_string(),
+                Some(json!({"key": "embedding.apiKey"}))
             ),
             (
                 "attachments.list".to_string(),
@@ -1638,6 +1649,9 @@ fn rag_status_sidecar_accepts_collection_key() {
     let mut client = FakeClient::with_responses(vec![
         json!([{"key": "COL1", "name": "Research", "children": []}]),
         json!({"items": [{"key": "ITEM1", "title": "Paper"}]}),
+        // fetch_embedding_settings: settings.getAll then settings.getRaw
+        json!({"embedding.provider": "", "embedding.model": ""}),
+        json!({"embedding.apiKey": ""}),
         json!([{"key": "ATT1", "path": pdf_path.to_string_lossy(), "contentType": "application/pdf"}]),
     ]);
 
@@ -1651,6 +1665,7 @@ fn rag_status_sidecar_accepts_collection_key() {
     assert_eq!(payload["status"], "indexed");
     assert_eq!(payload["collection"], "COL1");
     assert_eq!(payload["total_chunks"], 1);
+    assert_eq!(payload["embeddings_available"], false);
 
     match original_home {
         Some(value) => std::env::set_var("HOME", value),
@@ -1696,6 +1711,68 @@ fn rag_search_falls_back_to_xpi_when_no_sidecars_on_disk() {
     assert!(payload["items"].as_array().is_some());
     // Should have called rag.searchHits as fallback
     assert!(client.calls.iter().any(|(method, _)| method == "rag.searchHits"));
+}
+
+#[test]
+fn rag_search_local_lexical_reports_mode_and_score_kind() {
+    // With sidecar chunks on disk and retrievalMode=lexical (no dense), the local
+    // hybrid pipeline runs BM25 and must report mode=lexical + score_kind=bm25.
+    let root = std::env::temp_dir().join(format!(
+        "zotron-rag-local-lexical-{}-{}",
+        std::process::id(),
+        thread_id_suffix()
+    ));
+    let storage_dir = root.join("storage").join("ATT1");
+    let chunks_dir = storage_dir.join(".zotron").join("chunks");
+    fs::create_dir_all(&chunks_dir).expect("create chunks dir");
+    let pdf_path = storage_dir.join("paper.pdf");
+    fs::write(&pdf_path, b"%PDF-1").expect("write pdf placeholder");
+    fs::write(
+        chunks_dir.join("chunks.v1.jsonl"),
+        b"{\"schema_version\":2}\n{\"chunk_key\":\"ATT1:c0\",\"item_key\":\"ITEM1\",\"attachment_key\":\"ATT1\",\"block_keys\":[],\"section_path\":[],\"text\":\"employment elasticity measurement and analysis\",\"page_range\":[0,0],\"evidence_refs\":[]}\n",
+    )
+    .expect("write chunks sidecar");
+
+    let mut client = FakeClient::with_responses(vec![
+        // resolve_sidecar_paths (--key): items.get
+        json!({"key": "ITEM1"}),
+        // resolve_sidecar_paths: attachments.list
+        json!([{ "key": "ATT1", "contentType": "application/pdf",
+                 "path": pdf_path.to_string_lossy() }]),
+        // fetch_embedding_settings: settings.getAll + settings.getRaw
+        json!({"embedding.provider": "", "embedding.model": ""}),
+        json!({"embedding.apiKey": ""}),
+        // fetch_retrieval_mode: settings.get
+        json!({"rag.retrievalMode": "lexical"}),
+        // fetch_rerank_settings: settings.getAll + settings.getRaw (no provider)
+        json!({}),
+        json!({"rerank.apiKey": ""}),
+        // fetch_rag_cutoff_settings: settings.getAll
+        json!({}),
+        // per-hit metadata: items.get
+        json!({"title": "Employment Elasticity", "creators": [], "date": "2024"}),
+    ]);
+
+    let out = run_with_client(
+        [
+            "zotron",
+            "rag",
+            "search",
+            "employment elasticity",
+            "--key",
+            "ITEM1",
+        ],
+        &mut client,
+    )
+    .expect("local lexical rag search succeeds");
+    let payload: Value = serde_json::from_str(&out).expect("rag search output is JSON");
+
+    assert_eq!(payload["mode"], "lexical", "actual retrieval path is lexical");
+    let items = payload["items"].as_array().expect("items array");
+    assert!(!items.is_empty(), "BM25 should return the matching chunk");
+    assert_eq!(items[0]["item_key"], "ITEM1");
+
+    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
