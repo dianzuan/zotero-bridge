@@ -1,5 +1,7 @@
 //! Minimal typed CLI surface for the Rust migration scaffold.
 
+use std::ffi::OsString;
+
 use clap::{error::ErrorKind, Parser, Subcommand};
 use serde_json::Value;
 use zotron_rpc::ZoteroRpc;
@@ -10,6 +12,7 @@ mod ocr;
 mod output;
 mod rag;
 mod rpc;
+mod sources;
 
 use crate::commands::*;
 use crate::ocr::*;
@@ -19,6 +22,7 @@ use crate::rag::*;
 pub use crate::rag::{fetch_rerank_settings, RerankSettings};
 use crate::rpc::*;
 pub use crate::rpc::RpcCaller;
+use crate::sources::{run_external_command, run_sources_list, run_sources_sync};
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct CliOcrProviderSpec {
@@ -296,6 +300,7 @@ pub(crate) enum OcrCommand {
 }
 
 #[derive(Debug, Subcommand)]
+#[command(allow_external_subcommands = true)]
 pub(crate) enum Command {
     /// Check that Zotero is running with the Zotron XPI enabled.
     Ping,
@@ -374,6 +379,26 @@ pub(crate) enum Command {
     Rag {
         #[command(subcommand)]
         command: RagCommand,
+    },
+    /// Discover and manage source plugins (`zotron-*` on PATH).
+    Sources {
+        #[command(subcommand)]
+        command: Option<SourcesCommand>,
+    },
+    /// Transparent proxy: forward `zotron <name> [args]` to `zotron-<name>`.
+    #[command(external_subcommand)]
+    External(Vec<OsString>),
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum SourcesCommand {
+    /// List all discovered source plugins on PATH (the default action).
+    List,
+    /// Symlink plugin skills into the Claude Code plugin's `plugin/skills/`.
+    Sync {
+        /// Path to the repo's `plugin/skills/` directory (auto-discovered when omitted).
+        #[arg(long, default_value = "")]
+        skills_dir: String,
     },
 }
 
@@ -1045,6 +1070,13 @@ fn run_command(command: Command, client: &mut impl RpcCaller) -> Result<String, 
         Command::Rag { command } => {
             return run_rag_command(command, client);
         }
+        Command::Sources { command } => {
+            return match command.unwrap_or(SourcesCommand::List) {
+                SourcesCommand::List => run_sources_list(),
+                SourcesCommand::Sync { skills_dir } => run_sources_sync(&skills_dir),
+            };
+        }
+        Command::External(args) => return run_external_command(args),
         Command::Export(_) => unreachable!("export commands return raw output above"),
     };
 

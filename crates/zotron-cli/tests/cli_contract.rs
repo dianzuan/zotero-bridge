@@ -77,6 +77,9 @@ fn rpc_command_forwards_method_and_params_json() {
 
 #[test]
 fn items_add_file_dry_run_translates_local_path_for_zotero() {
+    // Serialize against PATH-mutating tests: this path translation shells out
+    // to `wslpath`, resolved via PATH.
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let path =
         std::env::temp_dir().join(format!("zotron-cli-path-smoke-{}.pdf", std::process::id()));
     fs::write(&path, b"%PDF- test").expect("write temp pdf");
@@ -202,6 +205,9 @@ fn push_strips_embedded_pdf_and_attaches_local_path() {
 
 #[test]
 fn items_path_translates_zotero_path_for_local_cli_use() {
+    // Serialize against PATH-mutating tests: this path translation shells out
+    // to `wslpath`, resolved via PATH.
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let zotero_path = r"C:\Users\testuser\Zotero\storage\ATTACH1\paper.pdf";
     let mut client = FakeClient::with_response(json!({
         "key": "ATTACH1",
@@ -586,7 +592,7 @@ fn zotron_rag_subcommand_embedding_providers_prints_provider_matrix_without_rpc(
 
 #[test]
 fn zotron_ocr_run_subcommand_executes_local_http_with_endpoint_and_env_credential() {
-    let _guard = ENV_LOCK.lock().expect("env lock");
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider server");
     let url = format!("http://{}", listener.local_addr().expect("local addr"));
     let (tx, rx) = mpsc::channel();
@@ -657,7 +663,7 @@ fn zotron_ocr_run_subcommand_executes_local_http_with_endpoint_and_env_credentia
 
 #[test]
 fn zotron_ocr_provider_json_can_build_input_from_local_file_without_shell_base64() {
-    let _guard = ENV_LOCK.lock().expect("env lock");
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider server");
     let url = format!("http://{}", listener.local_addr().expect("local addr"));
     let (tx, rx) = mpsc::channel();
@@ -709,7 +715,7 @@ fn zotron_ocr_provider_json_can_build_input_from_local_file_without_shell_base64
 
 #[test]
 fn zotron_ocr_provider_json_returns_async_task_for_mineru_precise_submit() {
-    let _guard = ENV_LOCK.lock().expect("env lock");
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider server");
     let url = format!("http://{}", listener.local_addr().expect("local addr"));
     let handle = thread::spawn(move || {
@@ -875,7 +881,7 @@ fn ocr_parse_pdf_ingests_mineru_result_dir_into_hidden_sidecars() {
 fn ocr_process_collection_resolves_and_iterates_items_skipping_pdf_less() {
     // --collection batch mode resolves the collection, iterates its items, and
     // skips items with no PDF attachment instead of aborting the whole run.
-    let _guard = ENV_LOCK.lock().expect("env lock");
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     // A non-empty api-key env skips the settings.getRaw auth fallback so the
     // queued responses line up with the batch-mode RPC sequence.
     std::env::set_var("ZOTRON_TEST_BATCH_KEY", "mineru-env-key");
@@ -1057,7 +1063,7 @@ fn ocr_reindex_rebuilds_legacy_sidecar_with_schema_header() {
 
 #[test]
 fn ocr_parse_pdf_uploads_local_zotero_pdf_to_mineru_batch_endpoint() {
-    let _guard = ENV_LOCK.lock().expect("env lock");
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let root = std::env::temp_dir().join(format!(
         "zotron-mineru-live-contract-{}-{}",
         std::process::id(),
@@ -1175,7 +1181,7 @@ fn ocr_parse_pdf_uploads_local_zotero_pdf_to_mineru_batch_endpoint() {
 
 #[test]
 fn zotron_rag_subcommand_embedding_json_executes_custom_provider_against_local_http() {
-    let _guard = ENV_LOCK.lock().expect("env lock");
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind local embedding server");
     let url = format!("http://{}", listener.local_addr().expect("local addr"));
     let (tx, rx) = mpsc::channel();
@@ -1400,7 +1406,7 @@ fn collections_items_alias_calls_get_items_rpc() {
 
 #[test]
 fn ocr_status_fixture_matches_python_cli_behavior() {
-    let _guard = ENV_LOCK.lock().expect("env lock");
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let original_store = std::env::var_os("ZOTRON_ARTIFACT_STORE");
     std::env::remove_var("ZOTRON_ARTIFACT_STORE");
     let fixture = load_fixture_from("ocr-cli-parity", "status");
@@ -1427,7 +1433,7 @@ fn ocr_status_fixture_matches_python_cli_behavior() {
 
 #[test]
 fn ocr_status_prefers_external_artifact_store_without_attachment_rpc() {
-    let _guard = ENV_LOCK.lock().expect("env lock");
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let original_store = std::env::var_os("ZOTRON_ARTIFACT_STORE");
     let store =
         std::env::temp_dir().join(format!("zotron-cli-artifact-store-{}", std::process::id()));
@@ -1477,7 +1483,7 @@ fn ocr_status_prefers_external_artifact_store_without_attachment_rpc() {
 
 #[test]
 fn ocr_status_checks_note_list_and_object_tags_for_legacy_ocr_notes() {
-    let _guard = ENV_LOCK.lock().expect("env lock");
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let original_store = std::env::var_os("ZOTRON_ARTIFACT_STORE");
     let store = std::env::temp_dir().join(format!(
         "zotron-cli-empty-artifact-store-{}",
@@ -1548,7 +1554,7 @@ fn ocr_status_missing_collection_returns_coded_error() {
 
 #[test]
 fn ocr_status_paginates_collection_items_before_counting_ocr() {
-    let _guard = ENV_LOCK.lock().expect("env lock");
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let original_store = std::env::var_os("ZOTRON_ARTIFACT_STORE");
     let store = std::env::temp_dir().join(format!(
         "zotron-cli-ocr-status-paginate-{}",
@@ -1620,7 +1626,7 @@ fn ocr_status_paginates_collection_items_before_counting_ocr() {
 
 #[test]
 fn rag_status_prefers_xdg_data_home_over_home_default_path() {
-    let _guard = ENV_LOCK.lock().expect("env lock");
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let original_home = std::env::var_os("HOME");
     let original_xdg = std::env::var_os("XDG_DATA_HOME");
     let test_home = std::env::temp_dir().join(format!("zotron-rag-home-{}", std::process::id()));
@@ -1676,7 +1682,7 @@ fn rag_status_prefers_xdg_data_home_over_home_default_path() {
 
 #[test]
 fn rag_status_resolves_collection_key_to_existing_named_store() {
-    let _guard = ENV_LOCK.lock().expect("env lock");
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let original_home = std::env::var_os("HOME");
     let original_xdg = std::env::var_os("XDG_DATA_HOME");
     let test_home =
@@ -1731,7 +1737,7 @@ fn rag_status_resolves_collection_key_to_existing_named_store() {
 
 #[test]
 fn rag_status_detects_hidden_attachment_sidecar_chunks() {
-    let _guard = ENV_LOCK.lock().expect("env lock");
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let original_home = std::env::var_os("HOME");
     let original_xdg = std::env::var_os("XDG_DATA_HOME");
     let test_home =
@@ -1813,7 +1819,7 @@ fn rag_status_detects_hidden_attachment_sidecar_chunks() {
 
 #[test]
 fn rag_status_sidecar_accepts_collection_key() {
-    let _guard = ENV_LOCK.lock().expect("env lock");
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let original_home = std::env::var_os("HOME");
     let original_xdg = std::env::var_os("XDG_DATA_HOME");
     let test_home = std::env::temp_dir().join(format!(
@@ -2229,6 +2235,10 @@ fn default_package_exposes_only_zotron_binary() {
 
 #[test]
 fn plugin_zotron_wrapper_forwards_ocr_and_rag_to_rust_binary() {
+    // Serialize against PATH-mutating tests: this reads the process PATH to
+    // build the wrapper's environment, so it must not race with tests that
+    // temporarily replace PATH.
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let plugin_root = repo_root().join("plugin");
     let wrapper = plugin_root.join("bin/zotron");
     let rust_bin = env!("CARGO_BIN_EXE_zotron");
@@ -2570,4 +2580,225 @@ fn fetch_rerank_settings_returns_defaults_for_jina() {
     assert!(rs.api_url.contains("jina.ai"));
     assert_eq!(rs.api_key, "test-key-123");
     assert_eq!(rs.candidate_count, 30);
+}
+
+// ----- Source plugin system: discovery, sync, transparent proxy -----
+
+/// Create a unique temp dir holding fake `zotron-*` plugin scripts.
+fn make_plugin_dir(tag: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "zotron-sources-{tag}-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("create plugin dir");
+    dir
+}
+
+#[cfg(unix)]
+fn write_exec(path: &Path, body: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    fs::write(path, body).expect("write plugin script");
+    let mut perms = fs::metadata(path).expect("stat").permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(path, perms).expect("chmod plugin script");
+}
+
+#[cfg(unix)]
+#[test]
+fn sources_list_aggregates_manifests_and_reports_failures() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let dir = make_plugin_dir("list");
+
+    // Good plugin: emits a full manifest. Absolute `/bin/sh` shebang resolves
+    // via the kernel regardless of PATH, so PATH can stay empty-but-our-dir.
+    write_exec(
+        &dir.join("zotron-good"),
+        "#!/bin/sh\n\
+         [ \"$1\" = manifest ] && echo '{\"name\":\"good\",\"version\":\"1.2.3\",\
+         \"description\":\"good source\",\"capabilities\":[\"search\",\"fetch\"],\
+         \"skill_dir\":\"/tmp/x\"}'\n",
+    );
+    // Broken plugin: emits non-JSON on manifest -> error status, not dropped.
+    write_exec(
+        &dir.join("zotron-broken"),
+        "#!/bin/sh\n[ \"$1\" = manifest ] && echo 'not json'\n",
+    );
+
+    let prev_path = std::env::var_os("PATH");
+    std::env::set_var("PATH", dir.as_os_str());
+    let mut client = FakeClient::default();
+    let out = run_with_client(["zotron", "sources", "list"], &mut client)
+        .expect("sources list succeeds");
+    match prev_path {
+        Some(p) => std::env::set_var("PATH", p),
+        None => std::env::remove_var("PATH"),
+    }
+    let _ = fs::remove_dir_all(&dir);
+
+    let value: Value = serde_json::from_str(out.trim()).expect("valid JSON");
+    let sources = value["sources"].as_array().expect("sources array");
+    assert_eq!(sources.len(), 2, "both plugins listed: {value}");
+
+    let good = sources
+        .iter()
+        .find(|s| s["name"] == "good")
+        .expect("good present");
+    assert_eq!(good["version"], "1.2.3");
+    assert_eq!(good["capabilities"], json!(["search", "fetch"]));
+    assert!(good["binary"].as_str().unwrap().ends_with("zotron-good"));
+
+    let broken = sources
+        .iter()
+        .find(|s| s["name"] == "broken")
+        .expect("broken present, not silently dropped");
+    assert_eq!(broken["status"], "error");
+    assert!(broken["error"].as_str().unwrap().contains("invalid manifest JSON"));
+}
+
+#[cfg(unix)]
+#[test]
+fn sources_bare_defaults_to_list() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let dir = make_plugin_dir("bare");
+    let prev_path = std::env::var_os("PATH");
+    // Empty dir only: this test runs no plugin scripts, so no shebang resolution
+    // is needed and discovery must see exactly zero sources.
+    std::env::set_var("PATH", dir.as_os_str());
+    let mut client = FakeClient::default();
+    let out = run_with_client(["zotron", "sources"], &mut client).expect("bare sources succeeds");
+    match prev_path {
+        Some(p) => std::env::set_var("PATH", p),
+        None => std::env::remove_var("PATH"),
+    }
+    let _ = fs::remove_dir_all(&dir);
+
+    let value: Value = serde_json::from_str(out.trim()).expect("valid JSON");
+    assert_eq!(value["sources"], json!([]));
+}
+
+#[cfg(unix)]
+#[test]
+fn sources_sync_links_and_cleans_skill_dirs() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let root = make_plugin_dir("sync");
+    let bin_dir = root.join("bin");
+    let skill_src = root.join("share").join("skills");
+    let skills_dir = root.join("plugin").join("skills");
+    fs::create_dir_all(&bin_dir).unwrap();
+    fs::create_dir_all(&skill_src).unwrap();
+    fs::create_dir_all(skills_dir.join("zotero")).unwrap(); // core dir must survive
+    fs::write(skill_src.join("SKILL.md"), "demo").unwrap();
+
+    write_exec(
+        &bin_dir.join("zotron-demo"),
+        &format!(
+            "#!/bin/sh\n[ \"$1\" = manifest ] && echo '{{\"name\":\"demo\",\
+             \"version\":\"1.0.0\",\"description\":\"d\",\"capabilities\":[\"search\"],\
+             \"skill_dir\":\"{}\"}}'\n",
+            skill_src.display()
+        ),
+    );
+
+    // Stale plugin symlink (points outside skills dir, no plugin on PATH).
+    std::os::unix::fs::symlink("/tmp", skills_dir.join("ghost")).unwrap();
+
+    let prev_path = std::env::var_os("PATH");
+    std::env::set_var("PATH", bin_dir.as_os_str());
+    let mut client = FakeClient::default();
+    let out = run_with_client(
+        [
+            "zotron",
+            "sources",
+            "sync",
+            "--skills-dir",
+            skills_dir.to_str().unwrap(),
+        ],
+        &mut client,
+    )
+    .expect("sources sync succeeds");
+    match prev_path {
+        Some(p) => std::env::set_var("PATH", p),
+        None => std::env::remove_var("PATH"),
+    }
+
+    let value: Value = serde_json::from_str(out.trim()).expect("valid JSON");
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["linked"], 1);
+    assert_eq!(value["cleaned"], 1);
+
+    // demo symlink created, ghost removed, core zotero/ untouched.
+    assert_eq!(
+        fs::read_link(skills_dir.join("demo")).unwrap(),
+        skill_src,
+        "demo symlink points at plugin skill_dir"
+    );
+    assert!(!skills_dir.join("ghost").exists(), "stale ghost removed");
+    assert!(skills_dir.join("zotero").is_dir(), "core zotero/ preserved");
+
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[cfg(unix)]
+#[test]
+fn external_proxy_runs_plugin_and_passes_through() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let dir = make_plugin_dir("proxy");
+    // Plugin succeeds via exit-code 0; we just assert the proxy execs it.
+    write_exec(&dir.join("zotron-echo"), "#!/bin/sh\nexit 0\n");
+    let prev_path = std::env::var_os("PATH");
+    std::env::set_var("PATH", dir.as_os_str());
+    let mut client = FakeClient::default();
+    let out = run_with_client(["zotron", "echo", "hello"], &mut client)
+        .expect("external proxy execs plugin");
+    match prev_path {
+        Some(p) => std::env::set_var("PATH", p),
+        None => std::env::remove_var("PATH"),
+    }
+    let _ = fs::remove_dir_all(&dir);
+    // The plugin owns stdout; the proxy contributes no extra output.
+    assert_eq!(out, "");
+}
+
+#[test]
+fn external_proxy_unknown_command_yields_fuzzy_suggestion() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    // Point PATH at an empty dir so no zotron-serch exists.
+    let dir = make_plugin_dir("unknown");
+    let prev_path = std::env::var_os("PATH");
+    std::env::set_var("PATH", dir.as_os_str());
+    let mut client = FakeClient::default();
+    let err = run_with_client(["zotron", "serch", "foo"], &mut client)
+        .expect_err("unknown command errors");
+    match prev_path {
+        Some(p) => std::env::set_var("PATH", p),
+        None => std::env::remove_var("PATH"),
+    }
+    let _ = fs::remove_dir_all(&dir);
+
+    assert!(err.starts_with("UNKNOWN_COMMAND:"), "got {err}");
+    assert!(err.contains("zotron-serch"), "got {err}");
+    assert!(err.contains("Did you mean"), "got {err}");
+    assert!(err.contains("search"), "got {err}");
+}
+
+#[test]
+fn external_proxy_plugin_name_far_from_builtins_has_no_suggestion() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let dir = make_plugin_dir("noplugin");
+    let prev_path = std::env::var_os("PATH");
+    std::env::set_var("PATH", dir.as_os_str());
+    let mut client = FakeClient::default();
+    let err = run_with_client(["zotron", "scholar", "search"], &mut client)
+        .expect_err("missing plugin errors");
+    match prev_path {
+        Some(p) => std::env::set_var("PATH", p),
+        None => std::env::remove_var("PATH"),
+    }
+    let _ = fs::remove_dir_all(&dir);
+
+    assert!(err.starts_with("UNKNOWN_COMMAND:"), "got {err}");
+    assert!(err.contains("zotron-scholar"), "got {err}");
+    assert!(!err.contains("Did you mean"), "got {err}");
 }
