@@ -104,6 +104,103 @@ fn items_add_file_dry_run_translates_local_path_for_zotero() {
 }
 
 #[test]
+fn push_dry_run_surfaces_embedded_pdf_path() {
+    let json_path = std::env::temp_dir()
+        .join(format!("zotron-push-pdf-dry-{}.json", std::process::id()));
+    fs::write(
+        &json_path,
+        r#"{"itemType":"journalArticle","title":"X","_pdf":"/tmp/local.pdf"}"#,
+    )
+    .expect("write item json");
+    let mut client = FakeClient::default();
+
+    let out = run_with_client(
+        [
+            "zotron",
+            "push",
+            json_path.to_str().expect("json path is utf8"),
+            "--dry-run",
+        ],
+        &mut client,
+    )
+    .expect("push --dry-run succeeds");
+
+    let payload: Value = serde_json::from_str(&out).expect("dry-run output is JSON");
+    assert_eq!(payload["dryRun"], true);
+    // Embedded _pdf becomes the resolved pdf source, not an item field.
+    assert_eq!(payload["wouldPush"]["pdfPath"], "/tmp/local.pdf");
+    assert!(client.calls.is_empty(), "dry-run should not call RPC");
+    let _ = fs::remove_file(json_path);
+}
+
+#[test]
+fn push_strips_embedded_pdf_and_attaches_local_path() {
+    let pdf_path = std::env::temp_dir()
+        .join(format!("zotron-push-embedded-{}.pdf", std::process::id()));
+    fs::write(&pdf_path, b"%PDF-1.7 minimal").expect("write temp pdf");
+    let json_path = std::env::temp_dir()
+        .join(format!("zotron-push-embedded-{}.json", std::process::id()));
+    let item_json = json!({
+        "itemType": "journalArticle",
+        "title": "Z",
+        "_pdf": pdf_path.to_str().expect("pdf path is utf8"),
+    });
+    fs::write(&json_path, item_json.to_string()).expect("write item json");
+
+    // Short title (<10) + no DOI skips duplicate detection. No --collection
+    // resolves the current collection (library root -> no addItems).
+    let mut client = FakeClient::with_responses(vec![
+        json!({}),               // system.currentCollection -> library root
+        json!({"key": "NEW123"}), // items.create
+        json!({}),               // attachments.add
+    ]);
+
+    let out = run_with_client(
+        [
+            "zotron",
+            "push",
+            json_path.to_str().expect("json path is utf8"),
+        ],
+        &mut client,
+    )
+    .expect("push succeeds");
+
+    let payload: Value = serde_json::from_str(&out).expect("push output is JSON");
+    assert_eq!(payload["status"], "created");
+    assert_eq!(payload["pdf_attached"], true);
+
+    let methods: Vec<&str> = client.calls.iter().map(|(m, _)| m.as_str()).collect();
+    assert_eq!(
+        methods,
+        vec!["system.currentCollection", "items.create", "attachments.add"]
+    );
+
+    // _pdf must be stripped before items.create: it is not an item field.
+    let create_params = client
+        .calls
+        .iter()
+        .find(|(m, _)| m == "items.create")
+        .and_then(|(_, p)| p.clone())
+        .expect("items.create params present");
+    assert!(
+        create_params["fields"].get("_pdf").is_none(),
+        "_pdf leaked into item fields: {create_params}"
+    );
+
+    // The local _pdf path was attached to the newly created item.
+    let attach_params = client
+        .calls
+        .iter()
+        .find(|(m, _)| m == "attachments.add")
+        .and_then(|(_, p)| p.clone())
+        .expect("attachments.add params present");
+    assert_eq!(attach_params["parentKey"], "NEW123");
+
+    let _ = fs::remove_file(pdf_path);
+    let _ = fs::remove_file(json_path);
+}
+
+#[test]
 fn items_path_translates_zotero_path_for_local_cli_use() {
     let zotero_path = r"C:\Users\testuser\Zotero\storage\ATTACH1\paper.pdf";
     let mut client = FakeClient::with_response(json!({

@@ -1121,7 +1121,7 @@ fn run_push_command(
     } else {
         fs::read_to_string(&json_file).map_err(|err| format!("read {json_file}: {err}"))?
     };
-    let item_json = serde_json::from_str::<Value>(&payload)
+    let mut item_json = serde_json::from_str::<Value>(&payload)
         .map_err(|err| format!("INVALID_JSON: Could not parse JSON: {err}"))?;
 
     // Validate required fields
@@ -1129,6 +1129,12 @@ fn run_push_command(
         Some(s) if !s.is_empty() => {}
         _ => return Err("INVALID_ARGS: input JSON must include a non-empty \"itemType\" field".to_string()),
     }
+
+    // Strip the embedded `_pdf` so it never leaks into the item's fields, and
+    // let an explicit --pdf flag win over it. `_pdf` may be a URL or a local
+    // path, enabling the documented `fetch | push` one-liner to auto-attach.
+    let embedded_pdf = take_embedded_pdf(&mut item_json)?;
+    let pdf_source = pdf.or(embedded_pdf);
 
     if dry_run {
         let collection_key = collection
@@ -1143,20 +1149,66 @@ fn run_push_command(
                     "title": item_json.get("title").cloned().unwrap_or(Value::Null),
                     "itemType": item_json.get("itemType").cloned().unwrap_or(Value::Null),
                     "collectionKey": collection_key,
-                    "pdfPath": pdf,
+                    "pdfPath": pdf_source,
                     "onDuplicate": on_duplicate,
                 }
             }));
     }
 
+    // Resolve a URL `_pdf` to a local temp file so the rest of the push path
+    // (magic-byte validation, size tracking) is uniform with --pdf. The guard
+    // keeps the temp file alive until the attachment has been imported.
+    let downloaded_pdf = pdf_source
+        .as_deref()
+        .filter(|source| is_remote_pdf(source))
+        .map(download_pdf_to_temp)
+        .transpose()?;
+    let pdf_path = downloaded_pdf
+        .as_deref()
+        .map(|p| p.to_string_lossy().into_owned())
+        .or(pdf_source);
+
     let result = push_item(
         client,
         &item_json,
-        pdf.as_deref(),
+        pdf_path.as_deref(),
         collection.as_deref(),
         &on_duplicate,
     )?;
     format_json(&result)
+}
+
+/// Remove and return the item's embedded `_pdf` value (URL or local path).
+fn take_embedded_pdf(item_json: &mut Value) -> Result<Option<String>, String> {
+    let Some(obj) = item_json.as_object_mut() else {
+        return Ok(None);
+    };
+    match obj.remove("_pdf") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(pdf)) if pdf.trim().is_empty() => Ok(None),
+        Some(Value::String(pdf)) => Ok(Some(pdf)),
+        Some(other) => Err(format!(
+            "INVALID_ARGS: \"_pdf\" must be a URL or local path string, got {other}"
+        )),
+    }
+}
+
+fn is_remote_pdf(source: &str) -> bool {
+    let lower = source.trim_start().to_ascii_lowercase();
+    lower.starts_with("http://") || lower.starts_with("https://")
+}
+
+/// Download a remote `_pdf` to a temp file and verify it is really a PDF.
+fn download_pdf_to_temp(url: &str) -> Result<std::path::PathBuf, String> {
+    let bytes = download_bytes(url)?;
+    if !bytes.starts_with(b"%PDF-") {
+        return Err(format!(
+            "INVALID_PDF: downloaded {url} does not start with %PDF- magic bytes"
+        ));
+    }
+    let path = unique_temp_path("zotron-push-pdf").with_extension("pdf");
+    fs::write(&path, &bytes).map_err(|err| format!("write {}: {err}", path.display()))?;
+    Ok(path)
 }
 
 fn push_item(
@@ -1338,6 +1390,7 @@ fn to_xpi_payload(item_json: &Value, collection_key: Option<&Value>) -> Value {
         "id",
         "key",
         "version",
+        "_pdf",
     ];
 
     let mut fields = serde_json::Map::new();
