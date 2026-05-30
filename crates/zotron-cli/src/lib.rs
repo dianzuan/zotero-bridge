@@ -28,13 +28,12 @@ use zotron_types::{
 };
 
 mod output;
+mod rpc;
 
 use crate::output::*;
 pub use crate::output::format_error_json;
-
-pub trait RpcCaller {
-    fn call(&mut self, method: &str, params: Option<Value>) -> Result<Value, String>;
-}
+use crate::rpc::*;
+pub use crate::rpc::RpcCaller;
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct CliOcrProviderSpec {
@@ -213,12 +212,6 @@ fn value_bbox4(value: &Value) -> Option<[f64; 4]> {
         arr[2].as_f64()?,
         arr[3].as_f64()?,
     ])
-}
-
-impl RpcCaller for ZoteroRpc {
-    fn call(&mut self, method: &str, params: Option<Value>) -> Result<Value, String> {
-        self.call(method, params).map_err(|err| err.to_string())
-    }
 }
 
 #[derive(Debug, Parser)]
@@ -4801,14 +4794,6 @@ fn is_pdf_attachment(attachment: &Value) -> bool {
         content_type.as_str(),
         "application/pdf" | "application/x-pdf"
     ) || path.ends_with(".pdf")
-}
-
-fn call_json(
-    client: &mut impl RpcCaller,
-    method: &str,
-    params: Option<Value>,
-) -> Result<Value, String> {
-    client.call(method, params)
 }
 
 fn run_system_command(
