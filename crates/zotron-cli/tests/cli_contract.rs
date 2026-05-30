@@ -1740,16 +1740,12 @@ fn rag_search_local_lexical_reports_mode_and_score_kind() {
         // resolve_sidecar_paths: attachments.list
         json!([{ "key": "ATT1", "contentType": "application/pdf",
                  "path": pdf_path.to_string_lossy() }]),
-        // fetch_embedding_settings: settings.getAll + settings.getRaw
-        json!({"embedding.provider": "", "embedding.model": ""}),
+        // Consolidated settings.getAll (embedding + retrievalMode + rerank + cutoff)
+        json!({"embedding.provider": "", "embedding.model": "", "rag.retrievalMode": "lexical"}),
+        // settings.getRaw: embedding.apiKey
         json!({"embedding.apiKey": ""}),
-        // fetch_retrieval_mode: settings.get
-        json!({"rag.retrievalMode": "lexical"}),
-        // fetch_rerank_settings: settings.getAll + settings.getRaw (no provider)
-        json!({}),
+        // settings.getRaw: rerank.apiKey (no provider configured)
         json!({"rerank.apiKey": ""}),
-        // fetch_rag_cutoff_settings: settings.getAll
-        json!({}),
         // per-hit metadata: items.get
         json!({"title": "Employment Elasticity", "creators": [], "date": "2024"}),
     ]);
@@ -1803,16 +1799,13 @@ fn rag_search_dense_mode_falls_back_to_lexical_without_vectors() {
         json!({"key": "ITEM1"}),
         json!([{ "key": "ATT1", "contentType": "application/pdf",
                  "path": pdf_path.to_string_lossy() }]),
-        // fetch_embedding_settings: settings.getAll + settings.getRaw (none)
-        json!({"embedding.provider": "", "embedding.model": ""}),
+        // Consolidated settings.getAll: embedding (none) + retrievalMode=dense
+        // (but no vectors exist) + rerank + cutoff.
+        json!({"embedding.provider": "", "embedding.model": "", "rag.retrievalMode": "dense"}),
+        // settings.getRaw: embedding.apiKey
         json!({"embedding.apiKey": ""}),
-        // fetch_retrieval_mode: settings.get -> dense (but no vectors exist)
-        json!({"rag.retrievalMode": "dense"}),
-        // fetch_rerank_settings: settings.getAll + settings.getRaw (no provider)
-        json!({}),
+        // settings.getRaw: rerank.apiKey (no provider configured)
         json!({"rerank.apiKey": ""}),
-        // fetch_rag_cutoff_settings: settings.getAll
-        json!({}),
         // per-hit metadata: items.get
         json!({"title": "Employment Elasticity", "creators": [], "date": "2024"}),
     ]);
