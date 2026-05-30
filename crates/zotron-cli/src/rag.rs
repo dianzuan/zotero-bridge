@@ -11,7 +11,7 @@ use serde_json::Value;
 use zotron_rpc::UreqProviderHttpTransport;
 use zotron_types::{
     bm25_score_chunks, build_embedding_provider_request, cosine_similarity,
-    execute_embedding_provider_request, gap_cutoff, max_k_truncate, mmr_select,
+    diversity_filter, execute_embedding_provider_request, gap_cutoff, max_k_truncate,
     parse_embedding_provider_response, read_machine_artifact_sidecar, rrf_merge,
     score_floor_filter, token_budget_filter, ArtifactStorePlatform, EmbeddingChunkInput,
     EmbeddingRequestInput, EmbeddingVector, MachineArtifactKind, StructureChunk,
@@ -160,6 +160,22 @@ pub(crate) fn fetch_embedding_settings(
     client: &mut impl RpcCaller,
 ) -> Result<(String, String, String, String), String> {
     let settings = client.call("settings.getAll", None)?;
+    let raw = client.call("settings.getRaw", Some(serde_json::json!({"key": "embedding.apiKey"})))?;
+    let api_key = raw
+        .get("embedding.apiKey")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    Ok(parse_embedding_settings(&settings, api_key))
+}
+
+/// Pure parser: pull embedding provider/model/url from an already-fetched
+/// `settings.getAll` blob and pair it with the (separately fetched) raw API key.
+/// No RPC — lets `run_rag_search_command` reuse a single `getAll` blob.
+pub(crate) fn parse_embedding_settings(
+    settings: &Value,
+    api_key: String,
+) -> (String, String, String, String) {
     let provider = settings
         .get("embedding.provider")
         .and_then(Value::as_str)
@@ -175,13 +191,7 @@ pub(crate) fn fetch_embedding_settings(
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string();
-    let raw = client.call("settings.getRaw", Some(serde_json::json!({"key": "embedding.apiKey"})))?;
-    let api_key = raw
-        .get("embedding.apiKey")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string();
-    Ok((provider, model, api_url, api_key))
+    (provider, model, api_url, api_key)
 }
 
 #[derive(Debug)]
@@ -197,6 +207,22 @@ pub fn fetch_rerank_settings(
     client: &mut impl RpcCaller,
 ) -> Result<RerankSettings, String> {
     let settings = client.call("settings.getAll", None)?;
+    let raw = client.call(
+        "settings.getRaw",
+        Some(serde_json::json!({"key": "rerank.apiKey"})),
+    )?;
+    let api_key = raw
+        .get("rerank.apiKey")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    Ok(parse_rerank_settings(&settings, api_key))
+}
+
+/// Pure parser: build `RerankSettings` from an already-fetched `settings.getAll`
+/// blob plus the (separately fetched) raw API key. Applies provider-spec
+/// defaults for url/model. No RPC.
+pub(crate) fn parse_rerank_settings(settings: &Value, api_key: String) -> RerankSettings {
     let provider = settings
         .get("rerank.provider")
         .and_then(Value::as_str)
@@ -218,16 +244,6 @@ pub fn fetch_rerank_settings(
         .and_then(|s| s.parse().ok())
         .unwrap_or(30);
 
-    let raw = client.call(
-        "settings.getRaw",
-        Some(serde_json::json!({"key": "rerank.apiKey"})),
-    )?;
-    let api_key = raw
-        .get("rerank.apiKey")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string();
-
     let specs = zotron_types::builtin_rerank_provider_specs();
     let spec = specs.iter().find(|s| s.id == provider);
 
@@ -243,13 +259,13 @@ pub fn fetch_rerank_settings(
         model
     };
 
-    Ok(RerankSettings {
+    RerankSettings {
         provider,
         model,
         api_url,
         api_key,
         candidate_count,
-    })
+    }
 }
 
 pub(crate) struct RagCutoffSettings {
@@ -261,8 +277,10 @@ pub(crate) struct RagCutoffSettings {
     gap_threshold: f64,
 }
 
-pub(crate) fn fetch_rag_cutoff_settings(client: &mut impl RpcCaller) -> RagCutoffSettings {
-    let settings = client.call("settings.getAll", None).unwrap_or_default();
+/// Pure parser: derive dynamic-cutoff knobs from an already-fetched
+/// `settings.getAll` blob. No RPC. Emits the legacy `rag.topK` deprecation
+/// warning when applicable, matching the previous in-line behavior.
+pub(crate) fn parse_rag_cutoff_settings(settings: &Value) -> RagCutoffSettings {
     let get = |key: &str, default: &str| -> String {
         settings
             .get(key)
@@ -377,18 +395,14 @@ pub(crate) fn map_reranked_to_candidates(
         .collect()
 }
 
-pub(crate) fn fetch_retrieval_mode(client: &mut impl RpcCaller) -> String {
-    client
-        .call(
-            "settings.get",
-            Some(serde_json::json!({"key": "rag.retrievalMode"})),
-        )
-        .ok()
-        .and_then(|v| {
-            v.get("rag.retrievalMode")
-                .and_then(Value::as_str)
-                .map(String::from)
-        })
+/// Pure parser: read `rag.retrievalMode` (default "hybrid") from a settings
+/// blob (a `settings.getAll` blob keys the value under `rag.retrievalMode`).
+/// No RPC.
+pub(crate) fn parse_retrieval_mode(settings: &Value) -> String {
+    settings
+        .get("rag.retrievalMode")
+        .and_then(Value::as_str)
+        .map(String::from)
         .unwrap_or_else(|| "hybrid".to_string())
 }
 
@@ -617,167 +631,87 @@ pub(crate) fn run_rag_search_xpi_fallback(
     }
 }
 
-pub(crate) fn run_rag_search_command(
-    client: &mut impl RpcCaller,
-    options: RagSearchOptions,
-) -> Result<String, String> {
-    // When --zotero is explicitly passed, use XPI fallback directly (backward compat).
-    if options.zotero {
-        if options.collection.is_none() && options.keys.is_empty() {
-            return Err(
-                "INVALID_ARGS: --collection or --key is required".to_string(),
-            );
+/// Dense (cosine) scoring of every chunk against the query embedding.
+///
+/// Embeds the query, then scores each chunk that has a stored vector, keeps the
+/// positive-similarity hits, and returns them sorted descending. An empty result
+/// (query-embedding failure, or nothing scored above zero) is reported via a
+/// stderr warning but never propagated, matching the inline behavior it replaces.
+fn score_dense(
+    query: &str,
+    emb_provider: &str,
+    emb_model: &str,
+    emb_url: &str,
+    emb_key: &str,
+    all_chunks: &[StructureChunk],
+    all_vectors: &[EmbeddingVector],
+) -> Vec<(usize, f64)> {
+    match embed_query_text(query, emb_provider, emb_model, emb_url, emb_key) {
+        Ok(query_vec) => {
+            let vec_map: std::collections::HashMap<&str, &[f64]> = all_vectors
+                .iter()
+                .map(|v| (v.chunk_key.as_str(), v.vector.as_slice()))
+                .collect();
+            let mut scores: Vec<(usize, f64)> = all_chunks
+                .iter()
+                .enumerate()
+                .filter_map(|(i, chunk)| {
+                    vec_map
+                        .get(chunk.chunk_key.as_str())
+                        .map(|stored| (i, cosine_similarity(&query_vec, stored)))
+                })
+                .filter(|(_, s)| *s > 0.0)
+                .collect();
+            scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            scores
         }
-        return run_rag_search_xpi_fallback(client, &options);
-    }
-
-    // Hybrid path: require scope.
-    if options.collection.is_none() && options.keys.is_empty() {
-        return Err("INVALID_ARGS: --collection or --key required".to_string());
-    }
-
-    // Step 1: resolve sidecar paths from collection/keys.
-    let sidecars = resolve_sidecar_paths(
-        client,
-        options.collection.as_deref(),
-        &options.keys,
-    );
-
-    // If sidecar resolution fails or returns empty, fall back to XPI.
-    // But propagate COLLECTION_NOT_FOUND errors directly instead of masking them.
-    let sidecars = match sidecars {
-        Ok(ref s) if !s.is_empty() => s,
-        Err(ref e) if e.contains("COLLECTION_NOT_FOUND") => return Err(e.clone()),
-        _ => return run_rag_search_xpi_fallback(client, &options),
-    };
-
-    // Step 2: load all chunks and vectors from sidecars.
-    let (emb_provider, emb_model, emb_url, emb_key) = fetch_embedding_settings(client)?;
-    let mut all_chunks: Vec<StructureChunk> = Vec::new();
-    let mut all_vectors: Vec<EmbeddingVector> = Vec::new();
-    for (_item_key, _att_key, sidecar_root) in sidecars {
-        all_chunks.extend(load_sidecar_chunks(sidecar_root));
-        all_vectors.extend(load_sidecar_vectors(sidecar_root, &emb_provider, &emb_model));
-    }
-
-    if all_chunks.is_empty() {
-        return run_rag_search_xpi_fallback(client, &options);
-    }
-
-    // Step 3: determine requested retrieval mode.
-    let requested_mode = fetch_retrieval_mode(client);
-
-    // Step 4: BM25 scoring (unless mode is "dense").
-    let mut bm25_ranked = if requested_mode != "dense" {
-        bm25_score_chunks(&all_chunks, &options.query, 1.2, 0.75)
-    } else {
-        Vec::new()
-    };
-
-    // Step 5: dense vector scoring (unless mode is "lexical" or no vectors).
-    let dense_ranked = if requested_mode != "lexical" && !all_vectors.is_empty() {
-        match embed_query_text(&options.query, &emb_provider, &emb_model, &emb_url, &emb_key) {
-            Ok(query_vec) => {
-                let vec_map: std::collections::HashMap<&str, &[f64]> = all_vectors
-                    .iter()
-                    .map(|v| (v.chunk_key.as_str(), v.vector.as_slice()))
-                    .collect();
-                let mut scores: Vec<(usize, f64)> = all_chunks
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(i, chunk)| {
-                        vec_map.get(chunk.chunk_key.as_str()).map(|stored| {
-                            (i, cosine_similarity(&query_vec, stored))
-                        })
-                    })
-                    .filter(|(_, s)| *s > 0.0)
-                    .collect();
-                scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-                scores
-            }
-            Err(e) => {
-                // Query embedding failed: don't silently swallow it.
-                eprintln!("warning: dense retrieval unavailable (query embedding failed): {e}");
-                Vec::new()
-            }
-        }
-    } else {
-        if requested_mode == "dense" && all_vectors.is_empty() {
-            eprintln!("warning: dense retrieval requested but no embedding vectors found for this scope");
-        }
-        Vec::new()
-    };
-
-    // Step 6: merge results. Determine the ACTUAL retrieval path used so the
-    // output can report it (the requested mode may not be achievable).
-    let limit = options.top_k as usize;
-    let actual_mode: &str;
-    let rrf_ranked = if !bm25_ranked.is_empty() && !dense_ranked.is_empty() {
-        actual_mode = "hybrid";
-        rrf_merge(&bm25_ranked, &dense_ranked, 60.0, limit)
-    } else if !dense_ranked.is_empty() {
-        actual_mode = "dense";
-        dense_ranked.into_iter().take(limit).collect()
-    } else if !bm25_ranked.is_empty() {
-        actual_mode = "lexical";
-        bm25_ranked.clone().into_iter().take(limit).collect()
-    } else {
-        // Both BM25 and dense produced nothing. In "dense" mode BM25 was never
-        // run, so do a lexical BM25 fallback pass rather than returning a silent
-        // empty set — this covers dense-unavailable (no vectors / query-embed
-        // failed) AND dense-ran-but-matched-nothing. In lexical/hybrid modes
-        // BM25 already ran and was genuinely empty, so we just report the
-        // lexical path with no results.
-        if requested_mode == "dense" {
-            eprintln!("warning: falling back to lexical (BM25) retrieval");
-            bm25_ranked = bm25_score_chunks(&all_chunks, &options.query, 1.2, 0.75);
-        }
-        actual_mode = "lexical";
-        bm25_ranked.clone().into_iter().take(limit).collect()
-    };
-
-    // --- Rerank + Dynamic Cutoff Pipeline ---
-
-    let rerank_result = fetch_rerank_settings(client);
-    let rag_cutoff = fetch_rag_cutoff_settings(client);
-
-    let mut pipeline_ranked = rrf_ranked.clone();
-    let mut full_reranked: Option<Vec<(usize, f64)>> = None;
-
-    // Step 6a: Rerank (if configured)
-    if let Ok(ref rs) = rerank_result {
-        if !rs.provider.is_empty() && !rs.api_key.is_empty() {
-            match rerank_chunks(&options.query, &all_chunks, &pipeline_ranked, rs) {
-                Ok(reranked) => {
-                    full_reranked = Some(reranked.clone());
-                    pipeline_ranked = reranked;
-                }
-                Err(e) => {
-                    eprintln!("warning: reranker skipped: {e}");
-                }
-            }
+        Err(e) => {
+            // Query embedding failed: don't silently swallow it.
+            eprintln!("warning: dense retrieval unavailable (query embedding failed): {e}");
+            Vec::new()
         }
     }
+}
 
-    // Step 6b: Score floor + Gap cutoff (only with reranker scores)
+/// Build the `chunk index -> stored vector` map consumed by the diversity
+/// filter. Folds the two throwaway HashMaps (`chunk_key -> index`, then
+/// `index -> vector`) that previously lived inline in the search body.
+fn build_diversity_vector_map<'a>(
+    all_chunks: &[StructureChunk],
+    all_vectors: &'a [EmbeddingVector],
+) -> std::collections::HashMap<usize, &'a [f64]> {
+    let chunk_key_index: std::collections::HashMap<&str, usize> = all_chunks
+        .iter()
+        .enumerate()
+        .map(|(i, c)| (c.chunk_key.as_str(), i))
+        .collect();
+    all_vectors
+        .iter()
+        .filter_map(|v| {
+            let &idx = chunk_key_index.get(v.chunk_key.as_str())?;
+            Some((idx, v.vector.as_slice()))
+        })
+        .collect()
+}
+
+/// Apply the dynamic-cutoff stages (score floor, gap cutoff, MMR diversity,
+/// token budget, min/max K) to the merged ranking. Pure — no behavior change
+/// from the inline pipeline it replaces.
+fn apply_cutoff_pipeline(
+    mut pipeline_ranked: Vec<(usize, f64)>,
+    rrf_ranked: &[(usize, f64)],
+    full_reranked: &Option<Vec<(usize, f64)>>,
+    all_chunks: &[StructureChunk],
+    all_vectors: &[EmbeddingVector],
+    rag_cutoff: &RagCutoffSettings,
+) -> Vec<(usize, f64)> {
+    // Score floor + Gap cutoff (only with reranker scores)
     if full_reranked.is_some() {
         pipeline_ranked = score_floor_filter(&pipeline_ranked, rag_cutoff.score_floor);
         pipeline_ranked = gap_cutoff(&pipeline_ranked, rag_cutoff.gap_threshold);
     }
 
-    // Origin/scale of each hit's final score, so consumers know the score scale
-    // (which varies by path). Reranking, when it succeeds, dominates ordering.
-    let score_kind: &str = if full_reranked.is_some() {
-        "rerank"
-    } else {
-        match actual_mode {
-            "hybrid" => "rrf",
-            "dense" => "cosine",
-            _ => "bm25",
-        }
-    };
-
-    // Step 6c: MMR dedup.
+    // MMR dedup.
     //
     // The 0.05 MMR threshold assumes relevance in [0,1]. Reranker scores are
     // already sigmoid-normalized to ~[0,1], so they feed MMR directly. Raw RRF
@@ -799,44 +733,25 @@ pub(crate) fn run_rag_search_command(
             .map(|((idx, _), norm)| (*idx, *norm as f64))
             .collect()
     };
-    let chunk_key_index: std::collections::HashMap<&str, usize> = all_chunks
-        .iter()
-        .enumerate()
-        .map(|(i, c)| (c.chunk_key.as_str(), i))
-        .collect();
-    let vector_map: std::collections::HashMap<usize, &[f64]> = all_vectors
-        .iter()
-        .filter_map(|v| {
-            let &idx = chunk_key_index.get(v.chunk_key.as_str())?;
-            Some((idx, v.vector.as_slice()))
-        })
-        .collect();
-    // MMR selects on normalized relevance; map the survivors back to their
-    // original scores so downstream stages and hit output keep the true scale.
-    let mmr_kept = mmr_select(
-        &mmr_input,
-        &vector_map,
-        rag_cutoff.mmr_lambda,
-        0.05,
-    );
+    let vector_map = build_diversity_vector_map(all_chunks, all_vectors);
+    // Diversity filter selects on normalized relevance; map the survivors back
+    // to their original scores so downstream stages and hit output keep the true scale.
+    let diversity_kept = diversity_filter(&mmr_input, &vector_map, rag_cutoff.mmr_lambda, 0.05);
     let original_score: std::collections::HashMap<usize, f64> =
         pipeline_ranked.iter().map(|(idx, s)| (*idx, *s)).collect();
-    pipeline_ranked = mmr_kept
+    pipeline_ranked = diversity_kept
         .into_iter()
         .map(|(idx, _norm)| (idx, *original_score.get(&idx).unwrap_or(&0.0)))
         .collect();
 
-    // Step 6d: Token budget
-    let text_lens: Vec<usize> = all_chunks.iter().map(|c| c.text.len()).collect();
-    pipeline_ranked = token_budget_filter(
-        &pipeline_ranked,
-        &text_lens,
-        rag_cutoff.token_budget,
-    );
+    // Token budget. Pass character counts (matching the chunker's sizing unit),
+    // not UTF-8 byte lengths.
+    let char_lens: Vec<usize> = all_chunks.iter().map(|c| c.text.chars().count()).collect();
+    pipeline_ranked = token_budget_filter(&pipeline_ranked, &char_lens, rag_cutoff.token_budget);
 
-    // Step 6e: Min/Max K with re-expansion from cached results
+    // Min/Max K with re-expansion from cached results
     if pipeline_ranked.len() < rag_cutoff.min_k {
-        let source = full_reranked.as_deref().unwrap_or(&rrf_ranked);
+        let source = full_reranked.as_deref().unwrap_or(rrf_ranked);
         for &(idx, score) in source {
             if pipeline_ranked.len() >= rag_cutoff.min_k {
                 break;
@@ -846,37 +761,28 @@ pub(crate) fn run_rag_search_command(
             }
         }
     }
-    pipeline_ranked = max_k_truncate(pipeline_ranked, rag_cutoff.max_k);
+    max_k_truncate(pipeline_ranked, rag_cutoff.max_k)
+}
 
-    let ranked = pipeline_ranked;
-
-    // Step 7: apply per-item span limit.
-    let mut per_item_count: std::collections::HashMap<&str, u64> =
-        std::collections::HashMap::new();
-    let mut selected: Vec<(usize, f64)> = Vec::new();
-    for (idx, score) in &ranked {
-        let item_key = all_chunks[*idx].item_key.as_str();
-        let count = per_item_count.entry(item_key).or_insert(0);
-        if *count < options.top_spans_per_item {
-            *count += 1;
-            selected.push((*idx, *score));
-        }
-    }
-
-    // Step 8: enrich hits with item metadata.
+/// Enrich the selected `(chunk index, score)` hits with item metadata
+/// (title/authors/year) fetched from Zotero, caching one `items.get` per item.
+fn enrich_hits(
+    client: &mut impl RpcCaller,
+    selected: &[(usize, f64)],
+    all_chunks: &[StructureChunk],
+    score_kind: &str,
+    include_fulltext_spans: bool,
+) -> Vec<Value> {
     let mut meta_cache: std::collections::HashMap<String, Value> =
         std::collections::HashMap::new();
     let mut hits: Vec<Value> = Vec::new();
-    for (idx, score) in &selected {
+    for (idx, score) in selected {
         let chunk = &all_chunks[*idx];
         let meta = if let Some(cached) = meta_cache.get(&chunk.item_key) {
             cached.clone()
         } else {
             let fetched = client
-                .call(
-                    "items.get",
-                    Some(serde_json::json!({"key": chunk.item_key})),
-                )
+                .call("items.get", Some(serde_json::json!({"key": chunk.item_key})))
                 .unwrap_or(Value::Null);
             meta_cache.insert(chunk.item_key.clone(), fetched.clone());
             fetched
@@ -918,7 +824,7 @@ pub(crate) fn run_rag_search_command(
             "score": score,
             "score_kind": score_kind,
         });
-        if options.include_fulltext_spans {
+        if include_fulltext_spans {
             hit.as_object_mut().unwrap().insert(
                 "attachment_key".to_string(),
                 Value::String(chunk.attachment_key.clone()),
@@ -926,27 +832,234 @@ pub(crate) fn run_rag_search_command(
         }
         hits.push(hit);
     }
+    hits
+}
 
-    // Step 9: format output. `mode` reports the ACTUAL retrieval path used
-    // (hybrid / dense / lexical), which may differ from the requested mode when
-    // dense vectors or query embeddings were unavailable.
+/// Format enriched hits as either JSONL or a standard list envelope. `mode`
+/// reports the ACTUAL retrieval path used (hybrid / dense / lexical), which may
+/// differ from the requested mode when dense vectors or query embeddings were
+/// unavailable.
+fn format_hits(hits: &[Value], actual_mode: &str, options: &RagSearchOptions) -> Result<String, String> {
     if options.output == "jsonl" {
         let mut out = String::new();
-        for hit in &hits {
+        for hit in hits {
             out.push_str(&serde_json::to_string(hit).map_err(|e| e.to_string())?);
             out.push('\n');
         }
         Ok(out)
     } else {
         let total = hits.len() as u64;
-        format_json(
-            &normalize_list_envelope(
-                serde_json::json!({"items": hits, "total": total, "mode": actual_mode}),
-                "items",
-                Some(options.top_k),
-                0,
-            ))
+        format_json(&normalize_list_envelope(
+            serde_json::json!({"items": hits, "total": total, "mode": actual_mode}),
+            "items",
+            Some(options.top_k),
+            0,
+        ))
     }
+}
+
+pub(crate) fn run_rag_search_command(
+    client: &mut impl RpcCaller,
+    options: RagSearchOptions,
+) -> Result<String, String> {
+    // When --zotero is explicitly passed, use XPI fallback directly (backward compat).
+    if options.zotero {
+        if options.collection.is_none() && options.keys.is_empty() {
+            return Err(
+                "INVALID_ARGS: --collection or --key is required".to_string(),
+            );
+        }
+        return run_rag_search_xpi_fallback(client, &options);
+    }
+
+    // Hybrid path: require scope.
+    if options.collection.is_none() && options.keys.is_empty() {
+        return Err("INVALID_ARGS: --collection or --key required".to_string());
+    }
+
+    // Step 1: resolve sidecar paths from collection/keys.
+    let sidecars = resolve_sidecar_paths(
+        client,
+        options.collection.as_deref(),
+        &options.keys,
+    );
+
+    // If sidecar resolution fails or returns empty, fall back to XPI.
+    // But propagate COLLECTION_NOT_FOUND errors directly instead of masking them.
+    let sidecars = match sidecars {
+        Ok(ref s) if !s.is_empty() => s,
+        Err(ref e) if e.contains("COLLECTION_NOT_FOUND") => return Err(e.clone()),
+        _ => return run_rag_search_xpi_fallback(client, &options),
+    };
+
+    // Step 2: fetch all settings up front. A single `settings.getAll` blob feeds
+    // the embedding, retrieval-mode, rerank, and cutoff parsers; only the two
+    // redacted API keys need separate `getRaw` round-trips. The embedding key is
+    // fetched here (before the empty-chunks check) so the XPI-fallback path pays
+    // exactly the same RPCs it did when embedding settings were a standalone call.
+    let settings_blob = client.call("settings.getAll", None)?;
+    let emb_raw = client.call(
+        "settings.getRaw",
+        Some(serde_json::json!({"key": "embedding.apiKey"})),
+    )?;
+    let emb_key = emb_raw
+        .get("embedding.apiKey")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let (emb_provider, emb_model, emb_url, emb_key) =
+        parse_embedding_settings(&settings_blob, emb_key);
+
+    let mut all_chunks: Vec<StructureChunk> = Vec::new();
+    let mut all_vectors: Vec<EmbeddingVector> = Vec::new();
+    for (_item_key, _att_key, sidecar_root) in sidecars {
+        all_chunks.extend(load_sidecar_chunks(sidecar_root));
+        all_vectors.extend(load_sidecar_vectors(sidecar_root, &emb_provider, &emb_model));
+    }
+
+    if all_chunks.is_empty() {
+        return run_rag_search_xpi_fallback(client, &options);
+    }
+
+    // Step 3: determine requested retrieval mode (from the same settings blob).
+    let requested_mode = parse_retrieval_mode(&settings_blob);
+
+    // Step 4: BM25 scoring (unless mode is "dense").
+    let mut bm25_ranked = if requested_mode != "dense" {
+        bm25_score_chunks(&all_chunks, &options.query, 1.2, 0.75)
+    } else {
+        Vec::new()
+    };
+
+    // Step 5: dense vector scoring (unless mode is "lexical" or no vectors).
+    let dense_ranked = if requested_mode != "lexical" && !all_vectors.is_empty() {
+        score_dense(
+            &options.query,
+            &emb_provider,
+            &emb_model,
+            &emb_url,
+            &emb_key,
+            &all_chunks,
+            &all_vectors,
+        )
+    } else {
+        if requested_mode == "dense" && all_vectors.is_empty() {
+            eprintln!("warning: dense retrieval requested but no embedding vectors found for this scope");
+        }
+        Vec::new()
+    };
+
+    // Step 6: merge results. Determine the ACTUAL retrieval path used so the
+    // output can report it (the requested mode may not be achievable).
+    let limit = options.top_k as usize;
+    let actual_mode: &str;
+    let rrf_ranked = if !bm25_ranked.is_empty() && !dense_ranked.is_empty() {
+        actual_mode = "hybrid";
+        rrf_merge(&bm25_ranked, &dense_ranked, 60.0, limit)
+    } else if !dense_ranked.is_empty() {
+        actual_mode = "dense";
+        dense_ranked.into_iter().take(limit).collect()
+    } else if !bm25_ranked.is_empty() {
+        actual_mode = "lexical";
+        bm25_ranked.clone().into_iter().take(limit).collect()
+    } else {
+        // Both BM25 and dense produced nothing. In "dense" mode BM25 was never
+        // run, so do a lexical BM25 fallback pass rather than returning a silent
+        // empty set — this covers dense-unavailable (no vectors / query-embed
+        // failed) AND dense-ran-but-matched-nothing. In lexical/hybrid modes
+        // BM25 already ran and was genuinely empty, so we just report the
+        // lexical path with no results.
+        if requested_mode == "dense" {
+            eprintln!("warning: falling back to lexical (BM25) retrieval");
+            bm25_ranked = bm25_score_chunks(&all_chunks, &options.query, 1.2, 0.75);
+        }
+        actual_mode = "lexical";
+        bm25_ranked.clone().into_iter().take(limit).collect()
+    };
+
+    // --- Rerank + Dynamic Cutoff Pipeline ---
+    //
+    // Both rerank and cutoff settings are parsed from the single settings blob
+    // fetched in Step 2; only the redacted rerank API key needs its own getRaw.
+    // A getRaw failure here is non-fatal (empty key -> reranking is skipped via
+    // the guard below), matching the old `fetch_rerank_settings` Err -> skip path.
+    let rerank_api_key = client
+        .call(
+            "settings.getRaw",
+            Some(serde_json::json!({"key": "rerank.apiKey"})),
+        )
+        .ok()
+        .and_then(|raw| {
+            raw.get("rerank.apiKey")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .unwrap_or_default();
+    let rerank_settings = parse_rerank_settings(&settings_blob, rerank_api_key);
+    let rag_cutoff = parse_rag_cutoff_settings(&settings_blob);
+
+    let mut pipeline_ranked = rrf_ranked.clone();
+    let mut full_reranked: Option<Vec<(usize, f64)>> = None;
+
+    // Step 6a: Rerank (if configured)
+    if !rerank_settings.provider.is_empty() && !rerank_settings.api_key.is_empty() {
+        match rerank_chunks(&options.query, &all_chunks, &pipeline_ranked, &rerank_settings) {
+            Ok(reranked) => {
+                full_reranked = Some(reranked.clone());
+                pipeline_ranked = reranked;
+            }
+            Err(e) => {
+                eprintln!("warning: reranker skipped: {e}");
+            }
+        }
+    }
+
+    // Origin/scale of each hit's final score, so consumers know the score scale
+    // (which varies by path). Reranking, when it succeeds, dominates ordering.
+    let score_kind: &str = if full_reranked.is_some() {
+        "rerank"
+    } else {
+        match actual_mode {
+            "hybrid" => "rrf",
+            "dense" => "cosine",
+            _ => "bm25",
+        }
+    };
+
+    // Steps 6b-6e: score floor + gap cutoff + MMR dedup + token budget + min/max K.
+    let ranked = apply_cutoff_pipeline(
+        pipeline_ranked,
+        &rrf_ranked,
+        &full_reranked,
+        &all_chunks,
+        &all_vectors,
+        &rag_cutoff,
+    );
+
+    // Step 7: apply per-item span limit.
+    let mut per_item_count: std::collections::HashMap<&str, u64> =
+        std::collections::HashMap::new();
+    let mut selected: Vec<(usize, f64)> = Vec::new();
+    for (idx, score) in &ranked {
+        let item_key = all_chunks[*idx].item_key.as_str();
+        let count = per_item_count.entry(item_key).or_insert(0);
+        if *count < options.top_spans_per_item {
+            *count += 1;
+            selected.push((*idx, *score));
+        }
+    }
+
+    // Step 8: enrich hits with item metadata.
+    let hits = enrich_hits(
+        client,
+        &selected,
+        &all_chunks,
+        score_kind,
+        options.include_fulltext_spans,
+    );
+
+    // Step 9: format output.
+    format_hits(&hits, actual_mode, &options)
 }
 
 pub(crate) fn rag_status_value(client: &mut impl RpcCaller, collection: &str) -> Result<Value, String> {
