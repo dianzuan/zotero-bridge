@@ -23,11 +23,16 @@ impl Unpaywall {
             urlenc(email),
         );
 
-        let resp: Value = ureq::get(&url)
-            .call()
-            .map_err(|e| format!("Unpaywall request failed: {e}"))?
-            .into_json()
-            .map_err(|e| format!("Unpaywall JSON parse failed: {e}"))?;
+        let resp: Value = match ureq::get(&url).call() {
+            Ok(r) => r
+                .into_json()
+                .map_err(|e| format!("Unpaywall JSON parse failed: {e}"))?,
+            // A DOI with no Unpaywall record returns 404 — that just means
+            // "no open-access PDF found", which is common for paywalled
+            // papers. Don't abort the whole fetch over it.
+            Err(ureq::Error::Status(404, _)) => return Ok(None),
+            Err(e) => return Err(format!("Unpaywall request failed: {e}")),
+        };
 
         let oa = &resp["best_oa_location"];
         if oa.is_null() {

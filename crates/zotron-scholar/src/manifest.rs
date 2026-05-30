@@ -11,7 +11,7 @@ pub fn print_manifest() {
         "skill_dir": skill_dir,
     });
 
-    println!("{}", serde_json::to_string_pretty(&manifest).unwrap());
+    println!("{}", serde_json::to_string(&manifest).unwrap());
 }
 
 /// Locate the scholar skills directory.

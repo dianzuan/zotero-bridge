@@ -13,8 +13,16 @@ pub fn fetch_doi(doi: &str) -> Result<(Paper, Option<PathBuf>), String> {
 
     let paper = crossref.fetch_doi(doi)?;
 
-    let pdf_url = unpaywall.find_pdf(doi)?
-        .or_else(|| paper.pdf_url.clone());
+    // Unpaywall is a best-effort OA-PDF resolver; a lookup failure (network,
+    // 5xx, etc.) must not block importing the CrossRef metadata we already have.
+    let pdf_url = match unpaywall.find_pdf(doi) {
+        Ok(u) => u,
+        Err(e) => {
+            eprintln!("warning: Unpaywall PDF lookup failed: {e}");
+            None
+        }
+    }
+    .or_else(|| paper.pdf_url.clone());
 
     let pdf_path = pdf_url
         .as_ref()

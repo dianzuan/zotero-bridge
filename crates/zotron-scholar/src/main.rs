@@ -61,7 +61,7 @@ fn run() -> Result<String, String> {
             };
 
             let papers = src.search(&query, limit)?;
-            serde_json::to_string_pretty(&papers).map_err(|e| e.to_string())
+            serde_json::to_string(&papers).map_err(|e| e.to_string())
         }
 
         Cli::Fetch { doi, arxiv } => run_fetch(doi, arxiv),
@@ -86,7 +86,7 @@ fn run_fetch(doi: Option<String>, arxiv: Option<String>) -> Result<String, Strin
             ));
     }
 
-    serde_json::to_string_pretty(&json).map_err(|e| e.to_string())
+    serde_json::to_string(&json).map_err(|e| e.to_string())
 }
 
 fn main() {
