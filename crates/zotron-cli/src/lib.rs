@@ -3307,6 +3307,17 @@ fn resolve_sidecar_paths(
     Ok(results)
 }
 
+/// True if a sidecar line is the `{"schema_version":N}` header line written by
+/// `write_chunks_sidecar`. Detected by PARSING the line and checking for a
+/// top-level numeric `schema_version` key — not by substring-matching the
+/// token, which would drop a legitimate chunk whose text contains it.
+fn is_chunk_schema_header(line: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(line)
+        .ok()
+        .and_then(|v| v.get("schema_version").map(serde_json::Value::is_number))
+        .unwrap_or(false)
+}
+
 fn load_sidecar_chunks(sidecar_root: &Path) -> Vec<StructureChunk> {
     let chunks_path =
         sidecar_root.join(MachineArtifactKind::Chunks.sidecar_relative_path());
@@ -3316,7 +3327,7 @@ fn load_sidecar_chunks(sidecar_root: &Path) -> Vec<StructureChunk> {
     content
         .lines()
         .filter(|line| !line.trim().is_empty())
-        .filter(|line| !line.contains("\"schema_version\""))
+        .filter(|line| !is_chunk_schema_header(line))
         .filter_map(|line| serde_json::from_str::<StructureChunk>(line).ok())
         .collect()
 }
@@ -3519,8 +3530,6 @@ fn run_rag_search_command(
     };
 
     // Step 5: dense vector scoring (unless mode is "lexical" or no vectors).
-    // Track WHY the dense path produced nothing so we can fall back + report it.
-    let mut dense_failed = false;
     let dense_ranked = if requested_mode != "lexical" && !all_vectors.is_empty() {
         match embed_query_text(&options.query, &emb_provider, &emb_model, &emb_url, &emb_key) {
             Ok(query_vec) => {
@@ -3544,14 +3553,12 @@ fn run_rag_search_command(
             Err(e) => {
                 // Query embedding failed: don't silently swallow it.
                 eprintln!("warning: dense retrieval unavailable (query embedding failed): {e}");
-                dense_failed = true;
                 Vec::new()
             }
         }
     } else {
         if requested_mode == "dense" && all_vectors.is_empty() {
             eprintln!("warning: dense retrieval requested but no embedding vectors found for this scope");
-            dense_failed = true;
         }
         Vec::new()
     };
@@ -3570,20 +3577,18 @@ fn run_rag_search_command(
         actual_mode = "lexical";
         bm25_ranked.clone().into_iter().take(limit).collect()
     } else {
-        // Nothing yet. If the dense path failed/was unavailable but BM25 wasn't
-        // run (requested mode == "dense"), fall back to lexical BM25 instead of
-        // silently returning an empty set.
-        if dense_failed && bm25_ranked.is_empty() {
+        // Both BM25 and dense produced nothing. In "dense" mode BM25 was never
+        // run, so do a lexical BM25 fallback pass rather than returning a silent
+        // empty set — this covers dense-unavailable (no vectors / query-embed
+        // failed) AND dense-ran-but-matched-nothing. In lexical/hybrid modes
+        // BM25 already ran and was genuinely empty, so we just report the
+        // lexical path with no results.
+        if requested_mode == "dense" {
             eprintln!("warning: falling back to lexical (BM25) retrieval");
             bm25_ranked = bm25_score_chunks(&all_chunks, &options.query, 1.2, 0.75);
         }
-        if !bm25_ranked.is_empty() {
-            actual_mode = "lexical";
-            bm25_ranked.clone().into_iter().take(limit).collect()
-        } else {
-            actual_mode = "lexical";
-            Vec::new()
-        }
+        actual_mode = "lexical";
+        bm25_ranked.clone().into_iter().take(limit).collect()
     };
 
     // --- Rerank + Dynamic Cutoff Pipeline ---
@@ -3629,22 +3634,26 @@ fn run_rag_search_command(
 
     // Step 6c: MMR dedup.
     //
-    // The MMR threshold (0.05) assumes relevance in [0,1]. Upstream scores vary
-    // wildly by path: reranker scores are ~0..1, but raw RRF (~0.016) and BM25
-    // are not. Without normalization the MMR diversity test
-    // (lambda*rel - (1-lambda)*sim > threshold) nukes almost everything in the
-    // hybrid-no-reranker mode, then min_k silently re-expands — killing both
-    // diversity AND result quality. Min-max normalize the relevance scores in
-    // EVERY mode so the threshold operates on a stable [0,1] scale. The reranked
-    // path is already ~0..1, so normalizing it is effectively idempotent.
-    let normalized_rel = zotron_types::min_max_normalize(
-        &pipeline_ranked.iter().map(|(_, s)| *s as f32).collect::<Vec<_>>(),
-    );
-    let mmr_input: Vec<(usize, f64)> = pipeline_ranked
-        .iter()
-        .zip(normalized_rel.iter())
-        .map(|((idx, _), norm)| (*idx, *norm as f64))
-        .collect();
+    // The 0.05 MMR threshold assumes relevance in [0,1]. Reranker scores are
+    // already sigmoid-normalized to ~[0,1], so they feed MMR directly. Raw RRF
+    // (~0.016) / BM25 are NOT in [0,1]; without rescaling the diversity test
+    // (lambda*rel - (1-lambda)*sim > threshold) nukes almost every candidate on
+    // the no-reranker path and min_k silently re-expands — killing both
+    // diversity and result quality. So min-max normalize ONLY the non-reranked
+    // path; normalizing the reranked path would stretch a uniformly-high set to
+    // [0,1] and make its lowest (still-relevant) member look droppable.
+    let mmr_input: Vec<(usize, f64)> = if full_reranked.is_some() {
+        pipeline_ranked.clone()
+    } else {
+        let normalized_rel = zotron_types::min_max_normalize(
+            &pipeline_ranked.iter().map(|(_, s)| *s as f32).collect::<Vec<_>>(),
+        );
+        pipeline_ranked
+            .iter()
+            .zip(normalized_rel.iter())
+            .map(|((idx, _), norm)| (*idx, *norm as f64))
+            .collect()
+    };
     let chunk_key_index: std::collections::HashMap<&str, usize> = all_chunks
         .iter()
         .enumerate()
@@ -3969,7 +3978,7 @@ fn sidecar_counts_for_item(
             chunk_count += text
                 .lines()
                 .filter(|line| !line.trim().is_empty())
-                .filter(|line| !line.contains("\"schema_version\""))
+                .filter(|line| !is_chunk_schema_header(line))
                 .count();
         }
         let sidecar_root = dir.join(".zotron");
@@ -6093,5 +6102,30 @@ fn to_python_compact_json(value: &Value) -> String {
                 .join(", ");
             format!("{{{inner}}}")
         }
+    }
+}
+
+#[cfg(test)]
+mod sidecar_header_tests {
+    use super::is_chunk_schema_header;
+
+    #[test]
+    fn detects_schema_version_header_line() {
+        assert!(is_chunk_schema_header("{\"schema_version\":2}"));
+        assert!(is_chunk_schema_header("{\"schema_version\": 1}"));
+    }
+
+    #[test]
+    fn does_not_flag_a_chunk_whose_text_is_the_token() {
+        // Regression: the old substring filter dropped any line containing the
+        // quoted token "schema_version" — including a legitimate chunk whose
+        // text value is exactly that. Parsing for a top-level key avoids this.
+        let chunk_line = "{\"chunk_key\":\"ATT1:c0\",\"item_key\":\"ITEM1\",\"attachment_key\":\"ATT1\",\"block_keys\":[],\"section_path\":[],\"text\":\"schema_version\",\"page_range\":[0,0],\"evidence_refs\":[]}";
+        assert!(!is_chunk_schema_header(chunk_line));
+    }
+
+    #[test]
+    fn does_not_flag_a_plain_chunk_line() {
+        assert!(!is_chunk_schema_header("{\"chunk_key\":\"x\",\"text\":\"hello world\"}"));
     }
 }

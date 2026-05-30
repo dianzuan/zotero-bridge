@@ -1777,6 +1777,72 @@ fn rag_search_local_lexical_reports_mode_and_score_kind() {
 }
 
 #[test]
+fn rag_search_dense_mode_falls_back_to_lexical_without_vectors() {
+    // retrievalMode=dense but no embedding vectors on disk: the pipeline must
+    // NOT return a silent empty set — it falls back to a lexical BM25 pass and
+    // reports the actual path used (mode=lexical, score_kind=bm25).
+    let root = std::env::temp_dir().join(format!(
+        "zotron-rag-dense-fallback-{}-{}",
+        std::process::id(),
+        thread_id_suffix()
+    ));
+    let storage_dir = root.join("storage").join("ATT1");
+    let chunks_dir = storage_dir.join(".zotron").join("chunks");
+    fs::create_dir_all(&chunks_dir).expect("create chunks dir");
+    let pdf_path = storage_dir.join("paper.pdf");
+    fs::write(&pdf_path, b"%PDF-1").expect("write pdf placeholder");
+    fs::write(
+        chunks_dir.join("chunks.v1.jsonl"),
+        b"{\"schema_version\":2}\n{\"chunk_key\":\"ATT1:c0\",\"item_key\":\"ITEM1\",\"attachment_key\":\"ATT1\",\"block_keys\":[],\"section_path\":[],\"text\":\"employment elasticity measurement and analysis\",\"page_range\":[0,0],\"evidence_refs\":[]}\n",
+    )
+    .expect("write chunks sidecar");
+
+    let mut client = FakeClient::with_responses(vec![
+        // resolve_sidecar_paths (--key): items.get + attachments.list
+        json!({"key": "ITEM1"}),
+        json!([{ "key": "ATT1", "contentType": "application/pdf",
+                 "path": pdf_path.to_string_lossy() }]),
+        // fetch_embedding_settings: settings.getAll + settings.getRaw (none)
+        json!({"embedding.provider": "", "embedding.model": ""}),
+        json!({"embedding.apiKey": ""}),
+        // fetch_retrieval_mode: settings.get -> dense (but no vectors exist)
+        json!({"rag.retrievalMode": "dense"}),
+        // fetch_rerank_settings: settings.getAll + settings.getRaw (no provider)
+        json!({}),
+        json!({"rerank.apiKey": ""}),
+        // fetch_rag_cutoff_settings: settings.getAll
+        json!({}),
+        // per-hit metadata: items.get
+        json!({"title": "Employment Elasticity", "creators": [], "date": "2024"}),
+    ]);
+
+    let out = run_with_client(
+        [
+            "zotron",
+            "rag",
+            "search",
+            "employment elasticity",
+            "--key",
+            "ITEM1",
+        ],
+        &mut client,
+    )
+    .expect("dense-mode rag search falls back instead of failing");
+    let payload: Value = serde_json::from_str(&out).expect("rag search output is JSON");
+
+    assert_eq!(
+        payload["mode"], "lexical",
+        "dense mode with no vectors must fall back to lexical, not return silent empty"
+    );
+    let items = payload["items"].as_array().expect("items array");
+    assert!(!items.is_empty(), "lexical fallback must return the matching chunk");
+    assert_eq!(items[0]["score_kind"], "bm25");
+    assert_eq!(items[0]["item_key"], "ITEM1");
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn rag_search_with_zotero_flag_uses_xpi_directly() {
     let mut client = FakeClient::with_responses(vec![
         json!({
