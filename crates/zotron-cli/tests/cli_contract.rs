@@ -104,6 +104,103 @@ fn items_add_file_dry_run_translates_local_path_for_zotero() {
 }
 
 #[test]
+fn push_dry_run_surfaces_embedded_pdf_path() {
+    let json_path = std::env::temp_dir()
+        .join(format!("zotron-push-pdf-dry-{}.json", std::process::id()));
+    fs::write(
+        &json_path,
+        r#"{"itemType":"journalArticle","title":"X","_pdf":"/tmp/local.pdf"}"#,
+    )
+    .expect("write item json");
+    let mut client = FakeClient::default();
+
+    let out = run_with_client(
+        [
+            "zotron",
+            "push",
+            json_path.to_str().expect("json path is utf8"),
+            "--dry-run",
+        ],
+        &mut client,
+    )
+    .expect("push --dry-run succeeds");
+
+    let payload: Value = serde_json::from_str(&out).expect("dry-run output is JSON");
+    assert_eq!(payload["dryRun"], true);
+    // Embedded _pdf becomes the resolved pdf source, not an item field.
+    assert_eq!(payload["wouldPush"]["pdfPath"], "/tmp/local.pdf");
+    assert!(client.calls.is_empty(), "dry-run should not call RPC");
+    let _ = fs::remove_file(json_path);
+}
+
+#[test]
+fn push_strips_embedded_pdf_and_attaches_local_path() {
+    let pdf_path = std::env::temp_dir()
+        .join(format!("zotron-push-embedded-{}.pdf", std::process::id()));
+    fs::write(&pdf_path, b"%PDF-1.7 minimal").expect("write temp pdf");
+    let json_path = std::env::temp_dir()
+        .join(format!("zotron-push-embedded-{}.json", std::process::id()));
+    let item_json = json!({
+        "itemType": "journalArticle",
+        "title": "Z",
+        "_pdf": pdf_path.to_str().expect("pdf path is utf8"),
+    });
+    fs::write(&json_path, item_json.to_string()).expect("write item json");
+
+    // Short title (<10) + no DOI skips duplicate detection. No --collection
+    // resolves the current collection (library root -> no addItems).
+    let mut client = FakeClient::with_responses(vec![
+        json!({}),               // system.currentCollection -> library root
+        json!({"key": "NEW123"}), // items.create
+        json!({}),               // attachments.add
+    ]);
+
+    let out = run_with_client(
+        [
+            "zotron",
+            "push",
+            json_path.to_str().expect("json path is utf8"),
+        ],
+        &mut client,
+    )
+    .expect("push succeeds");
+
+    let payload: Value = serde_json::from_str(&out).expect("push output is JSON");
+    assert_eq!(payload["status"], "created");
+    assert_eq!(payload["pdf_attached"], true);
+
+    let methods: Vec<&str> = client.calls.iter().map(|(m, _)| m.as_str()).collect();
+    assert_eq!(
+        methods,
+        vec!["system.currentCollection", "items.create", "attachments.add"]
+    );
+
+    // _pdf must be stripped before items.create: it is not an item field.
+    let create_params = client
+        .calls
+        .iter()
+        .find(|(m, _)| m == "items.create")
+        .and_then(|(_, p)| p.clone())
+        .expect("items.create params present");
+    assert!(
+        create_params["fields"].get("_pdf").is_none(),
+        "_pdf leaked into item fields: {create_params}"
+    );
+
+    // The local _pdf path was attached to the newly created item.
+    let attach_params = client
+        .calls
+        .iter()
+        .find(|(m, _)| m == "attachments.add")
+        .and_then(|(_, p)| p.clone())
+        .expect("attachments.add params present");
+    assert_eq!(attach_params["parentKey"], "NEW123");
+
+    let _ = fs::remove_file(pdf_path);
+    let _ = fs::remove_file(json_path);
+}
+
+#[test]
 fn items_path_translates_zotero_path_for_local_cli_use() {
     let zotero_path = r"C:\Users\testuser\Zotero\storage\ATTACH1\paper.pdf";
     let mut client = FakeClient::with_response(json!({
@@ -160,7 +257,7 @@ fn top_level_help_returns_text_without_rpc_calls() {
     let out = run_with_client(["zotron", "--help"], &mut client).expect("help succeeds");
 
     assert!(out.contains("Rust client + CLI for the Zotron XPI"));
-    assert!(out.contains("Usage: zotron <COMMAND>"));
+    assert!(out.contains("Usage: zotron [OPTIONS] <COMMAND>"));
     assert!(client.calls.is_empty(), "help should not call RPC");
 }
 
@@ -178,7 +275,7 @@ fn zotron_binary_help_exits_successfully() {
         "stderr should be empty for help: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(String::from_utf8_lossy(&output.stdout).contains("Usage: zotron <COMMAND>"));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Usage: zotron [OPTIONS] <COMMAND>"));
 }
 
 #[test]
@@ -202,6 +299,37 @@ fn zotron_binary_runtime_errors_are_structured_json_on_stderr() {
         .as_str()
         .expect("error message is a string")
         .contains("params must be a JSON object"));
+}
+
+#[test]
+fn json_rpc_error_codes_map_to_differentiated_envelopes_and_exit_codes() {
+    // -32602 (invalid params) is a caller error: distinct code + exit 2.
+    let (envelope, exit) = zotron_cli::classify_error("[-32602] Invalid params: bad key");
+    let payload: Value = serde_json::from_str(&envelope).expect("caller-error envelope is JSON");
+    assert_eq!(payload["error"]["code"], "CALLER_ERROR");
+    assert_eq!(payload["error"]["message"], "Invalid params: bad key");
+    assert_eq!(exit, 2);
+
+    // -32603 (internal error) is a runtime error: exit 1.
+    let (envelope, exit) = zotron_cli::classify_error("[-32603] Internal error: boom");
+    let payload: Value = serde_json::from_str(&envelope).expect("runtime-error envelope is JSON");
+    assert_eq!(payload["error"]["code"], "RUNTIME_ERROR");
+    assert_eq!(payload["error"]["message"], "Internal error: boom");
+    assert_eq!(exit, 1);
+
+    // Existing uppercase-prefixed codes still pass through with exit 1.
+    let (envelope, exit) = zotron_cli::classify_error("INVALID_JSON: bad input");
+    let payload: Value = serde_json::from_str(&envelope).expect("prefixed envelope is JSON");
+    assert_eq!(payload["error"]["code"], "INVALID_JSON");
+    assert_eq!(payload["error"]["message"], "bad input");
+    assert_eq!(exit, 1);
+
+    // Plain messages fall back to RUNTIME_ERROR + exit 1.
+    let (envelope, exit) = zotron_cli::classify_error("Cannot connect to Zotero");
+    let payload: Value = serde_json::from_str(&envelope).expect("fallback envelope is JSON");
+    assert_eq!(payload["error"]["code"], "RUNTIME_ERROR");
+    assert_eq!(payload["error"]["message"], "Cannot connect to Zotero");
+    assert_eq!(exit, 1);
 }
 
 #[test]
@@ -741,6 +869,72 @@ fn ocr_parse_pdf_ingests_mineru_result_dir_into_hidden_sidecars() {
     assert!(chunks.contains("\"block_keys\""));
 
     let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn ocr_process_collection_resolves_and_iterates_items_skipping_pdf_less() {
+    // --collection batch mode resolves the collection, iterates its items, and
+    // skips items with no PDF attachment instead of aborting the whole run.
+    let _guard = ENV_LOCK.lock().expect("env lock");
+    // A non-empty api-key env skips the settings.getRaw auth fallback so the
+    // queued responses line up with the batch-mode RPC sequence.
+    std::env::set_var("ZOTRON_TEST_BATCH_KEY", "mineru-env-key");
+    let mut client = FakeClient::with_responses(vec![
+        // find_collection_in_tree -> collections.tree
+        json!([{"key": "COL9", "name": "Survey", "parentKey": null, "children": []}]),
+        // paginate_rpc -> collections.getItems (single page < 500)
+        json!({"items": [{"key": "I1"}, {"key": "I2"}], "total": 2}),
+        // I1 attachments.list -> no attachments -> NO_PDF_ATTACHMENT
+        json!({"items": [], "total": 0}),
+        // I2 attachments.list -> no attachments -> NO_PDF_ATTACHMENT
+        json!({"items": [], "total": 0}),
+    ]);
+
+    let out = run_with_client(
+        [
+            "zotron",
+            "ocr",
+            "process",
+            "--provider",
+            "mineru",
+            "--collection",
+            "Survey",
+            "--api-key-env",
+            "ZOTRON_TEST_BATCH_KEY",
+        ],
+        &mut client,
+    )
+    .expect("ocr process --collection succeeds");
+
+    let payload: Value = serde_json::from_str(&out).expect("batch output is JSON");
+    assert_eq!(payload["collection"], "Survey");
+    assert_eq!(payload["total"], 2);
+    assert_eq!(payload["processed"], 0);
+    assert_eq!(payload["skipped"], 2);
+    assert_eq!(payload["failed"], 0);
+
+    let methods: Vec<&str> = client.calls.iter().map(|(m, _)| m.as_str()).collect();
+    assert_eq!(
+        methods,
+        vec![
+            "collections.tree",
+            "collections.getItems",
+            "attachments.list",
+            "attachments.list",
+        ]
+    );
+}
+
+#[test]
+fn ocr_process_rejects_neither_parent_nor_collection() {
+    let mut client = FakeClient::default();
+    let err = run_with_client(
+        ["zotron", "ocr", "process", "--provider", "mineru"],
+        &mut client,
+    )
+    .expect_err("process with no target is rejected");
+    assert!(err.contains("--parent") && err.contains("--collection"), "{err}");
+    assert!(client.calls.is_empty(), "no target should not call RPC");
 }
 
 #[test]
@@ -1740,16 +1934,12 @@ fn rag_search_local_lexical_reports_mode_and_score_kind() {
         // resolve_sidecar_paths: attachments.list
         json!([{ "key": "ATT1", "contentType": "application/pdf",
                  "path": pdf_path.to_string_lossy() }]),
-        // fetch_embedding_settings: settings.getAll + settings.getRaw
-        json!({"embedding.provider": "", "embedding.model": ""}),
+        // Consolidated settings.getAll (embedding + retrievalMode + rerank + cutoff)
+        json!({"embedding.provider": "", "embedding.model": "", "rag.retrievalMode": "lexical"}),
+        // settings.getRaw: embedding.apiKey
         json!({"embedding.apiKey": ""}),
-        // fetch_retrieval_mode: settings.get
-        json!({"rag.retrievalMode": "lexical"}),
-        // fetch_rerank_settings: settings.getAll + settings.getRaw (no provider)
-        json!({}),
+        // settings.getRaw: rerank.apiKey (no provider configured)
         json!({"rerank.apiKey": ""}),
-        // fetch_rag_cutoff_settings: settings.getAll
-        json!({}),
         // per-hit metadata: items.get
         json!({"title": "Employment Elasticity", "creators": [], "date": "2024"}),
     ]);
@@ -1803,16 +1993,13 @@ fn rag_search_dense_mode_falls_back_to_lexical_without_vectors() {
         json!({"key": "ITEM1"}),
         json!([{ "key": "ATT1", "contentType": "application/pdf",
                  "path": pdf_path.to_string_lossy() }]),
-        // fetch_embedding_settings: settings.getAll + settings.getRaw (none)
-        json!({"embedding.provider": "", "embedding.model": ""}),
+        // Consolidated settings.getAll: embedding (none) + retrievalMode=dense
+        // (but no vectors exist) + rerank + cutoff.
+        json!({"embedding.provider": "", "embedding.model": "", "rag.retrievalMode": "dense"}),
+        // settings.getRaw: embedding.apiKey
         json!({"embedding.apiKey": ""}),
-        // fetch_retrieval_mode: settings.get -> dense (but no vectors exist)
-        json!({"rag.retrievalMode": "dense"}),
-        // fetch_rerank_settings: settings.getAll + settings.getRaw (no provider)
-        json!({}),
+        // settings.getRaw: rerank.apiKey (no provider configured)
         json!({"rerank.apiKey": ""}),
-        // fetch_rag_cutoff_settings: settings.getAll
-        json!({}),
         // per-hit metadata: items.get
         json!({"title": "Employment Elasticity", "creators": [], "date": "2024"}),
     ]);

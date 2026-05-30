@@ -260,10 +260,8 @@ pub enum RerankScoreNorm {
 #[derive(Debug, Clone)]
 pub struct RerankProviderSpec {
     pub id: &'static str,
-    pub provider_key: &'static str,
     pub default_url: &'static str,
     pub default_model: &'static str,
-    pub auth: &'static str,
     pub score_norm: RerankScoreNorm,
 }
 
@@ -271,50 +269,38 @@ pub fn builtin_rerank_provider_specs() -> Vec<RerankProviderSpec> {
     vec![
         RerankProviderSpec {
             id: "jina",
-            provider_key: "jina",
             default_url: "https://api.jina.ai/v1/rerank",
             default_model: "jina-reranker-v2-base-multilingual",
-            auth: "bearer",
             score_norm: RerankScoreNorm::Identity,
         },
         RerankProviderSpec {
             id: "cohere",
-            provider_key: "cohere",
             default_url: "https://api.cohere.com/v2/rerank",
             default_model: "rerank-v3.5",
-            auth: "bearer",
             score_norm: RerankScoreNorm::Identity,
         },
         RerankProviderSpec {
             id: "voyage",
-            provider_key: "voyage",
             default_url: "https://api.voyageai.com/v1/rerank",
             default_model: "rerank-2",
-            auth: "bearer",
             score_norm: RerankScoreNorm::Identity,
         },
         RerankProviderSpec {
             id: "dashscope",
-            provider_key: "dashscope",
             default_url: "https://dashscope.aliyuncs.com/compatible-api/v1/reranks",
             default_model: "qwen3-rerank",
-            auth: "bearer",
             score_norm: RerankScoreNorm::Identity,
         },
         RerankProviderSpec {
             id: "siliconflow",
-            provider_key: "siliconflow",
             default_url: "https://api.siliconflow.cn/v1/rerank",
             default_model: "BAAI/bge-reranker-v2-m3",
-            auth: "bearer",
             score_norm: RerankScoreNorm::Sigmoid,
         },
         RerankProviderSpec {
             id: "openai-compatible",
-            provider_key: "openai-compatible",
             default_url: "",
             default_model: "",
-            auth: "bearer",
             score_norm: RerankScoreNorm::Identity,
         },
     ]
@@ -2199,15 +2185,23 @@ pub fn gap_cutoff(ranked: &[(usize, f64)], threshold: f64) -> Vec<(usize, f64)> 
     ranked.to_vec()
 }
 
+/// Greedily keep top-ranked chunks until the cumulative token estimate exceeds
+/// `budget`. `char_lens` must hold each chunk's character count (`text.chars().count()`),
+/// the same unit the chunker uses to size chunks — NOT the UTF-8 byte length.
+///
+/// Tokens are estimated as 1 token per character. This is exact for CJK text
+/// (~1 token/char) and a safe over-estimate for Latin text (~4 chars/token),
+/// so the budget is never blown. The previous `bytes / 3` heuristic only held
+/// for CJK and badly mis-budgeted Latin, where bytes == chars.
 pub fn token_budget_filter(
     ranked: &[(usize, f64)],
-    text_lens: &[usize],
+    char_lens: &[usize],
     budget: usize,
 ) -> Vec<(usize, f64)> {
     let mut total = 0usize;
     let mut result = Vec::new();
     for &(idx, score) in ranked {
-        let tokens = text_lens.get(idx).copied().unwrap_or(0) / 3;
+        let tokens = char_lens.get(idx).copied().unwrap_or(0);
         if !result.is_empty() && total + tokens > budget {
             break;
         }
@@ -2272,7 +2266,7 @@ pub fn min_max_normalize(scores: &[f32]) -> Vec<f32> {
         .collect()
 }
 
-pub fn mmr_select(
+pub fn diversity_filter(
     ranked: &[(usize, f64)],
     vectors: &std::collections::HashMap<usize, &[f64]>,
     lambda: f64,
