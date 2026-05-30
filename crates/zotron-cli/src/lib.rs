@@ -21,7 +21,7 @@ mod rpc;
 
 use crate::ocr::*;
 use crate::output::*;
-pub use crate::output::format_error_json;
+pub use crate::output::{classify_error, format_error_json};
 use crate::rag::*;
 pub use crate::rag::{fetch_rerank_settings, RerankSettings};
 use crate::rpc::*;

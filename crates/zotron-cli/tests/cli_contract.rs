@@ -205,6 +205,37 @@ fn zotron_binary_runtime_errors_are_structured_json_on_stderr() {
 }
 
 #[test]
+fn json_rpc_error_codes_map_to_differentiated_envelopes_and_exit_codes() {
+    // -32602 (invalid params) is a caller error: distinct code + exit 2.
+    let (envelope, exit) = zotron_cli::classify_error("[-32602] Invalid params: bad key");
+    let payload: Value = serde_json::from_str(&envelope).expect("caller-error envelope is JSON");
+    assert_eq!(payload["error"]["code"], "CALLER_ERROR");
+    assert_eq!(payload["error"]["message"], "Invalid params: bad key");
+    assert_eq!(exit, 2);
+
+    // -32603 (internal error) is a runtime error: exit 1.
+    let (envelope, exit) = zotron_cli::classify_error("[-32603] Internal error: boom");
+    let payload: Value = serde_json::from_str(&envelope).expect("runtime-error envelope is JSON");
+    assert_eq!(payload["error"]["code"], "RUNTIME_ERROR");
+    assert_eq!(payload["error"]["message"], "Internal error: boom");
+    assert_eq!(exit, 1);
+
+    // Existing uppercase-prefixed codes still pass through with exit 1.
+    let (envelope, exit) = zotron_cli::classify_error("INVALID_JSON: bad input");
+    let payload: Value = serde_json::from_str(&envelope).expect("prefixed envelope is JSON");
+    assert_eq!(payload["error"]["code"], "INVALID_JSON");
+    assert_eq!(payload["error"]["message"], "bad input");
+    assert_eq!(exit, 1);
+
+    // Plain messages fall back to RUNTIME_ERROR + exit 1.
+    let (envelope, exit) = zotron_cli::classify_error("Cannot connect to Zotero");
+    let payload: Value = serde_json::from_str(&envelope).expect("fallback envelope is JSON");
+    assert_eq!(payload["error"]["code"], "RUNTIME_ERROR");
+    assert_eq!(payload["error"]["message"], "Cannot connect to Zotero");
+    assert_eq!(exit, 1);
+}
+
+#[test]
 fn fixture_covered_commands_match_python_cli_parity_contracts() {
     for name in fixture_names() {
         let fixture = load_fixture(&name);
