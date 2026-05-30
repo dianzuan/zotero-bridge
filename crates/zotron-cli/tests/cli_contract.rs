@@ -707,13 +707,13 @@ fn ocr_parse_pdf_ingests_mineru_result_dir_into_hidden_sidecars() {
     assert_eq!(payload["status"], "indexed");
     assert_eq!(payload["blocks"], 3);
     assert_eq!(payload["chunks"], 2);
-    assert_eq!(
-        client.calls,
-        vec![(
-            "attachments.getPath".to_string(),
-            Some(json!({"key": "ATTACHKEY"}))
-        )]
-    );
+    // MinerU path now auto-embeds (mirrors the sync path); with no embedding
+    // settings queued the embed step is a no-op (0 vectors) but the field exists.
+    assert_eq!(payload["embeddings"], 0);
+    // First RPC resolves the attachment path; the embed step then calls
+    // settings.getAll to discover the embedding provider.
+    assert_eq!(client.calls[0].0, "attachments.getPath");
+    assert_eq!(client.calls[0].1, Some(json!({"key": "ATTACHKEY"})));
 
     let blocks_path = storage_dir.join(".zotron/ocr/latest.blocks.jsonl");
     let chunks_path = storage_dir.join(".zotron/chunks/chunks.v1.jsonl");

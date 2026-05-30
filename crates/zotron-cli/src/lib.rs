@@ -1502,11 +1502,15 @@ fn run_ocr_process_command(
                 &storage_dir, &options.parent, &attachment,
                 &options.provider, &source, options.chunk_chars,
             )?;
+            let embedding_count = embed_sidecar_chunks(
+                client, &storage_dir, &options.parent, &attachment, &artifacts.chunks,
+            );
             Ok(serde_json::json!({
                 "provider": spec.provider_key,
                 "status": "indexed",
                 "item_key": options.parent,
                 "attachment_key": attachment,
+                "embeddings": embedding_count,
                 "attachment_path": attachment_path,
                 "storage_dir": storage_dir,
                 "task_id": source.task_id,
