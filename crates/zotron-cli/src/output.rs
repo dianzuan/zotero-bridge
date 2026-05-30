@@ -3,10 +3,46 @@
 
 use serde_json::Value;
 
+/// Process exit code for caller-side errors (bad params): JSON-RPC `-32602`.
+pub const EXIT_CALLER_ERROR: i32 = 2;
+/// Process exit code for runtime/server errors: JSON-RPC `-32603` and the rest.
+pub const EXIT_RUNTIME_ERROR: i32 = 1;
+
 pub fn format_error_json(message: &str) -> String {
+    classify_error(message).0
+}
+
+/// Classify a CLI error string into a structured JSON envelope plus a
+/// differentiated process exit code.
+///
+/// JSON-RPC errors arrive Display-formatted as `[-32602] <message>`. The
+/// numeric code is surfaced as a stable envelope code (`CALLER_ERROR` /
+/// `RUNTIME_ERROR`) instead of collapsing every RPC failure to one code, and
+/// caller errors (`-32602`) get a distinct non-zero exit so scripts can tell a
+/// bad request apart from a server/runtime failure.
+pub fn classify_error(message: &str) -> (String, i32) {
     let message = message.trim_end();
+
+    if let Some(rest) = strip_json_rpc_code(message, -32602) {
+        return (error_envelope("CALLER_ERROR", rest), EXIT_CALLER_ERROR);
+    }
+    if let Some(rest) = strip_json_rpc_code(message, -32603) {
+        return (error_envelope("RUNTIME_ERROR", rest), EXIT_RUNTIME_ERROR);
+    }
+
     let (code, message) = split_error_code(message).unwrap_or(("RUNTIME_ERROR", message));
+    (error_envelope(code, message), EXIT_RUNTIME_ERROR)
+}
+
+fn error_envelope(code: &str, message: &str) -> String {
     serde_json::json!({"error": {"code": code, "message": message}}).to_string()
+}
+
+/// Strip a `[<code>] ` prefix produced by `RpcError::JsonRpc`'s Display impl,
+/// returning the remaining message when `code` matches.
+fn strip_json_rpc_code(message: &str, code: i64) -> Option<&str> {
+    let prefix = format!("[{code}]");
+    message.strip_prefix(&prefix).map(|rest| rest.trim_start())
 }
 
 pub(crate) fn split_error_code(message: &str) -> Option<(&str, &str)> {

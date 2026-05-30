@@ -62,11 +62,14 @@ fn parse_jina_response_returns_sorted_scores() {
 }
 
 #[test]
-fn parse_sigmoid_normalization_for_dashscope() {
+fn parse_sigmoid_normalization_for_siliconflow() {
+    // siliconflow is the real Sigmoid provider; dashscope uses Identity and only
+    // passed this assertion by coincidence (raw 5.0 > 0.99, raw -5.0 < 0.01).
     let spec = builtin_rerank_provider_specs()
         .into_iter()
-        .find(|s| s.id == "dashscope")
+        .find(|s| s.id == "siliconflow")
         .unwrap();
+    assert!(matches!(spec.score_norm, RerankScoreNorm::Sigmoid));
     let payload = json!({
         "results": [
             {"index": 0, "relevance_score": 5.0},
@@ -74,8 +77,9 @@ fn parse_sigmoid_normalization_for_dashscope() {
         ]
     });
     let results = parse_rerank_provider_response(&spec, &payload).unwrap();
-    assert!(results[0].score > 0.99);
-    assert!(results[1].score < 0.01);
+    // sigmoid(5.0) = 1/(1+e^-5) ~ 0.9933, sigmoid(-5.0) ~ 0.0067.
+    assert!((results[0].score - 0.9933).abs() < 1e-3, "got {}", results[0].score);
+    assert!((results[1].score - 0.0067).abs() < 1e-3, "got {}", results[1].score);
 }
 
 #[test]
