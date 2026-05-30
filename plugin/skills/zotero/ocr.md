@@ -36,6 +36,25 @@ zotron ocr process --parent ITEMKEY --result-dir /tmp/mineru-result
 
 Use `process` for the real pipeline. `run` is only a low-level transport/debug command.
 
+## Reindex (re-chunk + re-embed without re-OCR)
+
+`ocr reindex` rebuilds the chunk sidecars and embedding vectors from the already-extracted blocks — no OCR provider call, so it is free. Use it after upgrading or after changing chunk settings.
+
+```bash
+# Rebuild every out-of-date sidecar in a collection (recommended after upgrade)
+zotron ocr reindex --collection "数字经济" --stale-only
+
+# Rebuild specific items
+zotron ocr reindex --key ITEMKEY --stale-only
+
+# Force a full rebuild regardless of schema version
+zotron ocr reindex --collection "数字经济"
+```
+
+Chunk sidecars are schema-versioned: a `schema_version` header is written as the first line of `chunks/chunks.v1.jsonl`. `--stale-only` reads that header and **skips sidecars already at the current schema**, so it only rebuilds what is out of date — safe and cheap to run repeatedly.
+
+**Run after upgrading.** Sidecars produced before schema versioning have no header and are treated as stale. Running `zotron ocr reindex --stale-only` once after an upgrade rebuilds them to the current schema; otherwise stale chunks get mixed into retrieval. Reindex also (re)generates embedding vectors, so semantic retrieval becomes available for documents that were only chunked before.
+
 ## When to use
 
 OCR is not mandatory for every PDF. Zotero's built-in text extraction is the first choice for normal text-layer PDFs. Use cloud OCR/layout parsing when Zotero fulltext is empty, garbled, or lacks the block/table provenance needed for evidence-aware RAG.

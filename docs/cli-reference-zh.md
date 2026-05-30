@@ -162,6 +162,9 @@ zotron search "就业" --collection "数字经济" --author "张三" --after 202
 | `ocr run --provider <名称>` | `--input` `--file` `--item-key` `--attachment-key` `--mime-type` `--endpoint` `--api-key-env` | 执行 OCR 请求并输出标准化 blocks |
 | `ocr status --collection <名称>` | — | 查看集合的 OCR 状态 |
 | `ocr process --parent <item key>` | `--attachment` `--provider` `--source-url` `--result-dir` `--result-zip` `--provider-endpoint` `--api-key-env` `--poll-interval-seconds` `--timeout-seconds` `--chunk-chars` | 解析 PDF 并写入隐藏 sidecar。`--attachment` 可选，自动从 parent 查找 |
+| `ocr reindex` | `--collection` `--key` `--stale-only` `--chunk-chars` | 在不重新 OCR 的前提下，从已抽取的 blocks 重新切块并重新生成向量（免费） |
+
+chunk sidecar 带有 `schema_version` 头行。`--stale-only` 读取该头行并跳过已是当前 schema 的 sidecar，因此只重建过期的部分。**升级后请运行一次 `zotron ocr reindex --stale-only`**，把升级前未带版本头的旧 v1 sidecar 重建到当前 schema（否则陈旧 chunk 会混入检索）。reindex 还会重新生成向量，使此前只切块未生成向量的文档恢复语义检索能力。
 
 ---
 
@@ -173,8 +176,24 @@ zotron search "就业" --collection "数字经济" --author "张三" --after 202
 |------|------|------|
 | `rag providers` | — | 列出支持的 embedding 提供商 |
 | `rag embed --provider <名称> --input <文件>` | `--endpoint` `--model` `--input-type` `--api-key-env` | 执行 embedding 请求 |
-| `rag status --collection <名称>` | — | 查看集合的 RAG 索引状态 |
+| `rag status --collection <名称>` | — | 查看集合的 RAG 索引状态。输出含 `embeddings_available` / `total_vectors`，可在检索前判断是否能进行语义（向量）检索 |
 | `rag search <查询词>` | `--collection` `--key` `--top-spans-per-item` `--include-fulltext-spans` `--limit` `--output (json/jsonl)` | 混合检索（BM25 + 向量 + RRF），返回相关段落 |
+
+融合之后，结果会经过一条质量流水线：可选的 cross-encoder **重排（rerank）**；**动态截断**（分数下限 + 最大间隙裁剪，仅在配置了重排器时生效），只返回真正相关的命中而非固定数量；**MMR 多样性**去除近重复段落（先把相关性分数 min-max 归一化到 0..1，使多样性在所有模式下都生效）；以及由 min/max K 约束的 **token 预算**。
+
+输出字段：
+- `mode`（顶层）——实际使用的检索路径：`hybrid`、`dense` 或 `lexical`。当向量或查询 embedding 不可用时，检索会回退到 `lexical`（BM25）并在此如实标注，而不是静默返回空结果。
+- `score_kind`（每条命中）——该命中 `score` 的来源/量纲：`rerank`（0..1 重排分）、`rrf`（融合排名分）、`cosine`（向量相似度）或 `bm25`（关键词分）。
+
+检索流水线设置（Zotero → 设置 → Zotron 面板）：
+- `rag.retrievalMode`——`hybrid`（默认）| `dense` | `lexical`
+- `rag.minK`（默认 3）/ `rag.maxK`（默认 20）——结果数量上下界
+- `rag.tokenBudget`（默认 6000）——返回段落的 token 总上限
+- `rag.mmrLambda`（默认 0.7）——多样性权衡（越高越偏相关性）
+- `rerank.provider` / `rerank.apiKey` / `rerank.model` / `rerank.apiUrl`——重排器配置
+- `rerank.candidateCount`（默认 30）——送入重排的融合候选数量
+- `rerank.scoreFloor`（默认 0.1）——丢弃低于该分数的重排命中
+- `rerank.gapThreshold`（默认 0.15）——在最大分数间隙处裁剪长尾
 
 ---
 
