@@ -34,7 +34,7 @@ zotron items add --isbn 978-7-111-55555-5
 zotron items add --type journalArticle --field title="论文标题" --field date="2024" --field publicationTitle="经济研究"
 ```
 
-CJK author names with only a lastName (empty firstName) are stored in single-field mode (`fieldMode=1`), keeping the full name intact. This matches the behavior of Jasminum and CNKI translators — no auto-splitting into surname/given name.
+CJK author names with only a lastName (empty firstName) are stored in single-field mode (`fieldMode=1`), keeping the full name intact. This matches common CJK translator behavior — no auto-splitting into surname/given name.
 
 ## Updating metadata
 
