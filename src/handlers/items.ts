@@ -7,6 +7,7 @@ import { serializeItem } from "../utils/serialize";
 import { creatorKeyName, extractYear } from "../utils/citation-key";
 import { requireItem, requireCollection, resolveItems } from "../utils/guards";
 import { sanitizePath } from "../utils/safe-path";
+import { extractAttachmentFullText } from "../utils/fulltext";
 
 /** Normalize a creator entry. CJK full names with empty firstName are stored
  *  in single-field mode (fieldMode=1) instead of being split — matches
@@ -103,23 +104,7 @@ export const itemsHandlers = {
     const item = new Zotero.Item(params.itemType as any);
     item.libraryID = Zotero.Libraries.userLibraryID;
 
-    if (params.fields) {
-      for (const [field, value] of Object.entries(params.fields)) {
-        item.setField(field, value);
-      }
-    }
-
-    if (params.creators) {
-      item.setCreators(
-        params.creators.map((c) => normalizeCreator(c)) as any
-      );
-    }
-
-    if (params.tags) {
-      for (const tag of params.tags) {
-        item.addTag(tag);
-      }
-    }
+    applyFields(item, params);
 
     if (params.collections) {
       for (const colID of params.collections) {
@@ -139,30 +124,11 @@ export const itemsHandlers = {
   }) {
     const item = await requireItem(params.key);
 
-    if (params.fields) {
-      for (const [field, value] of Object.entries(params.fields)) {
-        item.setField(field, value);
-      }
-    }
-
-    if (params.creators) {
-      item.setCreators(
-        params.creators.map((c) => normalizeCreator(c)) as any
-      );
-    }
-
-    if (params.tags && params.tags.length > 0) {
-      // Full replace semantics — drop existing tags, apply new set. Matches
-      // user intent for `on_duplicate=update` (refresh metadata to latest).
-      // Empty array is treated as "don't touch tags" to avoid clobbering
-      // user-added tags when an external parse returns no keywords.
-      for (const existing of item.getTags()) {
-        item.removeTag(existing.tag);
-      }
-      for (const tag of params.tags) {
-        item.addTag(tag);
-      }
-    }
+    // applyFields uses full-replace tag semantics (drop existing, apply new set)
+    // and only touches tags when params.tags is non-empty — an empty array is
+    // treated as "don't touch tags" to avoid clobbering user-added tags when an
+    // external parse returns no keywords.
+    applyFields(item, params);
 
     await item.saveTx();
     return serializeItem(item);
@@ -415,33 +381,7 @@ export const itemsHandlers = {
     for (const attID of attIDs) {
       const att = await Zotero.Items.getAsync(attID);
       if (att && att.isAttachment() && (att as any).attachmentContentType === "application/pdf") {
-        const cacheFile = Zotero.Fulltext.getItemCacheFile(att);
-        let content = "";
-        let fromFallback = false;
-        try {
-          content = (await Zotero.File.getContentsAsync(cacheFile.path) as string) ?? "";
-        } catch { content = ""; }
-
-        // Fallback: cache empty → live extraction via PDFWorker
-        if (!content) {
-          try {
-            const result = await (Zotero as any).PDFWorker.getFullText(att.id);
-            content = (result?.text ?? "").replace(/\f/g, "\n");
-            if (content) fromFallback = true;
-          } catch { /* PDFWorker unavailable */ }
-        }
-
-        const rows = ((await Zotero.DB.queryAsync(
-          "SELECT indexedChars, totalChars FROM fulltextItems WHERE itemID=?",
-          [att.id],
-        )) as Array<{ indexedChars: number; totalChars: number }>) ?? [];
-        const meta = rows[0] ?? { indexedChars: 0, totalChars: 0 };
-        return {
-          key: att.key,
-          content: content ?? "",
-          indexedChars: fromFallback ? content.length : (meta.indexedChars ?? 0),
-          totalChars: fromFallback ? content.length : (meta.totalChars ?? 0),
-        };
+        return extractAttachmentFullText(att);
       }
     }
     return { key: item.key, content: "", indexedChars: 0, totalChars: 0 };

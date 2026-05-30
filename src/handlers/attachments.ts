@@ -5,6 +5,7 @@ import { registerHandlers } from "../server";
 import { serializeItem } from "../utils/serialize";
 import { requireItem, requirePdfAttachment } from "../utils/guards";
 import { sanitizePath } from "../utils/safe-path";
+import { extractAttachmentFullText } from "../utils/fulltext";
 
 async function serializeAttachment(item: Zotero.Item): Promise<Record<string, any>> {
   const data = serializeItem(item);
@@ -42,39 +43,7 @@ export const attachmentsHandlers = {
   async getFulltext(params: { key: number | string }) {
     const item = await requireItem(params.key);
     if (!item.isAttachment()) throw { code: -32602, message: `Not an attachment: ${params.key}` };
-
-    const cacheFile = Zotero.Fulltext.getItemCacheFile(item);
-    let content = "";
-    let fromFallback = false;
-    try {
-      content = (await Zotero.File.getContentsAsync(cacheFile.path) as string) ?? "";
-    } catch {
-      content = "";
-    }
-
-    // Fallback: cache empty → live extraction via PDFWorker
-    if (!content && item.attachmentContentType === "application/pdf") {
-      try {
-        const result = await (Zotero as any).PDFWorker.getFullText(item.id);
-        content = (result?.text ?? "").replace(/\f/g, "\n");
-        if (content) fromFallback = true;
-      } catch { /* PDFWorker unavailable */ }
-    }
-
-    const rows = (
-      (await Zotero.DB.queryAsync(
-        "SELECT indexedChars, totalChars FROM fulltextItems WHERE itemID=?",
-        [item.id],
-      )) as Array<{ indexedChars: number; totalChars: number }>
-    ) ?? [];
-    const meta = rows[0] ?? { indexedChars: 0, totalChars: 0 };
-
-    return {
-      key: item.key,
-      content: content ?? "",
-      indexedChars: fromFallback ? content.length : (meta.indexedChars ?? 0),
-      totalChars: fromFallback ? content.length : (meta.totalChars ?? 0),
-    };
+    return extractAttachmentFullText(item);
   },
 
   async getFulltextByPage(params: { key: number | string }) {

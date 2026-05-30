@@ -47,7 +47,7 @@ export const exportHandlers = {
     return { format: "ris", content: output, count: params.keys.length };
   },
 
-  async csv(params: { keys: (number | string)[]; fields?: string[] }) {
+  async csv(params: { keys: (number | string)[] }) {
     const output = await exportItems(params.keys, TRANSLATORS.csv, "csv");
     return { format: "csv", content: output, count: params.keys.length };
   },

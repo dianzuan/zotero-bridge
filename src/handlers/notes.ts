@@ -30,7 +30,7 @@ export const notesHandlers = {
       for (const tag of params.tags) note.addTag(tag);
     }
     await note.saveTx();
-    return { ok: true, key: note.key };
+    return serializeItem(note);
   },
 
   async update(params: { key: number | string; content: string }) {
