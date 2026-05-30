@@ -81,3 +81,7 @@ The CLI does not have built-in `--jq`; use external `jq`.
 - `zotron <namespace> --help` — list subcommands in a namespace
 - `zotron system methods` — list all RPC methods
 - `zotron system methods items.get` — describe a specific method's parameters
+
+## Academic paper sources
+
+To find and import papers from external academic databases, run `zotron sources` to list the available academic sources. Each source ships its own skill with detailed usage — check what is installed before searching.
