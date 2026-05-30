@@ -2272,7 +2272,7 @@ pub fn min_max_normalize(scores: &[f32]) -> Vec<f32> {
         .collect()
 }
 
-pub fn mmr_select(
+pub fn diversity_filter(
     ranked: &[(usize, f64)],
     vectors: &std::collections::HashMap<usize, &[f64]>,
     lambda: f64,

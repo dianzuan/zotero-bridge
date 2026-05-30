@@ -1,4 +1,4 @@
-use zotron_types::{score_floor_filter, gap_cutoff, token_budget_filter, max_k_truncate, mmr_select, min_max_normalize, PdfEvidenceBlock, chunks_from_blocks};
+use zotron_types::{score_floor_filter, gap_cutoff, token_budget_filter, max_k_truncate, diversity_filter, min_max_normalize, PdfEvidenceBlock, chunks_from_blocks};
 use std::collections::HashMap;
 
 // === min-max normalization tests ===
@@ -68,7 +68,7 @@ fn mmr_keeps_diverse_items_after_normalization() {
     // Without normalization: raw RRF magnitudes are below the 0.05 floor.
     let raw_ranked: Vec<(usize, f64)> =
         raw_scores.iter().enumerate().map(|(i, s)| (i, *s)).collect();
-    let raw_result = mmr_select(&raw_ranked, &vectors, 0.7, 0.05);
+    let raw_result = diversity_filter(&raw_ranked, &vectors, 0.7, 0.05);
     assert_eq!(
         raw_result.len(), 1,
         "raw RRF-scale scores collapse to only the unconditionally-kept first item"
@@ -83,7 +83,7 @@ fn mmr_keeps_diverse_items_after_normalization() {
         .enumerate()
         .map(|(i, s)| (i, *s as f64))
         .collect();
-    let norm_result = mmr_select(&norm_ranked, &vectors, 0.7, 0.05);
+    let norm_result = diversity_filter(&norm_ranked, &vectors, 0.7, 0.05);
     assert!(
         norm_result.len() > raw_result.len(),
         "normalization must keep more diverse items than the raw collapse, got {norm_result:?}"
@@ -158,7 +158,7 @@ fn mmr_removes_near_duplicate_chunks() {
         (0, v0.as_slice()), (1, v1.as_slice()), (2, v2.as_slice()),
     ].into_iter().collect();
 
-    let result = mmr_select(&ranked, &vectors, 0.7, 0.05);
+    let result = diversity_filter(&ranked, &vectors, 0.7, 0.05);
     assert!(result.iter().any(|(idx, _)| *idx == 0));
     assert!(result.iter().any(|(idx, _)| *idx == 2));
 }
@@ -173,7 +173,7 @@ fn mmr_keeps_all_when_diverse() {
         (0, v0.as_slice()), (1, v1.as_slice()), (2, v2.as_slice()),
     ].into_iter().collect();
 
-    let result = mmr_select(&ranked, &vectors, 0.7, 0.05);
+    let result = diversity_filter(&ranked, &vectors, 0.7, 0.05);
     assert_eq!(result.len(), 3);
 }
 
@@ -185,7 +185,7 @@ fn mmr_retains_chunks_without_vectors() {
         (0, v0.as_slice()),
     ].into_iter().collect();
 
-    let result = mmr_select(&ranked, &vectors, 0.7, 0.05);
+    let result = diversity_filter(&ranked, &vectors, 0.7, 0.05);
     assert_eq!(result.len(), 2);
 }
 

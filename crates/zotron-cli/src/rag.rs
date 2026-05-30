@@ -11,7 +11,7 @@ use serde_json::Value;
 use zotron_rpc::UreqProviderHttpTransport;
 use zotron_types::{
     bm25_score_chunks, build_embedding_provider_request, cosine_similarity,
-    execute_embedding_provider_request, gap_cutoff, max_k_truncate, mmr_select,
+    diversity_filter, execute_embedding_provider_request, gap_cutoff, max_k_truncate,
     parse_embedding_provider_response, read_machine_artifact_sidecar, rrf_merge,
     score_floor_filter, token_budget_filter, ArtifactStorePlatform, EmbeddingChunkInput,
     EmbeddingRequestInput, EmbeddingVector, MachineArtifactKind, StructureChunk,
@@ -811,9 +811,9 @@ pub(crate) fn run_rag_search_command(
             Some((idx, v.vector.as_slice()))
         })
         .collect();
-    // MMR selects on normalized relevance; map the survivors back to their
-    // original scores so downstream stages and hit output keep the true scale.
-    let mmr_kept = mmr_select(
+    // Diversity filter selects on normalized relevance; map the survivors back
+    // to their original scores so downstream stages and hit output keep the true scale.
+    let diversity_kept = diversity_filter(
         &mmr_input,
         &vector_map,
         rag_cutoff.mmr_lambda,
@@ -821,7 +821,7 @@ pub(crate) fn run_rag_search_command(
     );
     let original_score: std::collections::HashMap<usize, f64> =
         pipeline_ranked.iter().map(|(idx, s)| (*idx, *s)).collect();
-    pipeline_ranked = mmr_kept
+    pipeline_ranked = diversity_kept
         .into_iter()
         .map(|(idx, _norm)| (idx, *original_score.get(&idx).unwrap_or(&0.0)))
         .collect();
