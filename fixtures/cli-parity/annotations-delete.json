@@ -18,6 +18,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"ok\": true, \"key\": \"ANN3\"}\n"
+    "stdout": "{\"ok\":true,\"key\":\"ANN3\"}\n"
   }
 }

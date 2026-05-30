@@ -40,6 +40,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\n  \"items\": 12,\n  \"attachments\": 4,\n  \"notes\": 2,\n  \"subcollections\": 1\n}\n"
+    "stdout": "{\"items\":12,\"attachments\":4,\"notes\":2,\"subcollections\":1}\n"
   }
 }

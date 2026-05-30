@@ -31,6 +31,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"status\": \"not indexed\", \"collection\": \"Missing Collection\", \"total_items\": 0, \"indexed_items\": 0}\n"
+    "stdout": "{\"status\":\"not indexed\",\"collection\":\"Missing Collection\",\"total_items\":0,\"indexed_items\":0}\n"
   }
 }

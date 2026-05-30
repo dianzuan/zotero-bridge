@@ -33,6 +33,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"deleted\": true, \"key\": \"COL5\"}\n"
+    "stdout": "{\"deleted\":true,\"key\":\"COL5\"}\n"
   }
 }

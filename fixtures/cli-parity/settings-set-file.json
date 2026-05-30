@@ -20,6 +20,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"ok\": true, \"updated\": 2}\n"
+    "stdout": "{\"ok\":true,\"updated\":2}\n"
   }
 }

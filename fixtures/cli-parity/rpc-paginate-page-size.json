@@ -50,6 +50,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "[\n  {\n    \"key\": \"ITEM1\"\n  },\n  {\n    \"key\": \"ITEM2\"\n  },\n  {\n    \"key\": \"ITEM3\"\n  }\n]\n"
+    "stdout": "[{\"key\":\"ITEM1\"},{\"key\":\"ITEM2\"},{\"key\":\"ITEM3\"}]\n"
   }
 }

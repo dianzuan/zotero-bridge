@@ -20,6 +20,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"removed\": true}\n"
+    "stdout": "{\"removed\":true}\n"
   }
 }

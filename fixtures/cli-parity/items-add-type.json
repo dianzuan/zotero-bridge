@@ -28,6 +28,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"ok\": true, \"key\": \"NEWITEM1\", \"version\": 1}\n"
+    "stdout": "{\"ok\":true,\"key\":\"NEWITEM1\",\"version\":1}\n"
   }
 }

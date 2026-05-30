@@ -24,6 +24,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\n  \"items\": [\n    {\n      \"key\": \"ATT1\",\n      \"title\": \"paper.pdf\",\n      \"version\": 1\n    }\n  ],\n  \"total\": 1,\n  \"limit\": 1,\n  \"offset\": 0,\n  \"hasMore\": false\n}\n"
+    "stdout": "{\"items\":[{\"key\":\"ATT1\",\"title\":\"paper.pdf\",\"version\":1}],\"total\":1,\"limit\":1,\"offset\":0,\"hasMore\":false}\n"
   }
 }

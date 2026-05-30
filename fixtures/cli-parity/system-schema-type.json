@@ -57,6 +57,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\n  \"itemType\": \"journalArticle\",\n  \"fields\": [\n    \"title\",\n    \"publicationTitle\",\n    \"date\",\n    \"DOI\"\n  ],\n  \"creatorTypes\": [\n    \"author\",\n    \"editor\",\n    \"translator\"\n  ]\n}\n"
+    "stdout": "{\"itemType\":\"journalArticle\",\"fields\":[\"title\",\"publicationTitle\",\"date\",\"DOI\"],\"creatorTypes\":[\"author\",\"editor\",\"translator\"]}\n"
   }
 }

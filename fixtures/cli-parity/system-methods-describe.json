@@ -21,6 +21,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\n  \"method\": \"items.get\",\n  \"params\": {\n    \"key\": \"string\"\n  },\n  \"result\": \"item\"\n}\n"
+    "stdout": "{\"method\":\"items.get\",\"params\":{\"key\":\"string\"},\"result\":\"item\"}\n"
   }
 }

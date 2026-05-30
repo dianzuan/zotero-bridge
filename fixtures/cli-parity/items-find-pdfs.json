@@ -77,6 +77,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\n  \"scanned\": 2,\n  \"attempted\": 1,\n  \"results\": [\n    {\n      \"item_key\": \"ITEM2\",\n      \"title\": \"Needs PDF\",\n      \"found\": true,\n      \"attachment_key\": \"ATT2\"\n    }\n  ]\n}\n"
+    "stdout": "{\"scanned\":2,\"attempted\":1,\"results\":[{\"item_key\":\"ITEM2\",\"title\":\"Needs PDF\",\"found\":true,\"attachment_key\":\"ATT2\"}]}\n"
   }
 }

@@ -21,6 +21,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\n  \"libraryId\": 42,\n  \"items\": 120,\n  \"collections\": 8,\n  \"attachments\": 44\n}\n"
+    "stdout": "{\"libraryId\":42,\"items\":120,\"collections\":8,\"attachments\":44}\n"
   }
 }

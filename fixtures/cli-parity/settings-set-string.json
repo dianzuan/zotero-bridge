@@ -21,6 +21,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"ok\": true, \"key\": \"extensions.zotero.openURL.resolver\", \"value\": \"https://www.worldcat.org/search\"}\n"
+    "stdout": "{\"ok\":true,\"key\":\"extensions.zotero.openURL.resolver\",\"value\":\"https://www.worldcat.org/search\"}\n"
   }
 }

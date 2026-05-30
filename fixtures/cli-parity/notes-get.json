@@ -20,6 +20,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\n  \"key\": \"NOTE1\",\n  \"note\": \"<p>First</p>\",\n  \"parentKey\": \"ITEM1\",\n  \"version\": 1\n}\n"
+    "stdout": "{\"key\":\"NOTE1\",\"note\":\"<p>First</p>\",\"parentKey\":\"ITEM1\",\"version\":1}\n"
   }
 }

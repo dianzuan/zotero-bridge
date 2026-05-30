@@ -22,6 +22,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\n  \"items\": [\n    {\n      \"key\": \"SAVED1\",\n      \"name\": \"My Search\"\n    }\n  ],\n  \"total\": 1,\n  \"limit\": 50,\n  \"offset\": 0,\n  \"hasMore\": false\n}\n"
+    "stdout": "{\"items\":[{\"key\":\"SAVED1\",\"name\":\"My Search\"}],\"total\":1,\"limit\":50,\"offset\":0,\"hasMore\":false}\n"
   }
 }

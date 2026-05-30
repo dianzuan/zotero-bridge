@@ -36,6 +36,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"key\": \"COL4\", \"name\": \"Corrected\", \"parentKey\": null}\n"
+    "stdout": "{\"key\":\"COL4\",\"name\":\"Corrected\",\"parentKey\":null}\n"
   }
 }

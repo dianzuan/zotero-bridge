@@ -23,6 +23,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\n  \"items\": [\n    {\n      \"key\": \"ITEM2\",\n      \"title\": \"Related Paper\"\n    }\n  ],\n  \"total\": 1,\n  \"offset\": 0,\n  \"hasMore\": false\n}\n"
+    "stdout": "{\"items\":[{\"key\":\"ITEM2\",\"title\":\"Related Paper\"}],\"total\":1,\"offset\":0,\"hasMore\":false}\n"
   }
 }

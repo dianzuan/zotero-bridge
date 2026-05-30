@@ -15,6 +15,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\n  \"version\": \"0.1.5\",\n  \"methods\": 86\n}\n"
+    "stdout": "{\"version\":\"0.1.5\",\"methods\":86}\n"
   }
 }

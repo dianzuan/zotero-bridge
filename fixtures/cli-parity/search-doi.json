@@ -15,6 +15,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\n  \"key\": \"ID1\",\n  \"title\": \"Identifier matched item\",\n  \"DOI\": \"10.1038/nature12373\"\n}\n"
+    "stdout": "{\"key\":\"ID1\",\"title\":\"Identifier matched item\",\"DOI\":\"10.1038/nature12373\"}\n"
   }
 }

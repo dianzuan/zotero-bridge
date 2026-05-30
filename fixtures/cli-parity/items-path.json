@@ -19,6 +19,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\n  \"key\": \"ATT1\",\n  \"path\": \"/home/user/Zotero/storage/ABC123/paper.pdf\",\n  \"version\": 1\n}\n"
+    "stdout": "{\"key\":\"ATT1\",\"path\":\"/home/user/Zotero/storage/ABC123/paper.pdf\",\"version\":1}\n"
   }
 }

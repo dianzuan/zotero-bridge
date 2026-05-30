@@ -23,6 +23,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\n  \"items\": [],\n  \"total\": 0,\n  \"limit\": 20,\n  \"offset\": 0,\n  \"hasMore\": false\n}\n"
+    "stdout": "{\"items\":[],\"total\":0,\"limit\":20,\"offset\":0,\"hasMore\":false}\n"
   }
 }

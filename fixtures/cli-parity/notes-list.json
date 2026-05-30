@@ -32,6 +32,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\n  \"items\": [\n    {\n      \"key\": \"NOTE1\",\n      \"note\": \"<p>First</p>\",\n      \"version\": 1\n    }\n  ],\n  \"total\": 1,\n  \"limit\": 2,\n  \"offset\": 1,\n  \"hasMore\": false\n}\n"
+    "stdout": "{\"items\":[{\"key\":\"NOTE1\",\"note\":\"<p>First</p>\",\"version\":1}],\"total\":1,\"limit\":2,\"offset\":1,\"hasMore\":false}\n"
   }
 }

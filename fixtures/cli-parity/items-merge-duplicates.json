@@ -28,6 +28,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"ok\": true, \"master\": \"MASTER1\", \"merged\": [\"DUPL0002\", \"DUPL0003\"]}\n"
+    "stdout": "{\"ok\":true,\"master\":\"MASTER1\",\"merged\":[\"DUPL0002\",\"DUPL0003\"]}\n"
   }
 }
