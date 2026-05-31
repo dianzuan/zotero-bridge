@@ -23,8 +23,7 @@ impl CrossRef {
             url.push_str(&format!("?mailto={}", urlenc(email)));
         }
 
-        let resp: Value = ureq::get(&url)
-            .call()
+        let resp: Value = crate::http::get_with_retry(&url)
             .map_err(|e| format!("CrossRef request failed: {e}"))?
             .into_json()
             .map_err(|e| format!("CrossRef JSON parse failed: {e}"))?;
