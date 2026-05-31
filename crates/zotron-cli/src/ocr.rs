@@ -663,8 +663,12 @@ pub(crate) fn embed_sidecar_chunks(
     if provider.is_empty() || (api_key.is_empty() && provider != "ollama") {
         return 0;
     }
+    // Skip empty/whitespace-only chunks: some embedding providers (e.g.
+    // volcengine/doubao) reject the ENTIRE batch with HTTP 400 "Input string is
+    // empty" if any single input is blank. Blank chunks carry no signal anyway.
     let emb_chunks: Vec<EmbeddingChunkInput> = chunks
         .iter()
+        .filter(|c| !c.text.trim().is_empty())
         .map(|c| EmbeddingChunkInput {
             chunk_key: c.chunk_key.clone(),
             text: c.text.clone(),
