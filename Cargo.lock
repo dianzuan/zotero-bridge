@@ -849,6 +849,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "zotron-scholar"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "serde",
+ "serde_json",
+ "ureq",
+]
+
+[[package]]
 name = "zotron-types"
 version = "0.2.4"
 dependencies = [
