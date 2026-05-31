@@ -7,6 +7,7 @@ use crate::sources::core::Core;
 use crate::sources::crossref::CrossRef;
 use crate::sources::doaj::Doaj;
 use crate::sources::fatcat::Fatcat;
+use crate::sources::publisher::PublisherDirect;
 use crate::sources::unpaywall::Unpaywall;
 use crate::types::Paper;
 
@@ -15,36 +16,39 @@ pub fn fetch_doi(doi: &str) -> Result<(Paper, Option<PathBuf>), String> {
 
     let paper = crossref.fetch_doi(doi)?;
 
-    // Open-access PDF cascade. Each resolver is best-effort: a lookup failure
-    // (network, 5xx, bad key, etc.) must NOT block importing the CrossRef
-    // metadata we already have, so every source is run through `try_source`,
-    // which downgrades errors to warnings and yields `None`.
+    // Full-text PDF cascade. Each resolver is best-effort and LAZY: it runs only
+    // if no earlier source already produced a downloadable PDF — important for
+    // the Publisher resolver, which fetches a whole landing page. A lookup
+    // failure (network, 5xx, bad key, paywall) never blocks importing the
+    // CrossRef metadata: `try_source` downgrades errors to a warning + `None`.
     //
-    // Order (first downloadable PDF wins):
-    //   Unpaywall -> DOAJ -> CORE -> fatcat -> OpenAlex/S2 (paper.pdf_url)
+    // Order (first source whose URL actually DOWNLOADS a valid PDF wins):
+    //   Unpaywall -> DOAJ -> CORE -> fatcat -> OpenAlex/S2 -> Publisher-direct
     //
-    // We don't just take the first URL — we take the first URL that actually
-    // DOWNLOADS, so a 404/dead link in one source falls through to the next.
+    // The free open-access sources come first; Publisher-direct is the last
+    // resort — it follows the publisher's own advertised `citation_pdf_url` and
+    // only succeeds when the caller's IP has institutional access.
     let unpaywall = Unpaywall::new();
     let doaj = Doaj::new();
     let core = Core::new();
     let fatcat = Fatcat::new();
+    let publisher = PublisherDirect::new();
+    let openalex_url = paper.pdf_url.clone();
 
-    let candidates: [(&str, Option<String>); 5] = [
-        ("Unpaywall", try_source("Unpaywall", || unpaywall.find_pdf(doi))),
-        ("DOAJ", try_source("DOAJ", || doaj.find_pdf(doi))),
-        ("CORE", try_source("CORE", || core.find_pdf(doi))),
-        ("fatcat", try_source("fatcat", || fatcat.find_pdf(doi))),
-        ("OpenAlex/S2", paper.pdf_url.clone()),
+    type Resolver<'a> = Box<dyn Fn() -> Option<String> + 'a>;
+    let resolvers: Vec<(&str, Resolver<'_>)> = vec![
+        ("Unpaywall", Box::new(|| try_source("Unpaywall", || unpaywall.find_pdf(doi)))),
+        ("DOAJ", Box::new(|| try_source("DOAJ", || doaj.find_pdf(doi)))),
+        ("CORE", Box::new(|| try_source("CORE", || core.find_pdf(doi)))),
+        ("fatcat", Box::new(|| try_source("fatcat", || fatcat.find_pdf(doi)))),
+        ("OpenAlex/S2", Box::new(|| openalex_url.clone())),
+        ("Publisher", Box::new(|| try_source("Publisher", || publisher.find_pdf(doi)))),
     ];
 
     let mut resolved_url: Option<String> = None;
     let mut pdf_path: Option<PathBuf> = None;
-    for (source, url) in candidates.into_iter() {
-        let url = match url {
-            Some(u) => u,
-            None => continue,
-        };
+    for (source, resolve) in &resolvers {
+        let Some(url) = resolve() else { continue };
         match download_pdf(&url, doi) {
             Ok(path) => {
                 eprintln!("downloaded PDF via {source}: {url}");

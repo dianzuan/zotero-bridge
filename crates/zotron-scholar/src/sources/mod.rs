@@ -4,6 +4,7 @@ pub mod crossref;
 pub mod doaj;
 pub mod fatcat;
 pub mod openalex;
+pub mod publisher;
 pub mod s2;
 pub mod unpaywall;
 
