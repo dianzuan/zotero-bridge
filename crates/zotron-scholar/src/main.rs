@@ -1,4 +1,5 @@
 mod fetch;
+mod http;
 mod manifest;
 mod sources;
 mod types;
