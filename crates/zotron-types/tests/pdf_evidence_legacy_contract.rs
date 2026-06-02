@@ -413,6 +413,86 @@ fn ocr_response_parsers_normalize_glm_paddle_and_mineru_outputs() {
 }
 
 #[test]
+fn running_page_furniture_is_dropped_from_chunks_but_footnotes_are_kept() {
+    use zotron_types::{chunks_from_blocks, parse_ocr_provider_response};
+
+    // Mix of body text, real page furniture (Paddle/MinerU names), and an
+    // academic footnote. Furniture must not reach the chunk text; the footnote
+    // must survive.
+    let payload = json!({
+        "pages": [{
+            "page": 1,
+            "blocks": [
+                {"type": "paragraph_title", "text": "I. INTRODUCTION"},
+                {"type": "text", "text": "Some activities primarily affect future well-being."},
+                {"type": "header", "text": "GARY S. BECKER"},
+                {"type": "footer", "text": "This content downloaded from 129.219.247.033"},
+                {"type": "page_number", "text": "9"},
+                {"type": "number", "text": "10"},
+                {"type": "formula_number", "text": "(1)"},
+                {"type": "footnote", "text": "I am greatly indebted to the Carnegie Corporation."}
+            ]
+        }]
+    });
+
+    let blocks = parse_ocr_provider_response("glm", &payload, "ITEM", "ATT")
+        .expect("payload parses");
+    // Furniture blocks are still present in the block list (provenance preserved).
+    assert!(blocks.iter().any(|b| b.block_type == "footer"));
+    assert!(blocks.iter().any(|b| b.block_type == "page_number"));
+
+    let chunks = chunks_from_blocks(&blocks, 1200);
+    let all_text = chunks.iter().map(|c| c.text.as_str()).collect::<Vec<_>>().join(" ");
+    // Body + footnote survive into chunks.
+    assert!(all_text.contains("Some activities primarily affect"));
+    assert!(all_text.contains("indebted to the Carnegie Corporation"));
+    // None of the running furniture leaks in.
+    assert!(!all_text.contains("downloaded from"));
+    assert!(!all_text.contains("GARY S. BECKER"));
+    assert!(!all_text.contains("(1)"));
+    assert!(!all_text.split_whitespace().any(|w| w == "9" || w == "10"));
+}
+
+#[test]
+fn glm_layout_details_native_label_drives_headings_and_sections() {
+    use zotron_types::parse_ocr_provider_response;
+
+    // Real GLM `layout_parsing` shape: top-level `label` collapses everything to
+    // text/image/formula, while `native_label` carries the fine-grained type.
+    // The parser must read `native_label` so titles become headings and the
+    // following body inherits the section path.
+    let payload = json!({
+        "layout_details": [
+            [
+                {"index": 0, "label": "text", "native_label": "doc_title",
+                 "content": "INVESTMENT IN HUMAN CAPITAL", "bbox_2d": [173, 292, 1378, 333]},
+                {"index": 1, "label": "text", "native_label": "paragraph_title",
+                 "content": "I. INTRODUCTION", "bbox_2d": [10, 20, 30, 40]},
+                {"index": 2, "label": "text", "native_label": "text",
+                 "content": "Some activities primarily affect future well-being.", "bbox_2d": [10, 50, 30, 70]},
+                {"index": 3, "label": "formula", "native_label": "display_formula",
+                 "content": "$$ MP = W $$", "bbox_2d": [10, 80, 30, 90]},
+                {"index": 4, "label": "image", "native_label": "chart",
+                 "content": "https://example.com/chart.png", "bbox_2d": [10, 100, 30, 200]}
+            ]
+        ]
+    });
+
+    let blocks = parse_ocr_provider_response("glm", &payload, "ITEM", "ATT")
+        .expect("glm layout_details parses");
+
+    // doc_title + paragraph_title both normalize to headings.
+    assert_eq!(blocks[0].block_type, "heading");
+    assert_eq!(blocks[1].block_type, "heading");
+    // Body text inherits the nearest heading as its section path.
+    assert_eq!(blocks[2].block_type, "paragraph");
+    assert_eq!(blocks[2].section_path, vec!["I. INTRODUCTION"]);
+    // GLM's native formula/chart labels normalize to canonical types.
+    assert_eq!(blocks[3].block_type, "formula");
+    assert_eq!(blocks[4].block_type, "figure");
+}
+
+#[test]
 fn embedding_request_builders_emit_cloud_and_custom_transport_contracts() {
     use zotron_types::{
         build_embedding_provider_request, EmbeddingChunkInput, EmbeddingRequestInput,

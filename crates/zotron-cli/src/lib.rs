@@ -667,6 +667,9 @@ pub(crate) enum ItemsCommand {
     /// Retrieve the full-text content of an item's attachment.
     Fulltext {
         key: String,
+        /// Read from OCR sidecar (native markdown or blocks) instead of Zotero's built-in text extraction.
+        #[arg(long)]
+        ocr: bool,
     },
     /// List items related to the given item.
     Related {
