@@ -7,17 +7,30 @@
     "ITEM1"
   ],
   "rpc": {
-    "method": "items.getFullText",
-    "params": {
-      "key": "ITEM1"
-    },
-    "result": {
-      "key": "ITEM1",
-      "text": "全文内容摘要"
-    }
+    "calls": [
+      {
+        "method": "attachments.list",
+        "params": {
+          "parentKey": "ITEM1"
+        },
+        "result": {
+          "items": []
+        }
+      },
+      {
+        "method": "items.getFullText",
+        "params": {
+          "key": "ITEM1"
+        },
+        "result": {
+          "key": "ITEM1",
+          "text": "全文内容摘要"
+        }
+      }
+    ]
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"key\":\"ITEM1\",\"text\":\"全文内容摘要\"}\n"
+    "stdout": "{\"key\":\"ITEM1\",\"text\":\"全文内容摘要\",\"source\":\"zotero\"}\n"
   }
 }

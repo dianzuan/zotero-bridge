@@ -1101,10 +1101,24 @@ pub(crate) fn run_items_command(
             normalize_list_envelope(value, "items", Some(limit), offset)
         }
         ItemsCommand::Fulltext { key, ocr, .. } => {
-            if ocr {
-                ocr_fulltext(client, &key)?
-            } else {
-                client.call("items.getFullText", Some(serde_json::json!({"key": key})))?
+            // Default: prefer the clean OCR sidecar text, fall back to Zotero's
+            // built-in PDF extraction when the item hasn't been OCR'd. `--ocr`
+            // forces OCR-only and errors if no sidecar exists.
+            match ocr_fulltext(client, &key)? {
+                Some(value) => value,
+                None if ocr => {
+                    return Err(format!(
+                        "NO_OCR_DATA: no OCR sidecar found for item {key} — run `zotron ocr process --parent {key}` first"
+                    ));
+                }
+                None => {
+                    let mut value = client
+                        .call("items.getFullText", Some(serde_json::json!({"key": key})))?;
+                    if let Some(map) = value.as_object_mut() {
+                        map.insert("source".to_string(), Value::String("zotero".to_string()));
+                    }
+                    value
+                }
             }
         }
         ItemsCommand::Related { key, .. } => normalize_list_envelope(
@@ -1573,11 +1587,20 @@ fn is_zotero_pdf_sort_index(value: &str) -> bool {
 }
 
 
-fn ocr_fulltext(client: &mut impl RpcCaller, key: &str) -> Result<Value, String> {
+/// Read the clean OCR sidecar text for an item's PDF, preferring native
+/// markdown and falling back to assembled blocks. Returns `Ok(None)` when the
+/// item simply has no PDF/OCR data yet (the caller may fall back to Zotero's
+/// built-in extraction); `Err` is reserved for hard RPC/IO failures.
+fn ocr_fulltext(client: &mut impl RpcCaller, key: &str) -> Result<Option<Value>, String> {
     use crate::ocr::{resolve_attachment_path, resolve_first_pdf_attachment_key};
     use zotron_types::{machine_artifact_sidecar_absolute_path, MachineArtifactKind, PdfEvidenceBlock};
 
-    let att_key = resolve_first_pdf_attachment_key(client, key)?;
+    let att_key = match resolve_first_pdf_attachment_key(client, key) {
+        Ok(att_key) => att_key,
+        // No PDF attachment → no OCR possible; signal fall-back, not an error.
+        Err(err) if err.starts_with("NO_PDF_ATTACHMENT") => return Ok(None),
+        Err(err) => return Err(err),
+    };
     let att_path = resolve_attachment_path(client, &att_key)?;
     let storage_dir = att_path.parent().ok_or_else(|| {
         format!("ATTACHMENT_PATH_INVALID: no parent dir: {}", att_path.display())
@@ -1587,12 +1610,12 @@ fn ocr_fulltext(client: &mut impl RpcCaller, key: &str) -> Result<Value, String>
     if md_path.exists() {
         let content = fs::read_to_string(&md_path)
             .map_err(|e| format!("READ_FAILED: {}: {e}", md_path.display()))?;
-        return Ok(serde_json::json!({
+        return Ok(Some(serde_json::json!({
             "key": key,
             "source": "ocr_markdown",
             "content": content,
             "totalChars": content.len(),
-        }));
+        })));
     }
 
     let blocks_path = machine_artifact_sidecar_absolute_path(storage_dir, MachineArtifactKind::Blocks);
@@ -1606,15 +1629,15 @@ fn ocr_fulltext(client: &mut impl RpcCaller, key: &str) -> Result<Value, String>
             .filter(|t| !t.trim().is_empty())
             .collect::<Vec<_>>()
             .join("\n\n");
-        return Ok(serde_json::json!({
+        return Ok(Some(serde_json::json!({
             "key": key,
             "source": "ocr_blocks",
             "content": content,
             "totalChars": content.len(),
-        }));
+        })));
     }
 
-    Err(format!("NO_OCR_DATA: no OCR sidecar found for item {key} — run `zotron ocr process --parent {key}` first"))
+    Ok(None)
 }
 
 fn localize_attachment_path_response(mut value: Value) -> Value {
