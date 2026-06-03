@@ -1082,24 +1082,6 @@ impl MachineArtifactKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MachineArtifactStorage {
-    AttachmentSidecar,
-    ExternalStore,
-    ZoteroAttachment,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MachineArtifactPersistPlan {
-    pub storage: MachineArtifactStorage,
-    pub relative_path: PathBuf,
-    pub file_name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub zotero_attachment_title: Option<String>,
-    pub should_call_zotero_attachments_add: bool,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MachineArtifactRecord {
     pub item_key: String,
@@ -1109,69 +1091,8 @@ pub struct MachineArtifactRecord {
     pub absolute_path: PathBuf,
 }
 
-pub fn machine_artifact_relative_path(
-    _item_key: &str,
-    _attachment_key: &str,
-    kind: MachineArtifactKind,
-) -> PathBuf {
-    machine_artifact_sidecar_relative_path(kind)
-}
-
 pub fn machine_artifact_sidecar_relative_path(kind: MachineArtifactKind) -> PathBuf {
     PathBuf::from(".zotron").join(kind.sidecar_relative_path())
-}
-
-pub fn legacy_machine_artifact_relative_path(
-    item_key: &str,
-    attachment_key: &str,
-    kind: MachineArtifactKind,
-) -> PathBuf {
-    PathBuf::from("items")
-        .join(item_key)
-        .join("attachments")
-        .join(attachment_key)
-        .join(match kind {
-            MachineArtifactKind::OcrRaw => "zotron-ocr.raw.zip",
-            MachineArtifactKind::Blocks => "zotron-blocks.jsonl",
-            MachineArtifactKind::Chunks => "zotron-chunks.jsonl",
-            MachineArtifactKind::EmbeddingVectors => "zotron-embed.npz",
-            MachineArtifactKind::OcrNativeMarkdown => "zotron-ocr.native.md",
-            MachineArtifactKind::OcrNativeAssets => "zotron-ocr.assets.json",
-        })
-}
-
-pub fn machine_artifact_persist_plan(
-    item_key: &str,
-    attachment_key: &str,
-    kind: MachineArtifactKind,
-    attach_to_zotero: bool,
-) -> MachineArtifactPersistPlan {
-    let relative_path = if attach_to_zotero {
-        legacy_machine_artifact_relative_path(item_key, attachment_key, kind)
-    } else {
-        machine_artifact_sidecar_relative_path(kind)
-    };
-    let file_name = if attach_to_zotero {
-        relative_path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or_else(|| kind.file_name())
-            .to_string()
-    } else {
-        kind.file_name().to_string()
-    };
-    let zotero_attachment_title = attach_to_zotero.then(|| format!("{item_key}.{file_name}"));
-    MachineArtifactPersistPlan {
-        storage: if attach_to_zotero {
-            MachineArtifactStorage::ZoteroAttachment
-        } else {
-            MachineArtifactStorage::AttachmentSidecar
-        },
-        relative_path,
-        file_name,
-        zotero_attachment_title,
-        should_call_zotero_attachments_add: attach_to_zotero,
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1316,128 +1237,9 @@ pub fn provider_native_markdown(payload: &Value) -> Option<String> {
     None
 }
 
-/// Extract provider-native image/layout asset references from known OCR shapes.
-///
-/// Values are preserved without interpretation so downstream tooling can fetch
-/// or decode provider-specific URLs/base64 payloads without re-running OCR.
-pub fn provider_native_image_assets(payload: &Value) -> Option<Value> {
-    let mut assets = serde_json::Map::new();
-    if let Some(images) = payload.get("layout_visualization") {
-        assets.insert("layout_visualization".to_string(), images.clone());
-    }
-    if let Some(images) = payload.get("outputImages") {
-        assets.insert("outputImages".to_string(), images.clone());
-    }
-    if let Some(images) = payload.pointer("/markdown/images") {
-        assets.insert("markdown_images".to_string(), images.clone());
-    }
-    if let Some(results) = payload
-        .pointer("/result/layoutParsingResults")
-        .and_then(Value::as_array)
-    {
-        let page_assets = results
-            .iter()
-            .enumerate()
-            .filter_map(|(index, result)| {
-                let mut page = serde_json::Map::new();
-                if let Some(images) = result.pointer("/markdown/images") {
-                    page.insert("markdown_images".to_string(), images.clone());
-                }
-                if let Some(images) = result.get("outputImages") {
-                    page.insert("outputImages".to_string(), images.clone());
-                }
-                (!page.is_empty()).then(|| {
-                    json!({
-                        "page": index as u64 + 1,
-                        "assets": Value::Object(page),
-                    })
-                })
-            })
-            .collect::<Vec<_>>();
-        if !page_assets.is_empty() {
-            assets.insert(
-                "layout_parsing_results".to_string(),
-                Value::Array(page_assets),
-            );
-        }
-    }
-
-    (!assets.is_empty()).then(|| Value::Object(assets))
-}
-
-/// Persist raw OCR provider JSON plus native Markdown/image asset sidecars.
-///
-/// The raw payload is written as hidden sidecar `ocr/latest.raw.json` by
-/// default, while extracted native Markdown and image references are written
-/// only when the provider returned them.
-pub fn write_ocr_provider_artifacts(
-    store_root: impl AsRef<Path>,
-    item_key: &str,
-    attachment_key: &str,
-    provider: &str,
-    payload: &Value,
-) -> io::Result<Vec<MachineArtifactRecord>> {
-    let raw_bundle = json!({
-        "provider": provider,
-        "payload": payload,
-    });
-    let raw_bytes = serde_json::to_vec_pretty(&raw_bundle).map_err(json_to_io_error)?;
-    let mut records = vec![write_machine_artifact(
-        store_root.as_ref(),
-        item_key,
-        attachment_key,
-        MachineArtifactKind::OcrRaw,
-        &raw_bytes,
-    )?];
-
-    if let Some(markdown) = provider_native_markdown(payload) {
-        records.push(write_machine_artifact(
-            store_root.as_ref(),
-            item_key,
-            attachment_key,
-            MachineArtifactKind::OcrNativeMarkdown,
-            markdown.as_bytes(),
-        )?);
-    }
-
-    if let Some(assets) = provider_native_image_assets(payload) {
-        let bytes = serde_json::to_vec_pretty(&json!({
-            "provider": provider,
-            "assets": assets,
-        }))
-        .map_err(json_to_io_error)?;
-        records.push(write_machine_artifact(
-            store_root.as_ref(),
-            item_key,
-            attachment_key,
-            MachineArtifactKind::OcrNativeAssets,
-            &bytes,
-        )?);
-    }
-
-    Ok(records)
-}
-
 fn non_empty_string(value: &str) -> Option<String> {
     let trimmed = value.trim();
     (!trimmed.is_empty()).then(|| trimmed.to_string())
-}
-
-fn json_to_io_error(err: serde_json::Error) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, err)
-}
-
-pub fn machine_artifact_absolute_path(
-    store_root: impl AsRef<Path>,
-    item_key: &str,
-    attachment_key: &str,
-    kind: MachineArtifactKind,
-) -> PathBuf {
-    store_root.as_ref().join(machine_artifact_relative_path(
-        item_key,
-        attachment_key,
-        kind,
-    ))
 }
 
 pub fn machine_artifact_sidecar_absolute_path(
@@ -1449,28 +1251,6 @@ pub fn machine_artifact_sidecar_absolute_path(
         .join(machine_artifact_sidecar_relative_path(kind))
 }
 
-pub fn write_machine_artifact(
-    store_root: impl AsRef<Path>,
-    item_key: &str,
-    attachment_key: &str,
-    kind: MachineArtifactKind,
-    bytes: &[u8],
-) -> io::Result<MachineArtifactRecord> {
-    let relative_path = machine_artifact_relative_path(item_key, attachment_key, kind);
-    let absolute_path = store_root.as_ref().join(&relative_path);
-    if let Some(parent) = absolute_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(&absolute_path, bytes)?;
-    Ok(MachineArtifactRecord {
-        item_key: item_key.to_string(),
-        attachment_key: attachment_key.to_string(),
-        kind,
-        relative_path,
-        absolute_path,
-    })
-}
-
 pub fn write_machine_artifact_sidecar(
     attachment_storage_dir: impl AsRef<Path>,
     item_key: &str,
@@ -1480,28 +1260,6 @@ pub fn write_machine_artifact_sidecar(
 ) -> io::Result<MachineArtifactRecord> {
     let relative_path = machine_artifact_sidecar_relative_path(kind);
     let absolute_path = attachment_storage_dir.as_ref().join(&relative_path);
-    if let Some(parent) = absolute_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(&absolute_path, bytes)?;
-    Ok(MachineArtifactRecord {
-        item_key: item_key.to_string(),
-        attachment_key: attachment_key.to_string(),
-        kind,
-        relative_path,
-        absolute_path,
-    })
-}
-
-pub fn write_legacy_machine_artifact(
-    store_root: impl AsRef<Path>,
-    item_key: &str,
-    attachment_key: &str,
-    kind: MachineArtifactKind,
-    bytes: &[u8],
-) -> io::Result<MachineArtifactRecord> {
-    let relative_path = legacy_machine_artifact_relative_path(item_key, attachment_key, kind);
-    let absolute_path = store_root.as_ref().join(&relative_path);
     if let Some(parent) = absolute_path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -1530,36 +1288,6 @@ pub fn machine_artifact_exists_in_sidecar(
     kind: MachineArtifactKind,
 ) -> bool {
     machine_artifact_sidecar_absolute_path(attachment_storage_dir, kind).exists()
-}
-
-pub fn read_machine_artifact(
-    store_root: impl AsRef<Path>,
-    item_key: &str,
-    attachment_key: &str,
-    kind: MachineArtifactKind,
-) -> io::Result<Vec<u8>> {
-    fs::read(machine_artifact_absolute_path(
-        store_root,
-        item_key,
-        attachment_key,
-        kind,
-    ))
-}
-
-pub fn find_machine_artifact(
-    store_root: impl AsRef<Path>,
-    item_key: &str,
-    attachment_key: &str,
-    kind: MachineArtifactKind,
-) -> Option<MachineArtifactRecord> {
-    let absolute_path = machine_artifact_absolute_path(&store_root, item_key, attachment_key, kind);
-    absolute_path.exists().then(|| MachineArtifactRecord {
-        item_key: item_key.to_string(),
-        attachment_key: attachment_key.to_string(),
-        kind,
-        relative_path: machine_artifact_relative_path(item_key, attachment_key, kind),
-        absolute_path,
-    })
 }
 
 pub fn machine_artifact_exists_for_item(

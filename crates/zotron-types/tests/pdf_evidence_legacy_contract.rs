@@ -2,10 +2,8 @@ use serde_json::json;
 use std::fs;
 use zotron_types::{
     blocks_from_provider_payload, chunks_from_blocks, embedding_provider_spec,
-    find_machine_artifact, is_zotron_evidence_artifact, machine_artifact_exists_in_sidecar,
-    machine_artifact_persist_plan, machine_artifact_relative_path, ocr_provider_spec,
-    read_machine_artifact, write_machine_artifact, write_machine_artifact_sidecar,
-    MachineArtifactKind, MachineArtifactStorage,
+    is_zotron_evidence_artifact, ocr_provider_spec, write_machine_artifact_sidecar,
+    MachineArtifactKind,
 };
 
 #[test]
@@ -193,97 +191,6 @@ fn artifact_titles_are_detected_for_search_pollution_guards() {
     assert!(is_zotron_evidence_artifact("chunks.v1.jsonl"));
     assert!(is_zotron_evidence_artifact("vectors.jsonl"));
     assert!(!is_zotron_evidence_artifact("Normal paper title"));
-}
-
-#[test]
-fn machine_artifacts_default_to_hidden_attachment_sidecar_paths() {
-    let path = machine_artifact_relative_path(
-        "ITEMKEY",
-        "ATTACHKEY",
-        MachineArtifactKind::EmbeddingVectors,
-    );
-
-    assert_eq!(
-        path.to_string_lossy().replace('\\', "/"),
-        ".zotron/embeddings/vectors.jsonl"
-    );
-    assert!(
-        path.to_string_lossy().starts_with(".zotron"),
-        "machine artifacts should live under the PDF storage sidecar"
-    );
-    assert!(
-        !path.to_string_lossy().contains("storage"),
-        "relative sidecar paths must not hard-code platform storage roots"
-    );
-}
-
-#[test]
-fn machine_artifact_persistence_defaults_to_sidecar_without_zotero_add() {
-    let plan =
-        machine_artifact_persist_plan("ITEMKEY", "ATTACHKEY", MachineArtifactKind::Chunks, false);
-
-    assert_eq!(plan.storage, MachineArtifactStorage::AttachmentSidecar);
-    assert_eq!(
-        plan.relative_path.to_string_lossy().replace('\\', "/"),
-        ".zotron/chunks/chunks.v1.jsonl"
-    );
-    assert_eq!(plan.file_name, "chunks.v1.jsonl");
-    assert_eq!(plan.zotero_attachment_title, None);
-    assert!(
-        !plan.should_call_zotero_attachments_add,
-        "machine outputs must not call Zotero attachments.add by default"
-    );
-
-    let explicit =
-        machine_artifact_persist_plan("ITEMKEY", "ATTACHKEY", MachineArtifactKind::Chunks, true);
-    assert_eq!(explicit.storage, MachineArtifactStorage::ZoteroAttachment);
-    assert_eq!(
-        explicit.zotero_attachment_title.as_deref(),
-        Some("ITEMKEY.zotron-chunks.jsonl")
-    );
-    assert!(explicit.should_call_zotero_attachments_add);
-}
-
-#[test]
-fn sidecar_machine_artifact_store_round_trips_without_zotero_state() {
-    let root = std::env::temp_dir().join(format!(
-        "zotron-artifact-store-{}-{}",
-        std::process::id(),
-        "roundtrip"
-    ));
-    let _ = fs::remove_dir_all(&root);
-
-    let record = write_machine_artifact(
-        &root,
-        "ITEMKEY",
-        "ATTACHKEY",
-        MachineArtifactKind::Blocks,
-        br#"{"block_key":"ATTACHKEY:p1:b0"}\n"#,
-    )
-    .expect("artifact writes");
-
-    assert_eq!(
-        record.relative_path.to_string_lossy().replace('\\', "/"),
-        ".zotron/ocr/latest.blocks.jsonl"
-    );
-    assert_eq!(
-        read_machine_artifact(&root, "ITEMKEY", "ATTACHKEY", MachineArtifactKind::Blocks)
-            .expect("artifact reads"),
-        br#"{"block_key":"ATTACHKEY:p1:b0"}\n"#
-    );
-    assert!(
-        find_machine_artifact(&root, "ITEMKEY", "ATTACHKEY", MachineArtifactKind::Blocks).is_some()
-    );
-    assert!(machine_artifact_exists_in_sidecar(
-        &root,
-        MachineArtifactKind::Blocks
-    ));
-    assert!(!machine_artifact_exists_in_sidecar(
-        &root,
-        MachineArtifactKind::EmbeddingVectors
-    ));
-
-    let _ = fs::remove_dir_all(&root);
 }
 
 #[test]
