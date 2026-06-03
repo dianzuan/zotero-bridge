@@ -664,9 +664,13 @@ pub(crate) enum ItemsCommand {
         #[arg(long = "type", default_value = "added")]
         recent_type: String,
     },
-    /// Retrieve the full-text content of an item's attachment.
+    /// Retrieve the full-text content of an item's attachment. Prefers the
+    /// clean OCR sidecar text, falling back to Zotero's built-in extraction.
     Fulltext {
         key: String,
+        /// Force OCR-only: read the OCR sidecar and error if the item has no OCR data (no Zotero fallback).
+        #[arg(long)]
+        ocr: bool,
     },
     /// List items related to the given item.
     Related {

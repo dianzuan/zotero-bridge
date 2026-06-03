@@ -1839,6 +1839,17 @@ pub fn chunks_from_blocks(blocks: &[PdfEvidenceBlock], max_chars: usize) -> Vec<
         .unwrap_or_default();
 
     for block in blocks {
+        // Running page furniture (headers/footers/page numbers/equation numbers)
+        // is emitted as its own block by Paddle and MinerU and repeats on every
+        // page ("downloaded from …", "GARY S. BECKER", "9", "(1)"). It carries no
+        // retrieval value and pollutes chunk embeddings, so skip it here. The
+        // block still lives in the Blocks sidecar for provenance; only chunking
+        // and embedding drop it. Academic footnotes are NOT furniture — they hold
+        // real content — and are deliberately excluded from this set.
+        if is_furniture_type(&block.block_type) {
+            continue;
+        }
+
         if is_heading_type(&block.block_type) {
             flush_chunk(&mut chunks, &mut current, &attachment_key);
             current_chars = 0;
@@ -1918,8 +1929,13 @@ fn push_blocks(
             .and_then(Value::as_u64)
             .or_else(|| raw.get("page").and_then(Value::as_u64))
             .unwrap_or(default_page_idx);
+        // `native_label` (GLM) carries the fine-grained element type
+        // (doc_title/paragraph_title/display_formula/chart/...) while the
+        // coarse `label` collapses everything to text/image/table/formula.
+        // Prefer it so headings survive — they drive section-aware chunking.
         let block_type = raw
-            .get("type")
+            .get("native_label")
+            .or_else(|| raw.get("type"))
             .or_else(|| raw.get("block_label"))
             .or_else(|| raw.get("label"))
             .and_then(Value::as_str)
@@ -2060,13 +2076,32 @@ fn normalize_block_type(block_type: &str) -> &str {
         "title" | "doc_title" | "paragraph_title" | "heading" | "section" => "heading",
         "text" => "paragraph",
         "table" | "table_body" | "table_caption" | "table_footnote" => "table",
-        "image" | "figure" | "image_caption" => "figure",
+        "image" | "figure" | "image_caption" | "chart" => "figure",
+        "formula" | "display_formula" | "inline_formula" => "formula",
         other => other,
     }
 }
 
 fn is_table_type(block_type: &str) -> bool {
     normalize_block_type(block_type) == "table"
+}
+
+/// Running page furniture shared across providers: GLM folds these into body
+/// text, but Paddle (`header`/`footer`/`number`/`formula_number`) and MinerU
+/// (`page_header`/`page_footer`/`page_number`) emit them as standalone blocks
+/// that repeat on every page. `footnote`/`page_footnote` are intentionally
+/// absent — academic footnotes carry real content.
+fn is_furniture_type(block_type: &str) -> bool {
+    matches!(
+        block_type,
+        "header"
+            | "footer"
+            | "page_header"
+            | "page_footer"
+            | "page_number"
+            | "number"
+            | "formula_number"
+    )
 }
 
 fn is_figure_type(block_type: &str) -> bool {

@@ -519,7 +519,7 @@ pub(crate) fn run_ocr_process_sync(
     let blocks = parse_ocr_provider_response(provider, &payload, &options.parent, attachment_key)?;
     let chunks = zotron_types::chunks_from_blocks(&blocks, options.chunk_chars);
 
-    let artifacts = vec![
+    let mut artifacts = vec![
         write_sidecar_json(
             storage_dir, &options.parent, attachment_key,
             MachineArtifactKind::OcrRaw, &payload,
@@ -532,6 +532,12 @@ pub(crate) fn run_ocr_process_sync(
             storage_dir, &options.parent, attachment_key, &chunks,
         )?,
     ];
+    if let Some(markdown) = zotron_types::provider_native_markdown(&payload) {
+        artifacts.push(write_sidecar_bytes(
+            storage_dir, &options.parent, attachment_key,
+            MachineArtifactKind::OcrNativeMarkdown, markdown.as_bytes(),
+        )?);
+    }
 
     let embedding_count = embed_sidecar_chunks(client, storage_dir, &options.parent, attachment_key, &chunks);
 
