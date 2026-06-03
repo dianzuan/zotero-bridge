@@ -294,7 +294,7 @@ Commands:
   providers  Print supported embedding provider contracts
   embed      Execute an embedding provider request from JSON and emit vectors
   status     Show index status for a collection
-  search     Emit academic-zh retrieval hits with item_key/title/text provenance
+  search     Emit academic-zh retrieval hits with itemKey/title/text provenance
   help       Print this message or the help of the given subcommand(s)
 
 Options:
@@ -303,7 +303,7 @@ Options:
 
 ### zotron rag search
 ```
-Emit academic-zh retrieval hits with item_key/title/text provenance
+Emit academic-zh retrieval hits with itemKey/title/text provenance
 
 Usage: zotron rag search [OPTIONS] <QUERY>
 
@@ -338,11 +338,11 @@ Output fields:
   `lexical`. If embedding vectors or the query embedding are unavailable the
   search falls back to lexical (BM25) and reports `lexical` here instead of
   silently returning nothing.
-- `score_kind` (per hit) — origin/scale of the hit's `score`: `rerank` (0..1
+- `scoreKind` (per hit) — origin/scale of the hit's `score`: `rerank` (0..1
   reranker score), `rrf` (fused rank score), `cosine` (vector similarity), or
   `bm25` (keyword score).
 
-`zotron rag status` reports `embeddings_available` / `total_vectors` so you can
+`zotron rag status` reports `embeddingsAvailable` / `totalVectors` so you can
 tell whether semantic (dense) retrieval is possible before searching.
 
 Retrieval pipeline settings (Zotero → Settings → Zotron panel):

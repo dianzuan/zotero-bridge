@@ -77,6 +77,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"scanned\":2,\"attempted\":1,\"results\":[{\"item_key\":\"ITEM2\",\"title\":\"Needs PDF\",\"found\":true,\"attachment_key\":\"ATT2\"}]}\n"
+    "stdout": "{\"scanned\":2,\"attempted\":1,\"results\":[{\"itemKey\":\"ITEM2\",\"title\":\"Needs PDF\",\"found\":true,\"attachmentKey\":\"ATT2\"}]}\n"
   }
 }

@@ -35,6 +35,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"collection\":\"测试集\",\"total\":2,\"has_ocr\":2,\"missing_ocr\":0}\n"
+    "stdout": "{\"collection\":\"测试集\",\"total\":2,\"hasOcr\":2,\"missingOcr\":0}\n"
   }
 }

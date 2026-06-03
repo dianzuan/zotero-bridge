@@ -488,7 +488,7 @@ fn push_result(
 ) -> Value {
     serde_json::json!({
         "status": status,
-        "zotero_item_key": zotero_item_key,
+        "zoteroItemKey": zotero_item_key,
         "pdf_attached": pdf_attached,
         "pdf_size_bytes": pdf_size_bytes,
         "error": error,
@@ -838,10 +838,10 @@ fn run_find_pdfs_command(
         )?;
         let attachment = response.get("attachment").filter(|value| !value.is_null());
         results.push(serde_json::json!({
-            "item_key": item_key,
+            "itemKey": item_key,
             "title": item.get("title").cloned().unwrap_or(Value::Null),
             "found": attachment.is_some(),
-            "attachment_key": attachment
+            "attachmentKey": attachment
                 .and_then(|attachment| attachment.get("key"))
                 .cloned()
                 .unwrap_or(Value::Null),

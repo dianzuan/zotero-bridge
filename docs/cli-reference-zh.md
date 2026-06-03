@@ -180,14 +180,14 @@ chunk sidecar 带有 `schema_version` 头行。`--stale-only` 读取该头行并
 |------|------|------|
 | `rag providers` | — | 列出支持的 embedding 提供商 |
 | `rag embed --provider <名称> --input <文件>` | `--endpoint` `--model` `--input-type` `--api-key-env` | 执行 embedding 请求 |
-| `rag status --collection <名称>` | — | 查看集合的 RAG 索引状态。输出含 `embeddings_available` / `total_vectors`，可在检索前判断是否能进行语义（向量）检索 |
+| `rag status --collection <名称>` | — | 查看集合的 RAG 索引状态。输出含 `embeddingsAvailable` / `totalVectors`，可在检索前判断是否能进行语义（向量）检索 |
 | `rag search <查询词>` | `--collection` `--key` `--top-spans-per-item` `--include-fulltext-spans` `--limit` `--output (json/jsonl)` | 混合检索（BM25 + 向量 + RRF），返回相关段落 |
 
 融合之后，结果会经过一条质量流水线：可选的 cross-encoder **重排（rerank）**；**动态截断**（分数下限 + 最大间隙裁剪，仅在配置了重排器时生效），只返回真正相关的命中而非固定数量；**MMR 多样性**去除近重复段落（先把相关性分数 min-max 归一化到 0..1，使多样性在所有模式下都生效）；以及由 min/max K 约束的 **token 预算**。
 
 输出字段：
 - `mode`（顶层）——实际使用的检索路径：`hybrid`、`dense` 或 `lexical`。当向量或查询 embedding 不可用时，检索会回退到 `lexical`（BM25）并在此如实标注，而不是静默返回空结果。
-- `score_kind`（每条命中）——该命中 `score` 的来源/量纲：`rerank`（0..1 重排分）、`rrf`（融合排名分）、`cosine`（向量相似度）或 `bm25`（关键词分）。
+- `scoreKind`（每条命中）——该命中 `score` 的来源/量纲：`rerank`（0..1 重排分）、`rrf`（融合排名分）、`cosine`（向量相似度）或 `bm25`（关键词分）。
 
 检索流水线设置（Zotero → 设置 → Zotron 面板）：
 - `rag.retrievalMode`——`hybrid`（默认）| `dense` | `lexical`

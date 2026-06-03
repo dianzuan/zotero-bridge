@@ -105,20 +105,28 @@ local action that would have run.
 
 ## Identifier Policy
 
-Public schemas are key-first:
+Public schemas are key-first. Agent-facing CLI **stdout** uses camelCase, matching
+Zotero's native field convention:
 
-- `item_key`
-- `attachment_key`
-- `collection_key`
-- `annotation_key`
-- `block_key`
-- `chunk_key`
-- `block_keys`
+- `itemKey`
+- `attachmentKey`
+- `collectionKey`
+- `annotationKey`
+- `blockKey`
+- `chunkKey`
+- `blockKeys`
 - `keys`
 
+Two boundaries deliberately stay snake_case and are not camelCased:
+
+- **Sidecar files on disk** (`blocks.jsonl`, `chunks.v1.jsonl`, `vectors.jsonl`,
+  and the `schema_version` header) — the serialized struct format is a stable
+  on-disk contract for already-processed libraries.
+- **Outbound provider request bodies** (`model_version`, `enable_table`,
+  `is_ocr`, `page_ranges`, …) — those follow the external provider API contract.
+
 New public OCR/RAG/PDF-evidence fields must not introduce `item_id`,
-`attachment_id`, `collection_id`, `collectionId`, `itemId`, or similar Zotero
-numeric-id fields.
+`attachment_id`, `collection_id`, `itemId`, or similar Zotero numeric-id fields.
 
 ## OCR and RAG Evidence
 

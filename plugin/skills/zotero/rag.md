@@ -34,7 +34,7 @@ zotron rag search --collection "数字经济" --output jsonl "数字经济对劳
 zotron rag search --key YR5BUGHG --key BF4I9QX4 --top-spans-per-item 10 --output jsonl "关键词"
 ```
 
-Returns one JSON hit per line with score, paper title, authors, section heading, `chunk_key`, `block_keys`, page/bbox provenance, and Zotero URI.
+Returns one JSON hit per line with score, paper title, authors, section heading, `chunkKey`, `blockKeys`, page/bbox provenance, and Zotero URI.
 
 ## Retrieval hits
 
@@ -51,20 +51,20 @@ Hybrid search runs BM25 + vector + RRF fusion locally, then calls the XPI for me
 
 ```json
 {
-  "item_key": "X6LYTXEJ",
-  "attachment_key": "NBUVZGWJ",
+  "itemKey": "X6LYTXEJ",
+  "attachmentKey": "NBUVZGWJ",
   "title": "上市公司财务报表舞弊识别的实证研究——基于Logistic回归模型",
   "authors": ["濮双羽", "赵洪进"],
   "year": 2021,
   "venue": "农场经济管理",
   "zotero_uri": "zotero://select/library/items/X6LYTXEJ",
   "section_heading": "一、引言",
-  "section_path": ["一、引言"],
-  "chunk_key": "NBUVZGWJ:c2",
-  "block_keys": ["NBUVZGWJ:p0:b8"],
-  "page_idx": 0,
+  "sectionPath": ["一、引言"],
+  "chunkKey": "NBUVZGWJ:c2",
+  "blockKeys": ["NBUVZGWJ:p0:b8"],
+  "pageIdx": 0,
   "bbox": [72.0, 180.0, 510.0, 220.0],
-  "evidence_refs": [{"block_key": "NBUVZGWJ:p0:b8", "page_idx": 0, "bbox": [72.0, 180.0, 510.0, 220.0]}],
+  "evidenceRefs": [{"blockKey": "NBUVZGWJ:p0:b8", "pageIdx": 0, "bbox": [72.0, 180.0, 510.0, 220.0]}],
   "query": "财务报表 舞弊 识别 风险",
   "score": 4,
   "text": "可引用的原文 span"
@@ -87,9 +87,9 @@ After the BM25 + vector + RRF fusion, `rag search` runs a quality pipeline befor
 Every `rag search` result now reports how it was actually produced:
 
 - **`mode`** (top-level) — the retrieval path actually used: `hybrid`, `dense`, or `lexical`. This can differ from the configured mode: if embedding vectors or the query embedding are unavailable, the search transparently falls back to lexical (BM25) and reports `lexical` here instead of silently returning nothing.
-- **`score_kind`** (per hit) — the origin/scale of that hit's `score`: `rerank` (0..1 reranker score), `rrf` (fused rank score), `cosine` (vector similarity), or `bm25` (keyword score). Use this to interpret the `score` value, since the scale differs by path.
+- **`scoreKind`** (per hit) — the origin/scale of that hit's `score`: `rerank` (0..1 reranker score), `rrf` (fused rank score), `cosine` (vector similarity), or `bm25` (keyword score). Use this to interpret the `score` value, since the scale differs by path.
 
-Check `zotron rag status` before searching: `embeddings_available` and `total_vectors` tell you whether semantic (dense) retrieval is actually possible for the collection, or whether the search will run lexical-only.
+Check `zotron rag status` before searching: `embeddingsAvailable` and `totalVectors` tell you whether semantic (dense) retrieval is actually possible for the collection, or whether the search will run lexical-only.
 
 > **After upgrading:** old v1 chunk sidecars are not schema-versioned and will be treated as stale. Run `zotron ocr reindex --stale-only` (optionally scoped with `--collection` or `--key`) once after upgrading so old sidecars are rebuilt to the current schema. Skipping this mixes stale chunks into retrieval. `--stale-only` only rebuilds out-of-date sidecars, so it is safe and cheap to run.
 
