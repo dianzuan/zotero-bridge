@@ -83,8 +83,11 @@ zotron items get YR5BUGHG
 # Get fulltext from an item (auto-finds the PDF attachment)
 zotron items fulltext YR5BUGHG
 
+# Force clean OCR text only (errors if the item has no OCR sidecar yet)
+zotron items fulltext YR5BUGHG --ocr
+
 # Get the local file path of an item's PDF attachment
-zotron items path ATT_KEY
+zotron items path YR5BUGHG
 
 # List attachments belonging to an item
 zotron items attachments YR5BUGHG
@@ -99,28 +102,40 @@ zotron notes get <note-key>
 zotron annotations list YR5BUGHG
 ```
 
-Zotero automatically indexes PDFs. `items fulltext` finds the first PDF attachment and returns its cached text — no OCR needed for most papers. Use `zotron ocr ...` only for scanned PDFs or when fulltext is empty/garbled.
+`items fulltext` finds the first PDF attachment and returns the cleanest text available: if the item has been OCR'd it returns the OCR sidecar text, otherwise it falls back to Zotero's built-in extraction (the `source` field says which). Most born-digital PDFs need no OCR. Add `--ocr` to force OCR-only. Use `zotron ocr ...` only for scanned PDFs or when fulltext is empty/garbled.
 
 For searching relevant passages across a collection (not full text), see [rag.md](rag.md).
 
 ## Annotations
 
+All annotation commands accept an item key (auto-resolves to the PDF) or an attachment key.
+
 ```bash
-# List annotations on a PDF attachment
-zotron annotations list ATT_KEY
+# List annotations (--context N adds N chars of surrounding text per annotation)
+zotron annotations list YR5BUGHG --context 80
 
 # Create a highlight by quoting text (auto-locates in the PDF, works without opening it)
-zotron annotations create ATT_KEY --quote "要高亮的文字"
+zotron annotations create YR5BUGHG --quote "要高亮的文字"
 
 # With color for a specific dimension
-zotron annotations create ATT_KEY --quote "研究基于..." --color "#56B4E9" --comment "背景"
+zotron annotations create YR5BUGHG --quote "研究基于..." --color "#56B4E9" --comment "背景"
 
 # Dry-run to verify the quote is found before creating the annotation
-zotron annotations create ATT_KEY --quote "要高亮的文字" --dry-run
+zotron annotations create YR5BUGHG --quote "要高亮的文字" --dry-run
+
+# Check where a quote lands WITHOUT creating an annotation (returns page + rects)
+zotron annotations locate YR5BUGHG --quote "要定位的文字"
+
+# Batch-create many highlights from a JSON array (one RPC, not a loop)
+echo '[{"quote":"研究基于...","color":"#56B4E9","comment":"背景"},
+       {"quote":"我们发现...","color":"#E69F00","comment":"结果"}]' \
+  | zotron annotations create-batch YR5BUGHG
 
 # With explicit type/color/position (for non-text annotations)
-zotron annotations create ATT_KEY --type image --position '{"pageIndex":0,"rects":[[10,20,30,40]]}'
+zotron annotations create YR5BUGHG --type image --position '{"pageIndex":0,"rects":[[10,20,30,40]]}'
 ```
+
+For the colored-dimension workflow below, prefer `create-batch` over looping `create` per quote.
 
 `--quote` handles Unicode punctuation variants automatically (curly quotes ↔ straight quotes, fullwidth ↔ halfwidth CJK punctuation). Quotes that span a page boundary are detected and create one annotation per page segment.
 

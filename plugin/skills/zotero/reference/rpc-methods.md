@@ -28,7 +28,7 @@ zotron system methods
 | `items` | `zotron items <verb>` | Get, list, add (--doi/--isbn/--from-url/--file/--type), update, delete, trash/restore, fulltext, recent, citation-key, path, attachments, find-pdfs, find/merge duplicates, related |
 | `collections` | `zotron collections <verb>` | List, tree, get, create, rename, delete, add/remove items, get-items, stats |
 | `notes` | `zotron notes <verb>` | Get, list, create, update, delete, search |
-| `annotations` | `zotron annotations <verb>` | List, create, delete PDF annotations |
+| `annotations` | `zotron annotations <verb>` | List (--context), create, create-batch, locate, delete PDF annotations |
 | `tags` | `zotron tags <verb>` | List, add, remove, rename, delete (add/remove accept multiple keys) |
 | `export` | `zotron export --format bibtex/ris/csl-json/bibliography` | Export citations in various formats |
 | `settings` | `zotron settings <verb>` | Get, set, list preferences |
