@@ -271,6 +271,7 @@ Options:
       --key <KEY>
       --stale-only                 Only reindex items with stale schema version
       --chunk-chars <CHUNK_CHARS>  [default: 1200]
+      --reparse                    Re-parse blocks from the saved raw OCR response (back-fills parser improvements like heading detection) instead of re-chunking existing blocks. No OCR API call.
       --url <URL>                  [default: http://127.0.0.1:23119/zotron/rpc]
   -h, --help                       Print help
 ```
@@ -283,6 +284,13 @@ once after upgrading** so pre-schema-versioning v1 sidecars are rebuilt to the
 current schema (otherwise stale chunks get mixed into retrieval). Reindex also
 (re)generates embedding vectors, enabling semantic retrieval for documents that
 were only chunked before.
+
+`--reparse` goes one level deeper: it re-parses the saved raw OCR response
+(`latest.raw.json`) to regenerate the **blocks** themselves, then re-chunks and
+re-embeds — still no OCR API call. Use it to back-fill block-level parser
+improvements into already-OCR'd documents (e.g. GLM heading recovery, where old
+blocks were flattened to paragraphs). Plain `--stale-only` only re-chunks
+existing blocks and cannot recover headings that were never parsed.
 
 ## zotron rag
 ```

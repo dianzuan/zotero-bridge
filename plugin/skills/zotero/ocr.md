@@ -64,6 +64,13 @@ Chunk sidecars are schema-versioned: a `schema_version` header is written as the
 
 **Run after upgrading.** Sidecars produced before schema versioning have no header and are treated as stale. Running `zotron ocr reindex --stale-only` once after an upgrade rebuilds them to the current schema; otherwise stale chunks get mixed into retrieval. Reindex also (re)generates embedding vectors, so semantic retrieval becomes available for documents that were only chunked before.
 
+`--reparse` re-parses the saved raw OCR response (`latest.raw.json`) to regenerate the blocks themselves, then re-chunks and re-embeds — still no provider call. Use it to back-fill block-level parser improvements (e.g. GLM heading recovery) into documents OCR'd by an older version; plain `--stale-only` only re-chunks existing blocks and cannot recover headings that were never parsed.
+
+```bash
+# Back-fill parser improvements into an already-OCR'd collection
+zotron ocr reindex --collection "数字经济" --reparse
+```
+
 ## When to use
 
 OCR is not mandatory for every PDF. Zotero's built-in text extraction is the first choice for normal text-layer PDFs. Use cloud OCR/layout parsing when Zotero fulltext is empty, garbled, or lacks the block/table provenance needed for evidence-aware RAG.

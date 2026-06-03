@@ -63,8 +63,8 @@ pub(crate) fn run_ocr_command(command: OcrCommand, client: &mut impl RpcCaller) 
             api_key_env,
         })?,
         OcrCommand::Status { collection, .. } => run_ocr_status_command(client, collection)?,
-        OcrCommand::Reindex { collection, key, stale_only, chunk_chars, .. } => {
-            return run_ocr_reindex_command(client, collection, key, stale_only, chunk_chars);
+        OcrCommand::Reindex { collection, key, stale_only, chunk_chars, reparse, .. } => {
+            return run_ocr_reindex_command(client, collection, key, stale_only, chunk_chars, reparse);
         }
         OcrCommand::Process {
             provider,
@@ -580,12 +580,34 @@ fn finalize_indexed(
 /// Schema version written as the first line of chunks.v1.jsonl by reindex.
 pub(crate) const CHUNK_SCHEMA_VERSION: u32 = 2;
 
+/// Detect the OCR provider and unwrap the parseable payload from a saved
+/// `latest.raw.json`. MinerU stores a `{provider, payload, …}` bundle; GLM and
+/// Paddle store the bare provider response. `normalize_ocr_payload` auto-detects
+/// the actual shape, so the provider label here only needs to be a valid spec.
+fn reparse_provider_and_payload(raw: &Value) -> (String, Value) {
+    if let (Some(provider), Some(payload)) =
+        (raw.get("provider").and_then(Value::as_str), raw.get("payload"))
+    {
+        return (provider.to_string(), payload.clone());
+    }
+    if raw.pointer("/result/layoutParsingResults").is_some() {
+        return ("paddleocr-vl".to_string(), raw.clone());
+    }
+    if raw.get("content_list_v2").is_some() || raw.get("content_list").is_some() {
+        return ("mineru".to_string(), raw.clone());
+    }
+    // GLM (layout_details / md_results) and the safe default — the normalizer
+    // auto-detects the real layout regardless of this label.
+    ("glm".to_string(), raw.clone())
+}
+
 pub(crate) fn run_ocr_reindex_command(
     client: &mut impl RpcCaller,
     collection: Option<String>,
     key: Option<String>,
     stale_only: bool,
     chunk_chars: usize,
+    reparse: bool,
 ) -> Result<String, String> {
     // Resolve sidecar paths using the same logic as RAG search.
     let keys: Vec<String> = key.into_iter().collect();
@@ -618,8 +640,10 @@ pub(crate) fn run_ocr_reindex_command(
             }
         };
 
+        // The stale-schema skip only applies to the default re-chunk path; a
+        // --reparse run regenerates blocks regardless of chunk schema version.
         let chunks_path = sidecar_root.join(zotron_types::MachineArtifactKind::Chunks.sidecar_relative_path());
-        if stale_only {
+        if stale_only && !reparse {
             if let Ok(f) = fs::File::open(&chunks_path) {
                 use std::io::BufRead;
                 let mut reader = std::io::BufReader::new(f);
@@ -635,19 +659,51 @@ pub(crate) fn run_ocr_reindex_command(
             }
         }
 
-        let blocks_path = sidecar_root.join(zotron_types::MachineArtifactKind::Blocks.sidecar_relative_path());
-        let blocks_content = match fs::read_to_string(&blocks_path) {
-            Ok(c) => c,
-            Err(_) => {
-                skipped += 1;
-                continue;
-            }
+        let blocks: Vec<zotron_types::PdfEvidenceBlock> = if reparse {
+            // Re-parse from the saved raw provider response so block-level parser
+            // improvements (e.g. GLM native_label heading detection) back-fill
+            // without re-calling the OCR API. Regenerate the Blocks sidecar too.
+            let raw_path = sidecar_root.join(zotron_types::MachineArtifactKind::OcrRaw.sidecar_relative_path());
+            let raw: Value = match fs::read_to_string(&raw_path)
+                .ok()
+                .and_then(|s| serde_json::from_str(&s).ok())
+            {
+                Some(v) => v,
+                None => {
+                    skipped += 1;
+                    continue;
+                }
+            };
+            let (provider, payload) = reparse_provider_and_payload(&raw);
+            let parsed = match zotron_types::parse_ocr_provider_response(
+                &provider, &payload, item_key, att_key,
+            ) {
+                Ok(blocks) => blocks,
+                Err(_) => {
+                    skipped += 1;
+                    continue;
+                }
+            };
+            write_sidecar_jsonl(
+                storage_dir, item_key, att_key,
+                zotron_types::MachineArtifactKind::Blocks, &parsed,
+            )?;
+            parsed
+        } else {
+            let blocks_path = sidecar_root.join(zotron_types::MachineArtifactKind::Blocks.sidecar_relative_path());
+            let blocks_content = match fs::read_to_string(&blocks_path) {
+                Ok(c) => c,
+                Err(_) => {
+                    skipped += 1;
+                    continue;
+                }
+            };
+            blocks_content
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+                .filter_map(|line| serde_json::from_str(line).ok())
+                .collect()
         };
-        let blocks: Vec<zotron_types::PdfEvidenceBlock> = blocks_content
-            .lines()
-            .filter(|line| !line.trim().is_empty())
-            .filter_map(|line| serde_json::from_str(line).ok())
-            .collect();
         if blocks.is_empty() {
             skipped += 1;
             continue;
@@ -1056,6 +1112,26 @@ mod tests {
         fn call(&mut self, _method: &str, _params: Option<Value>) -> Result<Value, String> {
             Err("no embedding configured".to_string())
         }
+    }
+
+    #[test]
+    fn reparse_detects_provider_and_unwraps_payload_per_format() {
+        // MinerU stores a bundle: provider explicit, payload nested.
+        let mineru = serde_json::json!({
+            "provider": "mineru", "item_key": "I", "attachment_key": "A",
+            "payload": {"content_list_v2": [[{"type": "title"}]]},
+        });
+        let (p, payload) = reparse_provider_and_payload(&mineru);
+        assert_eq!(p, "mineru");
+        assert!(payload.get("content_list_v2").is_some(), "MinerU payload must be unwrapped");
+
+        // GLM stores the bare API response (no provider field).
+        let glm = serde_json::json!({"layout_details": [], "md_results": "x", "model": "glm-ocr"});
+        assert_eq!(reparse_provider_and_payload(&glm).0, "glm");
+
+        // Paddle stores result.layoutParsingResults.
+        let paddle = serde_json::json!({"result": {"layoutParsingResults": []}});
+        assert_eq!(reparse_provider_and_payload(&paddle).0, "paddleocr-vl");
     }
 
     #[test]

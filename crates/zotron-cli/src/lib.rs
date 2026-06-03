@@ -259,6 +259,8 @@ pub(crate) enum OcrCommand {
         stale_only: bool,
         #[arg(long = "chunk-chars", default_value_t = 1200)]
         chunk_chars: usize,
+        #[arg(long, help = "Re-parse blocks from the saved raw OCR response (back-fills parser improvements like heading detection) instead of re-chunking existing blocks. No OCR API call.")]
+        reparse: bool,
     },
     /// Parse a Zotero PDF and write hidden sidecar OCR/RAG artifacts. Provider read from Zotero settings unless --provider is given.
     #[command(name = "process")]
