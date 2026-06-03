@@ -398,23 +398,14 @@ pub(crate) fn run_ocr_process_command(
                 &storage_dir, &options.parent, &attachment,
                 &options.provider, &source, options.chunk_chars,
             )?;
-            let embedding_count = embed_sidecar_chunks(
-                client, &storage_dir, &options.parent, &attachment, &artifacts.chunks,
-            );
-            Ok(serde_json::json!({
-                "provider": spec.provider_key,
-                "status": "indexed",
-                "itemKey": options.parent,
-                "attachmentKey": attachment,
-                "embeddings": embedding_count,
-                "attachmentPath": attachment_path,
-                "storageDir": storage_dir,
-                "taskId": source.task_id,
-                "state": source.state,
-                "blocks": artifacts.block_count,
-                "chunks": artifacts.chunk_count,
-                "artifacts": artifacts.artifacts,
-            }))
+            let mut extra = serde_json::Map::new();
+            extra.insert("taskId".to_string(), serde_json::json!(source.task_id));
+            extra.insert("state".to_string(), Value::String(source.state.clone()));
+            Ok(finalize_indexed(
+                client, &storage_dir, &options.parent, &attachment, &attachment_path,
+                spec.provider_key, artifacts.block_count, artifacts.chunks,
+                artifacts.artifacts, extra,
+            ))
         }
         _ => {
             run_ocr_process_sync(
@@ -544,20 +535,46 @@ pub(crate) fn run_ocr_process_sync(
         )?);
     }
 
-    let embedding_count = embed_sidecar_chunks(client, storage_dir, &options.parent, attachment_key, &chunks);
+    Ok(finalize_indexed(
+        client, storage_dir, &options.parent, attachment_key, attachment_path,
+        provider, blocks.len(), chunks, artifacts, serde_json::Map::new(),
+    ))
+}
 
-    Ok(serde_json::json!({
-        "provider": provider,
-        "status": "indexed",
-        "itemKey": options.parent,
-        "attachmentKey": attachment_key,
-        "embeddings": embedding_count,
-        "attachmentPath": attachment_path,
-        "storageDir": storage_dir,
-        "blocks": blocks.len(),
-        "chunks": chunks.len(),
-        "artifacts": artifacts,
-    }))
+/// Shared "produced artifacts → indexed JSON" tail for the two OCR dispatch
+/// flows (sync GLM/Paddle and async MinerU). Runs the chunk auto-embed once,
+/// then assembles the envelope. `extra` carries provider-specific fields
+/// (`taskId`/`state` for MinerU, empty for sync) and is inserted exactly where
+/// MinerU emitted them inline — after `storageDir`, before `blocks` — so each
+/// flow's output stays byte-identical (key order included).
+#[allow(clippy::too_many_arguments)]
+fn finalize_indexed(
+    client: &mut impl RpcCaller,
+    storage_dir: &Path,
+    item_key: &str,
+    attachment_key: &str,
+    attachment_path: &Path,
+    provider_key: &str,
+    block_count: usize,
+    chunks: Vec<zotron_types::StructureChunk>,
+    artifacts: Vec<Value>,
+    extra: serde_json::Map<String, Value>,
+) -> Value {
+    let embedding_count =
+        embed_sidecar_chunks(client, storage_dir, item_key, attachment_key, &chunks);
+    let mut obj = serde_json::Map::new();
+    obj.insert("provider".to_string(), Value::String(provider_key.to_string()));
+    obj.insert("status".to_string(), Value::String("indexed".to_string()));
+    obj.insert("itemKey".to_string(), Value::String(item_key.to_string()));
+    obj.insert("attachmentKey".to_string(), Value::String(attachment_key.to_string()));
+    obj.insert("embeddings".to_string(), Value::from(embedding_count));
+    obj.insert("attachmentPath".to_string(), serde_json::json!(attachment_path));
+    obj.insert("storageDir".to_string(), serde_json::json!(storage_dir));
+    obj.extend(extra);
+    obj.insert("blocks".to_string(), Value::from(block_count));
+    obj.insert("chunks".to_string(), Value::from(chunks.len()));
+    obj.insert("artifacts".to_string(), Value::Array(artifacts));
+    Value::Object(obj)
 }
 
 /// Schema version written as the first line of chunks.v1.jsonl by reindex.
@@ -1026,4 +1043,46 @@ pub(crate) fn tag_is_ocr(tag: &Value) -> bool {
             .get("tag")
             .and_then(Value::as_str)
             .is_some_and(|tag| tag == "ocr")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Stub that fails every RPC, so embed_sidecar_chunks short-circuits to 0
+    /// without needing live embedding settings.
+    struct NoEmbedClient;
+    impl RpcCaller for NoEmbedClient {
+        fn call(&mut self, _method: &str, _params: Option<Value>) -> Result<Value, String> {
+            Err("no embedding configured".to_string())
+        }
+    }
+
+    #[test]
+    fn finalize_indexed_envelope_is_byte_identical_for_both_flows() {
+        let mut client = NoEmbedClient;
+
+        // Sync flow (GLM/Paddle): empty extra inserts nothing — exact legacy shape.
+        let sync = finalize_indexed(
+            &mut client, Path::new("/s"), "IT", "AT", Path::new("/s/doc.pdf"),
+            "glm", 3, vec![], vec![serde_json::json!({"k": 1})], serde_json::Map::new(),
+        );
+        assert_eq!(
+            serde_json::to_string(&sync).unwrap(),
+            r#"{"provider":"glm","status":"indexed","itemKey":"IT","attachmentKey":"AT","embeddings":0,"attachmentPath":"/s/doc.pdf","storageDir":"/s","blocks":3,"chunks":0,"artifacts":[{"k":1}]}"#
+        );
+
+        // MinerU flow: taskId/state land between storageDir and blocks, as before.
+        let mut extra = serde_json::Map::new();
+        extra.insert("taskId".to_string(), Value::String("T1".to_string()));
+        extra.insert("state".to_string(), Value::String("done".to_string()));
+        let mineru = finalize_indexed(
+            &mut client, Path::new("/s"), "IT", "AT", Path::new("/s/doc.pdf"),
+            "mineru", 5, vec![], vec![], extra,
+        );
+        assert_eq!(
+            serde_json::to_string(&mineru).unwrap(),
+            r#"{"provider":"mineru","status":"indexed","itemKey":"IT","attachmentKey":"AT","embeddings":0,"attachmentPath":"/s/doc.pdf","storageDir":"/s","taskId":"T1","state":"done","blocks":5,"chunks":0,"artifacts":[]}"#
+        );
+    }
 }
