@@ -759,7 +759,7 @@ fn zotron_ocr_provider_json_returns_async_task_for_mineru_precise_submit() {
     let payload: Value = serde_json::from_str(&out).expect("OCR provider output is JSON");
     assert_eq!(payload["provider"], "mineru");
     assert_eq!(payload["status"], "submitted");
-    assert_eq!(payload["task_id"], "mineru-task-1");
+    assert_eq!(payload["taskId"], "mineru-task-1");
     assert!(payload.get("blocks").is_none());
 
     std::env::remove_var("ZOTRON_TEST_MINERU_KEY");
@@ -1149,7 +1149,7 @@ fn ocr_parse_pdf_uploads_local_zotero_pdf_to_mineru_batch_endpoint() {
     .expect("parse-pdf uploads local file, downloads result, and writes sidecars");
     let payload: Value = serde_json::from_str(&out).expect("parse-pdf output is JSON");
     assert_eq!(payload["status"], "indexed");
-    assert_eq!(payload["task_id"], "batch1");
+    assert_eq!(payload["taskId"], "batch1");
     assert_eq!(payload["blocks"], 2);
     assert!(storage_dir.join(".zotron/ocr/latest.raw.zip").exists());
     assert!(storage_dir.join(".zotron/ocr/latest.blocks.jsonl").exists());
@@ -1256,16 +1256,16 @@ fn chunks_from_blocks_preserve_structure_and_do_not_cross_sections() {
 
     let chunks = zotron_cli::chunks_from_blocks(&blocks, 1000).expect("chunk blocks");
     assert_eq!(chunks.len(), 3);
-    assert_eq!(chunks[0]["chunk_key"], "ATT1:c0");
-    assert_eq!(chunks[0]["item_key"], "ITEM1");
-    assert_eq!(chunks[0]["attachment_key"], "ATT1");
-    assert_eq!(chunks[0]["block_keys"], json!(["ATT1:p1:b1"]));
-    assert_eq!(chunks[0]["section_path"], json!(["引言"]));
-    assert_eq!(chunks[0]["page_start"], 1);
-    assert_eq!(chunks[0]["page_end"], 1);
-    assert_eq!(chunks[1]["block_keys"], json!(["ATT1:p1:b2"]));
-    assert_eq!(chunks[1]["evidence_refs"][0]["bbox"], json!([1, 2, 3, 4]));
-    assert_eq!(chunks[2]["section_path"], json!(["方法"]));
+    assert_eq!(chunks[0]["chunkKey"], "ATT1:c0");
+    assert_eq!(chunks[0]["itemKey"], "ITEM1");
+    assert_eq!(chunks[0]["attachmentKey"], "ATT1");
+    assert_eq!(chunks[0]["blockKeys"], json!(["ATT1:p1:b1"]));
+    assert_eq!(chunks[0]["sectionPath"], json!(["引言"]));
+    assert_eq!(chunks[0]["pageStart"], 1);
+    assert_eq!(chunks[0]["pageEnd"], 1);
+    assert_eq!(chunks[1]["blockKeys"], json!(["ATT1:p1:b2"]));
+    assert_eq!(chunks[1]["evidenceRefs"][0]["bbox"], json!([1, 2, 3, 4]));
+    assert_eq!(chunks[2]["sectionPath"], json!(["方法"]));
 
     let serialized = serde_json::to_string(&chunks).expect("chunks serialize");
     assert!(!serialized.contains("block_id"));
@@ -1469,8 +1469,8 @@ fn ocr_status_prefers_external_artifact_store_without_attachment_rpc() {
     .expect("ocr status succeeds from external artifact store");
     let payload: Value = serde_json::from_str(&out).expect("status output is JSON");
 
-    assert_eq!(payload["has_ocr"], 1);
-    assert_eq!(payload["missing_ocr"], 0);
+    assert_eq!(payload["hasOcr"], 1);
+    assert_eq!(payload["missingOcr"], 0);
     assert_eq!(
         client.calls,
         vec![
@@ -1516,8 +1516,8 @@ fn ocr_status_checks_note_list_and_object_tags_for_legacy_ocr_notes() {
     .expect("ocr status detects legacy OCR notes");
     let payload: Value = serde_json::from_str(&out).expect("status output is JSON");
 
-    assert_eq!(payload["has_ocr"], 1);
-    assert_eq!(payload["missing_ocr"], 0);
+    assert_eq!(payload["hasOcr"], 1);
+    assert_eq!(payload["missingOcr"], 0);
     assert_eq!(
         client.calls,
         vec![
@@ -1595,8 +1595,8 @@ fn ocr_status_paginates_collection_items_before_counting_ocr() {
     let payload: Value = serde_json::from_str(&out).expect("status output is JSON");
 
     assert_eq!(payload["total"], 501);
-    assert_eq!(payload["has_ocr"], 501);
-    assert_eq!(payload["missing_ocr"], 0);
+    assert_eq!(payload["hasOcr"], 501);
+    assert_eq!(payload["missingOcr"], 0);
     assert_eq!(
         client.calls,
         vec![
@@ -1658,9 +1658,9 @@ fn rag_status_prefers_xdg_data_home_over_home_default_path() {
     let payload: Value = serde_json::from_str(&out).expect("status output is JSON");
 
     assert_eq!(payload["status"], "indexed");
-    assert_eq!(payload["total_chunks"], 3);
-    assert_eq!(payload["total_items"], 2);
-    assert_eq!(payload["store_path"], store_path.to_string_lossy().as_ref());
+    assert_eq!(payload["totalChunks"], 3);
+    assert_eq!(payload["totalItems"], 2);
+    assert_eq!(payload["storePath"], store_path.to_string_lossy().as_ref());
     assert!(client.calls.is_empty(), "rag status should not call RPC");
 
     match original_home {
@@ -1715,7 +1715,7 @@ fn rag_status_resolves_collection_key_to_existing_named_store() {
 
     assert_eq!(payload["status"], "indexed");
     assert_eq!(payload["collection"], "Research");
-    assert_eq!(payload["store_path"], store_path.to_string_lossy().as_ref());
+    assert_eq!(payload["storePath"], store_path.to_string_lossy().as_ref());
     assert_eq!(client.calls, vec![("collections.tree".to_string(), None)]);
 
     match original_home {
@@ -1775,11 +1775,11 @@ fn rag_status_detects_hidden_attachment_sidecar_chunks() {
 
     assert_eq!(payload["status"], "indexed");
     assert_eq!(payload["collection"], "Research");
-    assert_eq!(payload["total_items"], 1);
-    assert_eq!(payload["total_chunks"], 2);
+    assert_eq!(payload["totalItems"], 1);
+    assert_eq!(payload["totalChunks"], 2);
     // No embedding vectors on disk => semantic retrieval unavailable.
-    assert_eq!(payload["total_vectors"], 0);
-    assert_eq!(payload["embeddings_available"], false);
+    assert_eq!(payload["totalVectors"], 0);
+    assert_eq!(payload["embeddingsAvailable"], false);
     assert_eq!(
         client.calls,
         vec![
@@ -1860,8 +1860,8 @@ fn rag_status_sidecar_accepts_collection_key() {
 
     assert_eq!(payload["status"], "indexed");
     assert_eq!(payload["collection"], "COL1");
-    assert_eq!(payload["total_chunks"], 1);
-    assert_eq!(payload["embeddings_available"], false);
+    assert_eq!(payload["totalChunks"], 1);
+    assert_eq!(payload["embeddingsAvailable"], false);
 
     match original_home {
         Some(value) => std::env::set_var("HOME", value),
@@ -1962,8 +1962,8 @@ fn rag_search_local_lexical_reports_mode_and_score_kind() {
     assert_eq!(payload["mode"], "lexical", "actual retrieval path is lexical");
     let items = payload["items"].as_array().expect("items array");
     assert!(!items.is_empty(), "BM25 should return the matching chunk");
-    assert_eq!(items[0]["score_kind"], "bm25");
-    assert_eq!(items[0]["item_key"], "ITEM1");
+    assert_eq!(items[0]["scoreKind"], "bm25");
+    assert_eq!(items[0]["itemKey"], "ITEM1");
 
     let _ = fs::remove_dir_all(root);
 }
@@ -2025,8 +2025,8 @@ fn rag_search_dense_mode_falls_back_to_lexical_without_vectors() {
     );
     let items = payload["items"].as_array().expect("items array");
     assert!(!items.is_empty(), "lexical fallback must return the matching chunk");
-    assert_eq!(items[0]["score_kind"], "bm25");
-    assert_eq!(items[0]["item_key"], "ITEM1");
+    assert_eq!(items[0]["scoreKind"], "bm25");
+    assert_eq!(items[0]["itemKey"], "ITEM1");
 
     let _ = fs::remove_dir_all(root);
 }

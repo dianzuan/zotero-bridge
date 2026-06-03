@@ -165,8 +165,8 @@ fn chunk_to_cli_value(
         .filter_map(|key| blocks.iter().find(|block| &block.block_key == key))
         .map(|block| {
             serde_json::json!({
-                "block_key": block.block_key,
-                "page_idx": block.page_idx,
+                "blockKey": block.block_key,
+                "pageIdx": block.page_idx,
                 "bbox": block.bbox.map(|bbox| bbox.iter().map(|n| {
                     if n.fract() == 0.0 {
                         Value::from(*n as i64)
@@ -178,15 +178,15 @@ fn chunk_to_cli_value(
         })
         .collect::<Vec<_>>();
     Ok(serde_json::json!({
-        "chunk_key": chunk.chunk_key,
-        "item_key": chunk.item_key,
-        "attachment_key": chunk.attachment_key,
-        "block_keys": chunk.block_keys,
-        "section_path": chunk.section_path,
+        "chunkKey": chunk.chunk_key,
+        "itemKey": chunk.item_key,
+        "attachmentKey": chunk.attachment_key,
+        "blockKeys": chunk.block_keys,
+        "sectionPath": chunk.section_path,
         "text": chunk.text,
-        "page_start": chunk.page_start,
-        "page_end": chunk.page_end,
-        "evidence_refs": refs,
+        "pageStart": chunk.page_start,
+        "pageEnd": chunk.page_end,
+        "evidenceRefs": refs,
     }))
 }
 
@@ -444,7 +444,7 @@ pub(crate) enum RagCommand {
         #[arg(long)]
         collection: String,
     },
-    /// Emit academic-zh retrieval hits with item_key/title/text provenance.
+    /// Emit academic-zh retrieval hits with itemKey/title/text provenance.
     #[command(name = "search")]
     Search {
         query: String,

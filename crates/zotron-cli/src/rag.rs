@@ -585,6 +585,32 @@ pub(crate) fn embed_query_text(
         .ok_or_else(|| "no embedding vector returned".to_string())
 }
 
+/// Remap a single XPI-serialized hit object's snake_case keys to the camelCase
+/// convention the local retrieval path emits, so fallback output matches.
+fn camelize_xpi_hit(hit: &Value) -> Value {
+    let Some(obj) = hit.as_object() else {
+        return hit.clone();
+    };
+    let mut out = serde_json::Map::with_capacity(obj.len());
+    for (key, value) in obj {
+        let mapped = match key.as_str() {
+            "item_key" => "itemKey",
+            "chunk_key" => "chunkKey",
+            "attachment_key" => "attachmentKey",
+            "page_range" => "pageRange",
+            "section_path" => "sectionPath",
+            "score_kind" => "scoreKind",
+            "block_key" => "blockKey",
+            "block_keys" => "blockKeys",
+            "page_idx" => "pageIdx",
+            "evidence_refs" => "evidenceRefs",
+            other => other,
+        };
+        out.insert(mapped.to_string(), value.clone());
+    }
+    Value::Object(out)
+}
+
 pub(crate) fn run_rag_search_xpi_fallback(
     client: &mut impl RpcCaller,
     options: &RagSearchOptions,
@@ -611,7 +637,10 @@ pub(crate) fn run_rag_search_xpi_fallback(
         .get("hits")
         .and_then(Value::as_array)
         .cloned()
-        .unwrap_or_default();
+        .unwrap_or_default()
+        .into_iter()
+        .map(|hit| camelize_xpi_hit(&hit))
+        .collect::<Vec<_>>();
     if options.output == "jsonl" {
         let mut out = String::new();
         for hit in &hits {
@@ -813,20 +842,20 @@ fn enrich_hits(
             .unwrap_or_default();
         let year = meta.get("date").and_then(Value::as_str).unwrap_or("");
         let mut hit = serde_json::json!({
-            "item_key": chunk.item_key,
-            "chunk_key": chunk.chunk_key,
+            "itemKey": chunk.item_key,
+            "chunkKey": chunk.chunk_key,
             "title": title,
             "authors": authors,
             "year": year,
             "text": chunk.text,
-            "page_range": chunk.page_range,
-            "section_path": chunk.section_path,
+            "pageRange": chunk.page_range,
+            "sectionPath": chunk.section_path,
             "score": score,
-            "score_kind": score_kind,
+            "scoreKind": score_kind,
         });
         if include_fulltext_spans {
             hit.as_object_mut().unwrap().insert(
-                "attachment_key".to_string(),
+                "attachmentKey".to_string(),
                 Value::String(chunk.attachment_key.clone()),
             );
         }
@@ -1119,11 +1148,11 @@ pub(crate) fn rag_status_from_store(collection: &str, store_path: &Path) -> Resu
     Ok(serde_json::json!({
         "status": "indexed",
         "collection": store.get("collection").and_then(Value::as_str).unwrap_or(collection),
-        "collection_key": store.get("collection_key").cloned().unwrap_or(Value::Null),
+        "collectionKey": store.get("collection_key").cloned().unwrap_or(Value::Null),
         "model": store.get("model").cloned().unwrap_or(Value::String("unknown".to_string())),
-        "total_chunks": chunks.len(),
-        "total_items": item_keys.len(),
-        "store_path": store_path.to_string_lossy(),
+        "totalChunks": chunks.len(),
+        "totalItems": item_keys.len(),
+        "storePath": store_path.to_string_lossy(),
     }))
 }
 
@@ -1180,24 +1209,24 @@ pub(crate) fn rag_status_from_zotero_sidecars(
         return Ok(serde_json::json!({
             "status": "not indexed",
             "collection": collection,
-            "total_items": items.len(),
-            "indexed_items": 0,
+            "totalItems": items.len(),
+            "indexedItems": 0,
         }));
     }
 
     Ok(serde_json::json!({
         "status": "indexed",
         "collection": collection,
-        "total_chunks": total_chunks,
-        "total_items": indexed_items,
-        "collection_items": items.len(),
+        "totalChunks": total_chunks,
+        "totalItems": indexed_items,
+        "collectionItems": items.len(),
         // Whether semantic (dense) retrieval is actually available for this
         // scope+provider — lets a user tell before searching whether they'll get
         // hybrid retrieval or just lexical BM25.
-        "total_vectors": total_vectors,
-        "embeddings_available": total_vectors > 0,
-        "embedding_provider": emb_provider,
-        "embedding_model": emb_model,
+        "totalVectors": total_vectors,
+        "embeddingsAvailable": total_vectors > 0,
+        "embeddingProvider": emb_provider,
+        "embeddingModel": emb_model,
         "source": "zotero-sidecar",
     }))
 }

@@ -399,12 +399,12 @@ pub(crate) fn run_ocr_process_command(
             Ok(serde_json::json!({
                 "provider": spec.provider_key,
                 "status": "indexed",
-                "item_key": options.parent,
-                "attachment_key": attachment,
+                "itemKey": options.parent,
+                "attachmentKey": attachment,
                 "embeddings": embedding_count,
-                "attachment_path": attachment_path,
-                "storage_dir": storage_dir,
-                "task_id": source.task_id,
+                "attachmentPath": attachment_path,
+                "storageDir": storage_dir,
+                "taskId": source.task_id,
                 "state": source.state,
                 "blocks": artifacts.block_count,
                 "chunks": artifacts.chunk_count,
@@ -544,11 +544,11 @@ pub(crate) fn run_ocr_process_sync(
     Ok(serde_json::json!({
         "provider": provider,
         "status": "indexed",
-        "item_key": options.parent,
-        "attachment_key": attachment_key,
+        "itemKey": options.parent,
+        "attachmentKey": attachment_key,
         "embeddings": embedding_count,
-        "attachment_path": attachment_path,
-        "storage_dir": storage_dir,
+        "attachmentPath": attachment_path,
+        "storageDir": storage_dir,
         "blocks": blocks.len(),
         "chunks": chunks.len(),
         "artifacts": artifacts,
@@ -641,8 +641,8 @@ pub(crate) fn run_ocr_reindex_command(
         let embedding_count = embed_sidecar_chunks(client, storage_dir, item_key, att_key, &chunks);
 
         reindexed.push(serde_json::json!({
-            "item_key": item_key,
-            "attachment_key": att_key,
+            "itemKey": item_key,
+            "attachmentKey": att_key,
             "chunks": chunks.len(),
             "embeddings": embedding_count,
         }));
@@ -1391,8 +1391,8 @@ pub(crate) fn write_sidecar_bytes(
         .map_err(|err| format!("write sidecar {:?}: {err}", kind))?;
     Ok(serde_json::json!({
         "kind": kind,
-        "relative_path": record.relative_path,
-        "absolute_path": record.absolute_path,
+        "relativePath": record.relative_path,
+        "absolutePath": record.absolute_path,
     }))
 }
 
@@ -1409,8 +1409,8 @@ pub(crate) fn write_extra_sidecar_bytes(
         .map_err(|err| format!("write sidecar {}: {err}", absolute_path.display()))?;
     Ok(serde_json::json!({
         "kind": "ocr_raw_zip",
-        "relative_path": relative_path,
-        "absolute_path": absolute_path,
+        "relativePath": relative_path,
+        "absolutePath": absolute_path,
     }))
 }
 
@@ -1434,9 +1434,9 @@ pub(crate) fn copy_mineru_assets(result_dir: &Path, storage_dir: &Path) -> Resul
             )
         })?;
         images.push(serde_json::json!({
-            "source_relative": relative,
-            "sidecar_relative": PathBuf::from(".zotron").join("ocr").join(&relative),
-            "absolute_path": destination,
+            "sourceRelative": relative,
+            "sidecarRelative": PathBuf::from(".zotron").join("ocr").join(&relative),
+            "absolutePath": destination,
         }));
     }
     Ok(serde_json::json!({
@@ -1501,9 +1501,9 @@ pub(crate) fn ocr_async_task_result(provider: &str, payload: &Value) -> Option<V
     Some(serde_json::json!({
         "provider": provider,
         "status": "submitted",
-        "task_id": task_id,
+        "taskId": task_id,
         "state": data.get("state").and_then(Value::as_str).unwrap_or("submitted"),
-        "result_url": data.get("full_zip_url").or_else(|| data.get("markdown_url")).cloned(),
+        "resultUrl": data.get("full_zip_url").or_else(|| data.get("markdown_url")).cloned(),
         "raw": payload,
     }))
 }
@@ -1608,8 +1608,8 @@ pub(crate) fn run_ocr_status_command(
     Ok(serde_json::json!({
         "collection": collection,
         "total": items.len(),
-        "has_ocr": has_ocr,
-        "missing_ocr": items.len() - has_ocr,
+        "hasOcr": has_ocr,
+        "missingOcr": items.len() - has_ocr,
     }))
 }
 
