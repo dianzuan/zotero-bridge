@@ -16,7 +16,6 @@ pub(crate) struct MineruResultSource {
 
 pub(crate) struct PersistedOcrArtifacts {
     pub(crate) block_count: usize,
-    pub(crate) chunk_count: usize,
     pub(crate) artifacts: Vec<Value>,
     pub(crate) chunks: Vec<zotron_types::StructureChunk>,
 }
@@ -483,7 +482,6 @@ pub(crate) fn persist_mineru_result_sidecars(
 
     Ok(PersistedOcrArtifacts {
         block_count: blocks.len(),
-        chunk_count: chunks.len(),
         artifacts,
         chunks,
     })
