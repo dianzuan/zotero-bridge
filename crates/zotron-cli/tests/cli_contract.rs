@@ -1431,6 +1431,22 @@ fn ocr_status_fixture_matches_python_cli_behavior() {
     }
 }
 
+/// Create a chunks artifact in the legacy external-store layout
+/// (`items/<item>/attachments/<att>/zotron-chunks.jsonl`). This layout is still
+/// detected by the production `machine_artifact_exists_for_item` reader; the
+/// matching writer was removed as dead code, so tests build the file directly.
+fn write_legacy_chunks_artifact(store: &std::path::Path, item_key: &str, attachment_key: &str) {
+    let path = store
+        .join("items")
+        .join(item_key)
+        .join("attachments")
+        .join(attachment_key)
+        .join("zotron-chunks.jsonl");
+    fs::create_dir_all(path.parent().expect("legacy artifact path has parent"))
+        .expect("create legacy artifact dir");
+    fs::write(&path, br#"{"chunk_key":"c0","text":"evidence"}\n"#).expect("write legacy artifact");
+}
+
 #[test]
 fn ocr_status_prefers_external_artifact_store_without_attachment_rpc() {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
@@ -1439,14 +1455,7 @@ fn ocr_status_prefers_external_artifact_store_without_attachment_rpc() {
         std::env::temp_dir().join(format!("zotron-cli-artifact-store-{}", std::process::id()));
     let _ = fs::remove_dir_all(&store);
     std::env::set_var("ZOTRON_ARTIFACT_STORE", &store);
-    zotron_types::write_legacy_machine_artifact(
-        &store,
-        "ITEM11",
-        "ATT11",
-        zotron_types::MachineArtifactKind::Chunks,
-        br#"{"chunk_key":"ATT11:c0","text":"evidence"}\n"#,
-    )
-    .expect("write external chunks artifact");
+    write_legacy_chunks_artifact(&store, "ITEM11", "ATT11");
 
     let mut client = FakeClient::with_responses(vec![
         json!([{"key": "COL1", "name": "Research", "children": []}]),
@@ -1566,25 +1575,11 @@ fn ocr_status_paginates_collection_items_before_counting_ocr() {
     let first_page = (0..500)
         .map(|idx| {
             let item_key = format!("ITEM{idx:03}");
-            zotron_types::write_legacy_machine_artifact(
-                &store,
-                &item_key,
-                &format!("ATT{idx:03}"),
-                zotron_types::MachineArtifactKind::Chunks,
-                br#"{"chunk_key":"c0","text":"evidence"}\n"#,
-            )
-            .unwrap_or_else(|err| panic!("write artifact for {item_key}: {err}"));
+            write_legacy_chunks_artifact(&store, &item_key, &format!("ATT{idx:03}"));
             json!({"key": item_key, "title": format!("Paper {idx}")})
         })
         .collect::<Vec<_>>();
-    zotron_types::write_legacy_machine_artifact(
-        &store,
-        "ITEM500",
-        "ATT500",
-        zotron_types::MachineArtifactKind::Chunks,
-        br#"{"chunk_key":"c0","text":"evidence"}\n"#,
-    )
-    .expect("write last page artifact");
+    write_legacy_chunks_artifact(&store, "ITEM500", "ATT500");
 
     let mut client = FakeClient::with_responses(vec![
         json!([{"key": "COL1", "name": "Research", "children": []}]),
