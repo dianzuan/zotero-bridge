@@ -1,6 +1,6 @@
 # Zotron CLI Command Reference
 
-Generated: 2026-05-30
+Generated: 2026-06-03
 
 ## zotron ping
 ```
@@ -61,8 +61,7 @@ Commands:
   schema              Show item type schema. Without --type, lists all types.
                       With --type, shows fields and creator types
   current-collection  Get the currently selected Zotero collection (or null)
-  list-methods        List all RPC methods exposed by the XPI
-  describe            Describe one or all RPC methods (schema / signatures)
+  methods             List RPC methods, or describe a specific method
 ```
 
 ## zotron search
@@ -102,8 +101,7 @@ Inspect and manage Zotero items
 Usage: zotron items <COMMAND>
 
 Commands:
-  add               Add an item by DOI, ISBN, URL, or local file
-  create            Create a new item of the given type
+  add               Add an item by DOI, ISBN, URL, local file, or manual entry (--type + --field)
   update            Update fields on an existing item
   delete            Permanently delete an item
   trash             Move one or more items to trash
@@ -115,10 +113,16 @@ Commands:
   list              List items in the library with optional sorting and pagination
   find-duplicates   Run Zotero's duplicate scan and print groups
   recent            List recently added or modified items
-  fulltext          Retrieve the full-text content of an item's attachment
+  fulltext          Retrieve the full-text content of an item's attachment. Prefers the clean OCR sidecar text, falling back to Zotero's built-in extraction
   related           List items related to the given item
   citation-key      Get the citation key for an item
+  path              Get the local filesystem path of an item's PDF attachment
+  attachments       List attachments belonging to an item
+  find-pdfs         Batch find missing PDFs in a collection via Zotero's resolver chain
 ```
+
+The `fulltext` command takes an optional `--ocr` flag that forces OCR-only output
+(errors if the item has no OCR sidecar, with no Zotero fallback).
 
 ## zotron collections
 ```
@@ -152,22 +156,6 @@ Commands:
   update  Update the content of an existing note
   delete  Delete a note by key
   search  Search notes by text content
-```
-
-## zotron attachments
-```
-Inspect Zotero attachments
-
-Usage: zotron attachments <COMMAND>
-
-Commands:
-  list      List attachments belonging to a parent item
-  get       Get a single attachment by key
-  fulltext  Get full-text content of an attachment
-  path      Get the local filesystem path of an attachment
-  add       Attach a local file or remote URL to an item
-  delete    Delete an attachment
-  find-pdf  Trigger Zotero's Find Available PDF for a parent item
 ```
 
 ## zotron settings
@@ -209,7 +197,7 @@ Options:
       --format <FORMAT>          Output format: bibtex, ris, csl-json, bibliography [default: bibtex]
       --collection <COLLECTION>  Export all items from this collection (name or key)
       --style <STYLE>            Citation style URL (only for bibliography format)
-                                 [default: http://www.zotero.org/styles/gb-t-7714-2015-numeric]
+                                 [default: http://www.zotero.org/styles/apa]
       --html                     Output HTML instead of plain text (only for bibliography format)
       --url <URL>                [default: http://127.0.0.1:23119/zotron/rpc]
 ```
@@ -221,9 +209,11 @@ List, create, and delete PDF annotations
 Usage: zotron annotations <COMMAND>
 
 Commands:
-  list    List annotations on a PDF attachment
-  create  Create a new annotation on a PDF attachment
-  delete  Delete an annotation by key
+  list          List annotations on a PDF. Accepts an item key (auto-resolves to PDF) or attachment key
+  create        Create a new annotation on a PDF. Accepts an item key (auto-resolves to PDF) or attachment key
+  create-batch  Batch-create annotations from a JSON array on stdin or --file
+  locate        Locate a text quote in a PDF without creating an annotation. Returns page index and rects if found
+  delete        Delete an annotation by key
 
 Examples:
   zotron annotations list YR5BUGHG
@@ -365,14 +355,17 @@ Retrieval pipeline settings (Zotero → Settings → Zotron panel):
 - `rerank.scoreFloor` (default 0.1) — drop reranked hits below this score
 - `rerank.gapThreshold` (default 0.15) — trim the tail at the largest score gap
 
-## zotron find-pdfs
+## zotron sources
 ```
-Batch fill missing PDFs in a collection via Zotero's resolver chain
+Discover and manage source plugins (`zotron-*` on PATH)
 
-Usage: zotron find-pdfs [OPTIONS] --collection <COLLECTION>
+Usage: zotron sources <COMMAND>
 
-Options:
-      --collection <COLLECTION>
-      --limit <LIMIT>            [default: 0]
-      --url <URL>                [default: http://127.0.0.1:23119/zotron/rpc]
+Commands:
+  list  List all discovered source plugins on PATH (the default action)
+  sync  Symlink plugin skills into the Claude Code plugin's skills directory
 ```
+
+External academic sources are standalone `zotron-*` binaries on PATH. Core
+discovers them via `zotron sources list`; each implements a `manifest`
+subcommand. Plugins emit Zotero JSON to stdout, piped to `zotron push`.

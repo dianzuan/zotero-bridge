@@ -1,21 +1,16 @@
 # zotron API Stability
 
-This document is the contract for external consumers of the current
-`rust-migration` branch.
+This document is the contract for external consumers of `zotron` on `main`.
 
 ## Product Surface
 
 The supported product stack is:
 
-- Rust CLI/crates for agent-facing commands and provider integration.
-- Zotero-side JavaScript/XPI JSON-RPC bridge for Zotero operations.
-- Claude/Codex skill wrappers that call the Rust CLI.
+- The `zotron` CLI/crates for agent-facing commands and provider integration.
+- Zotero-side XPI JSON-RPC bridge for Zotero operations.
+- Claude/Codex skill wrappers that call the `zotron` CLI.
 
-Python code in this repository is legacy reference material. Do not treat the
-Python CLI as the current product contract unless a file explicitly says it is
-a temporary compatibility shim.
-
-## Rust CLI
+## CLI
 
 The user-facing command is a single binary:
 
@@ -30,12 +25,11 @@ zotron ocr ...
 zotron rag ...
 ```
 
-Standalone `zotron-ocr`, `zotron-rag`, `zotero-ocr`, and `zotero-rag` names are
-historical Python/Bash references, not the Rust product surface.
+OCR and RAG are subcommand groups of `zotron`, not standalone binaries.
 
 ### Stable Command Groups
 
-The branch currently exposes these command groups:
+The product currently exposes these command groups:
 
 - `zotron ping`
 - `zotron rpc`
@@ -45,14 +39,16 @@ The branch currently exposes these command groups:
 - `zotron items ...`
 - `zotron collections ...`
 - `zotron notes ...`
-- `zotron attachments ...`
 - `zotron settings ...`
 - `zotron tags ...`
 - `zotron export ...`
 - `zotron annotations ...`
 - `zotron ocr ...`
 - `zotron rag ...`
-- `zotron find-pdfs`
+- `zotron sources ...`
+
+Attachment operations (`fulltext`, `path`, `attachments`, `find-pdfs`) are
+subcommands of `zotron items`.
 
 New flags and subcommands may be added. Existing command names and flag
 semantics should not be removed or changed without a major-version decision.
@@ -66,13 +62,13 @@ external pipe:
 zotron collections get-items "test" | jq '.items[].title'
 ```
 
-The Python-era embedded `--jq` convenience is not part of the Rust contract.
+An embedded `--jq` convenience is not part of the contract.
 
 ### Collection-Scoped Search
 
-`zotron search quick --collection NAME QUERY` is supported as a convenience
-path for collection-limited metadata search. `zotron collections get-items
-NAME` remains the direct command for listing collection members.
+`zotron search QUERY --collection NAME` is supported as a convenience path for
+collection-limited metadata search. `zotron collections get-items NAME` remains
+the direct command for listing collection members.
 
 ## JSON Contract
 
@@ -137,13 +133,13 @@ storage/<attachment-key>/.zotron/
   embeddings/vectors.jsonl
 ```
 
-`zotron ocr parse-pdf` writes provider raw output, normalized blocks,
+`zotron ocr process` writes provider raw output, normalized blocks,
 structure-first chunks, Markdown preview, and assets when the provider returns
 them. Markdown is a convenience artifact; blocks/chunks are the evidence source
 of truth.
 
-`zotron rag hits` returns evidence spans for agents. Zotron does not provide an
-`ask-pdf` LLM service; Codex/Claude perform reasoning from returned evidence.
+`zotron rag search` returns evidence spans for agents. Zotron does not provide
+an `ask-pdf` LLM service; Codex/Claude perform reasoning from returned evidence.
 
 ## Rust Crates
 
@@ -168,5 +164,4 @@ Zotron follows semver for the Rust/XPI product surface:
 - Minor: new commands, flags, providers, or fields.
 - Patch: bug fixes and documentation updates that preserve behavior.
 
-The XPI bridge and Rust CLI should be tested together. Python reference code
-does not define version lockstep for the current product.
+The XPI bridge and `zotron` CLI should be tested together.

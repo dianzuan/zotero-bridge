@@ -15,6 +15,10 @@ If the content is non-empty and readable, **skip OCR**. OCR is needed when:
 - The fulltext is garbled (common with Chinese/CJK PDFs)
 - You need structured blocks/chunks for RAG with page and bbox provenance
 
+After OCR, `zotron items fulltext YR5BUGHG` automatically returns the clean OCR
+text instead of Zotero's extraction (check the `source` field). Use
+`zotron items fulltext YR5BUGHG --ocr` to require OCR text and error if absent.
+
 ## Core usage
 
 ```bash

@@ -7,7 +7,7 @@
 | `zotron ping` | 检查 Zotero 是否运行且 XPI 已加载 |
 | `zotron rpc <方法> [JSON参数]` | 通用 RPC 逃生舱，可调用任意 XPI 方法 |
 | `zotron push <JSON文件>` | 推送准备好的 JSON 数据到 Zotero |
-| `zotron find-pdfs --collection <名称>` | 批量为集合内缺失 PDF 的论文查找并下载 PDF |
+| `zotron sources` | 发现并管理 PATH 上的 `zotron-*` 源插件 |
 
 ---
 
@@ -45,9 +45,12 @@ zotron search "就业" --collection "数字经济" --author "张三" --after 202
 | `items get <key>` | — | 获取单个条目的完整元数据 |
 | `items list` | `--limit` `--offset` `--sort` `--direction` `--trash` | 列出库中所有条目。`--trash` 列出回收站条目 |
 | `items recent` | `--limit` `--offset` `--type (added/modified)` | 最近添加/修改的条目 |
-| `items fulltext <key>` | — | 获取条目 PDF 附件的全文（自动查找附件） |
+| `items fulltext <key>` | `--ocr` | 获取条目 PDF 附件的全文。优先返回干净的 OCR sidecar 文本，无 OCR 时回退 Zotero 内置抽取。`--ocr` 强制只用 OCR（无则报错） |
 | `items related <key>` | — | 列出相关条目 |
 | `items citation-key <key>` | — | 获取引用 key |
+| `items path <key>` | — | 获取条目 PDF 附件的本地文件路径 |
+| `items attachments <key>` | `--limit` `--offset` | 列出条目的附件 |
+| `items find-pdfs --collection <名称>` | `--limit` | 批量为集合内缺失 PDF 的条目查找 PDF |
 | `items find-duplicates` | — | 查找重复条目 |
 
 ### 添加
@@ -58,7 +61,7 @@ zotron search "就业" --collection "数字经济" --author "张三" --after 202
 | `items add --isbn <ISBN>` | `--collection` `--dry-run` | 通过 ISBN 添加书籍 |
 | `items add --from-url <URL>` | `--collection` `--dry-run` | 通过网页 URL 添加 |
 | `items add --file <路径>` | `--collection` `--dry-run` | 从本地文件添加 |
-| `items create` | `--type` `--field "key=value"` `--dry-run` | 手动创建条目 |
+| `items add --type <类型> --field "key=value"` | `--collection` `--dry-run` | 手动创建条目 |
 
 ### 修改
 
@@ -104,18 +107,16 @@ zotron search "就业" --collection "数字经济" --author "张三" --after 202
 
 ---
 
-## attachments — 附件
+## sources — 源插件
 
-| 命令 | 参数 | 说明 |
-|------|------|------|
-| `attachments list --parent <item key>` | `--limit` `--offset` | 列出条目的附件 |
-| `attachments get <attachment key>` | — | 获取附件元数据 |
-| `attachments fulltext <attachment key>` | — | 获取附件全文 |
-| `attachments path <attachment key>` | — | 获取附件本地文件路径 |
-| `attachments add --parent <key> --path <文件>` | `--title` `--dry-run` | 附加本地文件 |
-| `attachments add --parent <key> --from-url <URL>` | `--title` `--dry-run` | 附加远程文件 |
-| `attachments delete <key>` | `--dry-run` | 删除附件 |
-| `attachments find-pdf --parent <key>` | — | 触发 Zotero 查找可用 PDF |
+外部学术源是 PATH 上独立的 `zotron-*` 二进制，核心通过 `zotron sources list` 发现，每个实现 `manifest` 子命令。插件把 Zotero JSON 输出到 stdout，管道给 `zotron push`。
+
+| 命令 | 说明 |
+|------|------|
+| `sources list` | 列出 PATH 上发现的所有源插件（默认动作） |
+| `sources sync` | 把插件 skill 软链接进 Claude Code 插件的 skills 目录 |
+
+> 附件操作是 `items` 的子命令：`items attachments <key>`、`items path <key>`、`items fulltext <key>`、`items find-pdfs`。
 
 ---
 
@@ -135,9 +136,11 @@ zotron search "就业" --collection "数字经济" --author "张三" --after 202
 
 | 命令 | 参数 | 说明 |
 |------|------|------|
-| `annotations list <item/attachment key>` | — | 列出 PDF 上的批注（自动解析 item key） |
+| `annotations list <item/attachment key>` | `--context` | 列出 PDF 上的批注（自动解析 item key）。`--context N` 附带每条批注前后 N 字符的上下文 |
 | `annotations create <item/attachment key> --quote "文字"` | `--page` `--comment` `--color` | 按引用文字自动定位并高亮，无需打开 PDF（默认 type=highlight） |
 | `annotations create <item/attachment key> --type <类型> --position <JSON>` | `--sort-index` `--text` `--comment` `--color` `--dry-run` | 手动指定位置创建批注 |
+| `annotations create-batch <item/attachment key>` | `--file` | 从 stdin 或 `--file` 的 JSON 数组批量创建批注。每条：`{"quote","color","comment","type"}` |
+| `annotations locate <item/attachment key> --quote "文字"` | — | 在 PDF 中定位引用文字但不创建批注，返回页码和矩形框 |
 | `annotations delete <annotation key>` | `--dry-run` | 删除批注 |
 
 ---
@@ -149,7 +152,7 @@ zotron search "就业" --collection "数字经济" --author "张三" --after 202
 | `export <key1> <key2> ... --format bibtex` | — | 导出 BibTeX（默认格式） |
 | `export <key1> <key2> ... --format ris` | — | 导出 RIS |
 | `export <key1> <key2> ... --format csl-json` | — | 导出 CSL-JSON |
-| `export <key1> <key2> ... --format bibliography` | `--style` `--html` | 导出格式化参考文献。默认 GB/T 7714 |
+| `export <key1> <key2> ... --format bibliography` | `--style` `--html` | 导出格式化参考文献。`--style` 默认 APA（`http://www.zotero.org/styles/apa`），可换 GB/T 7714 等样式 URL |
 | `export --collection <名称> --format bibtex` | — | 导出整个集合 |
 
 ---
@@ -219,8 +222,7 @@ chunk sidecar 带有 `schema_version` 头行。`--stale-only` 读取该头行并
 | `system schema` | — | 列出所有条目类型 |
 | `system schema --type <类型>` | — | 列出某类型的字段和创建者类型 |
 | `system current-collection` | — | 获取当前选中的集合 |
-| `system list-methods` | — | 列出所有 RPC 方法 |
-| `system describe [方法名]` | — | 描述某个/所有 RPC 方法 |
+| `system methods [方法名]` | — | 列出所有 RPC 方法；带方法名则描述该方法 |
 
 ---
 
