@@ -170,7 +170,7 @@ fn push_strips_embedded_pdf_and_attaches_local_path() {
 
     let payload: Value = serde_json::from_str(&out).expect("push output is JSON");
     assert_eq!(payload["status"], "created");
-    assert_eq!(payload["pdf_attached"], true);
+    assert_eq!(payload["pdfAttached"], true);
 
     let methods: Vec<&str> = client.calls.iter().map(|(m, _)| m.as_str()).collect();
     assert_eq!(

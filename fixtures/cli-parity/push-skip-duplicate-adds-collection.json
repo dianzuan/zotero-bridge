@@ -48,6 +48,6 @@
   },
   "expect": {
     "exitCode": 0,
-    "stdout": "{\"status\":\"skipped_duplicate\",\"zoteroItemKey\":\"DUP123\",\"pdf_attached\":false,\"pdf_size_bytes\":0,\"error\":null}\n"
+    "stdout": "{\"status\":\"skipped_duplicate\",\"zoteroItemKey\":\"DUP123\",\"pdfAttached\":false,\"pdfSizeBytes\":0,\"error\":null}\n"
   }
 }
