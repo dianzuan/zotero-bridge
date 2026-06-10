@@ -489,8 +489,8 @@ fn push_result(
     serde_json::json!({
         "status": status,
         "zoteroItemKey": zotero_item_key,
-        "pdf_attached": pdf_attached,
-        "pdf_size_bytes": pdf_size_bytes,
+        "pdfAttached": pdf_attached,
+        "pdfSizeBytes": pdf_size_bytes,
         "error": error,
     })
 }
