@@ -113,6 +113,13 @@ function gp(key) {
 }
 
 function el(id) { return document.getElementById(id); }
+
+function openManage(slotId) {
+  var args = { slotId: slotId };
+  Zotero.getMainWindow().openDialog(
+    "chrome://zotron/content/manage.xhtml", "_blank",
+    "chrome,centerscreen,resizable,dialog=no", args);
+}
 function se(id, val) { var node = el(id); if (node) node.value = val || ""; }
 function setAttr(id, attr, val) { var node = el(id); if (node) node.setAttribute(attr, val); }
 function setText(id, val) { var node = el(id); if (node) node.textContent = val; }
@@ -438,6 +445,11 @@ function init() {
     ragMode.value = gp("rag.retrievalMode") || "hybrid";
     ragMode.addEventListener("command", function() { sp("rag.retrievalMode", ragMode.value); });
   }
+
+  var tOcr = el("zotron-temp-ocr"), tEmb = el("zotron-temp-emb"), tRr = el("zotron-temp-rerank");
+  if (tOcr) tOcr.addEventListener("command", function () { openManage("ocr"); });
+  if (tEmb) tEmb.addEventListener("command", function () { openManage("embedding"); });
+  if (tRr) tRr.addEventListener("command", function () { openManage("rerank"); });
 }
 
 if (document.getElementById("zotron-ocr-provider")) { init(); }

@@ -97,7 +97,7 @@ export async function onStartup() {
     Zotero.PreferencePanes.register({
       pluginID: "zotron@diamondrill",
       src: rootURI + "content/preferences.xhtml",
-      scripts: [rootURI + "content/preferences.js"],
+      scripts: [rootURI + "content/capabilities.js", rootURI + "content/preferences.js"],
       label: "Zotron",
       image: rootURI + "content/icons/icon.png",
     });

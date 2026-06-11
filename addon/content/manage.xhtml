@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<?xml-stylesheet href="chrome://global/skin/" type="text/css"?>
+<?xml-stylesheet href="chrome://zotero/skin/zotero.css" type="text/css"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml"
+      xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+      windowtype="zotron:manage">
+  <head>
+    <title>Zotron</title>
+    <meta charset="utf-8" />
+    <style>
+      html, body { margin: 0; min-width: 460px; }
+      body { padding: 14px 16px; font: menu; }
+      h2 { margin: 0 0 12px 0; font-size: 14px; }
+      .row { display: flex; align-items: center; margin: 6px 0; }
+      .row > label { width: 110px; flex: none; }
+      .row > input, .row > select { flex: 1; }
+      .status { font-size: 11px; color: #888; margin: 2px 0 8px 110px; min-height: 14px; }
+      .src-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+      .src-row > .src-name { width: 110px; flex: none; }
+      .src-row > input { flex: 1; }
+      footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+    </style>
+  </head>
+  <body>
+    <h2 id="manage-title">Zotron</h2>
+    <div id="manage-body"></div>
+    <footer>
+      <button id="manage-save">Save</button>
+      <button id="manage-cancel">Cancel</button>
+    </footer>
+    <script src="chrome://zotron/content/capabilities.js" />
+    <script src="chrome://zotron/content/manage.js" />
+  </body>
+</html>
