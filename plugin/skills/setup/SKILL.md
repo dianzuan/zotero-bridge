@@ -48,9 +48,16 @@ case "$OS" in
 esac
 # Release binaries are versioned (zotron-<version>-<platform>), so resolve the
 # latest tag first, then build the download URL for that exact asset.
-TAG=$(curl -fsSL https://api.github.com/repos/dianzuan/zotron/releases/latest \
-        | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')
-GITHUB_URL="https://github.com/dianzuan/zotron/releases/download/${TAG}/zotron-${TAG#v}-${PLATFORM}"
+# `|| true` + the empty check keep a failed/blocked API call (rate-limit,
+# offline) from aborting the script under `set -e` — we just fall through to
+# the other install methods below.
+TAG=$(curl -fsSL https://api.github.com/repos/dianzuan/zotron/releases/latest 2>/dev/null \
+        | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/' || true)
+if [ -n "$TAG" ]; then
+  GITHUB_URL="https://github.com/dianzuan/zotron/releases/download/${TAG}/zotron-${TAG#v}-${PLATFORM}"
+else
+  GITHUB_URL=""   # tag unresolved — skip the direct download, use fallbacks
+fi
 
 installed=false
 
