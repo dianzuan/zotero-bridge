@@ -151,4 +151,50 @@ describe("settings handler", () => {
       expect(set.secondCall.args).to.deep.equal(["zotron.rag.topK", 7]);
     });
   });
+
+  describe("source keys (SP1)", () => {
+    it("round-trips non-secret source keys and redacts secret ones", async () => {
+      const store = new Map<string, any>();
+      installZotero({
+        Prefs: {
+          get: sinon.stub().callsFake((k: string) => store.get(k)),
+          set: sinon.stub().callsFake((k: string, v: any) => { store.set(k, v); }),
+        },
+      });
+      delete require.cache[require.resolve("../../src/handlers/settings")];
+      const { settingsHandlers } = await import("../../src/handlers/settings");
+
+      await settingsHandlers.setAll({
+        "sources.enabled": "openalex, crossref, core",
+        "source.mailto": "me@example.org",
+        "source.core.apiKey": "core-secret",
+        "source.ads.token": "ads-secret",
+        "source.aminer.apiKey": "aminer-secret",
+      });
+
+      expect(await settingsHandlers.getRaw({ key: "sources.enabled" }))
+        .to.deep.equal({ "sources.enabled": "openalex, crossref, core" });
+      expect(await settingsHandlers.get({ key: "source.mailto" }))
+        .to.deep.equal({ "source.mailto": "me@example.org" });
+
+      expect(await settingsHandlers.get({ key: "source.core.apiKey" }))
+        .to.deep.equal({ "source.core.apiKey": "REDACTED" });
+      expect(await settingsHandlers.getRaw({ key: "source.core.apiKey" }))
+        .to.deep.equal({ "source.core.apiKey": "core-secret" });
+      expect(await settingsHandlers.get({ key: "source.ads.token" }))
+        .to.deep.equal({ "source.ads.token": "REDACTED" });
+      expect(await settingsHandlers.get({ key: "source.aminer.apiKey" }))
+        .to.deep.equal({ "source.aminer.apiKey": "REDACTED" });
+    });
+
+    it("exposes source defaults in getAll when prefs are unset", async () => {
+      installZotero({ Prefs: { get: sinon.stub().returns(undefined) } });
+      delete require.cache[require.resolve("../../src/handlers/settings")];
+      const { settingsHandlers } = await import("../../src/handlers/settings");
+      const all = await settingsHandlers.getAll();
+      expect(all["sources.enabled"]).to.equal("openalex, crossref");
+      expect(all["source.mailto"]).to.equal("");
+      expect(all["source.core.apiKey"]).to.equal("");
+    });
+  });
 });
