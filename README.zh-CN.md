@@ -39,19 +39,19 @@ Zotron 是一个本地 Rust CLI，直接对接 Zotero 内部 JS API——完整�
 
 ### 1. CLI（推荐）
 
-从[最新 release](https://github.com/dianzuan/zotron/releases/latest) 下载你平台的预编译二进制，放到 `~/.local/bin/`（或 `PATH` 上的任意位置），赋予执行权限：
+从[最新 release](https://github.com/dianzuan/zotron/releases/latest) 下载你平台的预编译二进制（文件名形如 `zotron-<版本>-<平台>`），放到 `~/.local/bin/`（或 `PATH` 上的任意位置），赋予执行权限：
 
 | 平台 | 文件 |
 |------|------|
-| Linux x86_64 | `zotron-linux-amd64` |
-| Linux ARM64 | `zotron-linux-arm64` |
-| macOS Intel | `zotron-macos-amd64` |
-| macOS Apple Silicon | `zotron-macos-arm64` |
-| Windows x86_64 | `zotron-windows-amd64.exe` |
+| Linux x86_64 | `zotron-<版本>-linux-amd64` |
+| Linux ARM64 | `zotron-<版本>-linux-arm64` |
+| macOS Intel | `zotron-<版本>-macos-amd64` |
+| macOS Apple Silicon | `zotron-<版本>-macos-arm64` |
+| Windows x86_64 | `zotron-<版本>-windows-amd64.exe` |
 
 ```bash
-chmod +x zotron-linux-amd64
-mv zotron-linux-amd64 ~/.local/bin/zotron
+chmod +x zotron-*-linux-amd64
+mv zotron-*-linux-amd64 ~/.local/bin/zotron
 ```
 
 或从源码编译：`cargo install zotron`

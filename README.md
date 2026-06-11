@@ -39,19 +39,19 @@ Once installed, your agent can:
 
 ### 1. CLI (recommended)
 
-Download the prebuilt binary for your platform from the [latest release](https://github.com/dianzuan/zotron/releases/latest), put it in `~/.local/bin/` (or anywhere on your `PATH`), and make it executable:
+Download the prebuilt binary for your platform from the [latest release](https://github.com/dianzuan/zotron/releases/latest) — assets are named `zotron-<version>-<platform>` — put it in `~/.local/bin/` (or anywhere on your `PATH`), and make it executable:
 
 | Platform | File |
 |----------|------|
-| Linux x86_64 | `zotron-linux-amd64` |
-| Linux ARM64 | `zotron-linux-arm64` |
-| macOS Intel | `zotron-macos-amd64` |
-| macOS Apple Silicon | `zotron-macos-arm64` |
-| Windows x86_64 | `zotron-windows-amd64.exe` |
+| Linux x86_64 | `zotron-<version>-linux-amd64` |
+| Linux ARM64 | `zotron-<version>-linux-arm64` |
+| macOS Intel | `zotron-<version>-macos-amd64` |
+| macOS Apple Silicon | `zotron-<version>-macos-arm64` |
+| Windows x86_64 | `zotron-<version>-windows-amd64.exe` |
 
 ```bash
-chmod +x zotron-linux-amd64
-mv zotron-linux-amd64 ~/.local/bin/zotron
+chmod +x zotron-*-linux-amd64
+mv zotron-*-linux-amd64 ~/.local/bin/zotron
 ```
 
 Or build from source: `cargo install zotron`

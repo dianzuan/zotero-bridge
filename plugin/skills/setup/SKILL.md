@@ -42,11 +42,22 @@ OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)
 case "$ARCH" in aarch64|arm64) ARCH=arm64 ;; x86_64|amd64) ARCH=amd64 ;; esac
 case "$OS" in
-  linux)  ASSET="zotron-linux-${ARCH}" ;;
-  darwin) ASSET="zotron-macos-${ARCH}" ;;
-  *)      ASSET="zotron-windows-amd64.exe" ;;
+  linux)  PLATFORM="linux-${ARCH}" ;;
+  darwin) PLATFORM="macos-${ARCH}" ;;
+  *)      PLATFORM="windows-amd64.exe" ;;
 esac
-GITHUB_URL="https://github.com/dianzuan/zotron/releases/latest/download/${ASSET}"
+# Release binaries are versioned (zotron-<version>-<platform>), so resolve the
+# latest tag first, then build the download URL for that exact asset.
+# `|| true` + the empty check keep a failed/blocked API call (rate-limit,
+# offline) from aborting the script under `set -e` — we just fall through to
+# the other install methods below.
+TAG=$(curl -fsSL https://api.github.com/repos/dianzuan/zotron/releases/latest 2>/dev/null \
+        | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/' || true)
+if [ -n "$TAG" ]; then
+  GITHUB_URL="https://github.com/dianzuan/zotron/releases/download/${TAG}/zotron-${TAG#v}-${PLATFORM}"
+else
+  GITHUB_URL=""   # tag unresolved — skip the direct download, use fallbacks
+fi
 
 installed=false
 
