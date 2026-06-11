@@ -16,7 +16,7 @@ function renderSingle(slot) {
   var body = mEl("manage-body");
   var providerOptions = Object.keys(slot.providers).map(function (id) {
     var sel = id === provider ? " selected=\"selected\"" : "";
-    return "<option value=\"" + id + "\"" + sel + ">" + slot.providers[id].label + "</option>";
+    return "<option value=\"" + id + "\"" + sel + ">" + esc(slot.providers[id].label) + "</option>";
   }).join("");
   body.innerHTML =
     "<div class=\"row\"><label>Provider</label>" +
@@ -89,6 +89,44 @@ function testSlot(slot) {
       else setS("Request failed (HTTP " + xhr.status + ")", "#e74c3c");
     })
     .catch(function (e) { setS("Connection failed: " + (e.message || e), "#e74c3c"); });
+}
+
+function renderMulti(slot) {
+  var enabled = parseEnabled(zGp(slot.enabledPref) || slot.defaultEnabled);
+  var isOn = {};
+  enabled.forEach(function (id) { isOn[id] = true; });
+  var body = mEl("manage-body");
+
+  var rows = slot.catalog.map(function (src) {
+    var checked = isOn[src.id] ? " checked=\"checked\"" : "";
+    var keyInput = "";
+    if (src.auth !== "none") {
+      keyInput = "<input id=\"src-key-" + src.id + "\" type=\"password\" value=\"" +
+        esc(zGp(src.pref)) + "\" placeholder=\"" + esc(src.auth) + "\" />";
+    } else {
+      keyInput = "<span style=\"flex:1;color:#888\">no key needed</span>";
+    }
+    return "<div class=\"src-row\">" +
+      "<input type=\"checkbox\" id=\"src-on-" + src.id + "\"" + checked + " />" +
+      "<span class=\"src-name\">" + esc(src.label) + "</span>" + keyInput + "</div>";
+  }).join("");
+
+  body.innerHTML =
+    rows +
+    "<div class=\"row\" style=\"margin-top:10px\"><label>Polite email</label>" +
+    "<input id=\"src-mailto\" type=\"text\" value=\"" + esc(zGp(slot.mailtoPref)) + "\" /></div>";
+
+  // Set the window-level save handler (manage-save listener is wired once in startManage).
+  currentSave = function () {
+    var on = [];
+    slot.catalog.forEach(function (src) {
+      if (mEl("src-on-" + src.id).checked) on.push(src.id);
+      if (src.auth !== "none") zSp(src.pref, mEl("src-key-" + src.id).value);
+    });
+    zSp(slot.enabledPref, serializeEnabled(on));
+    zSp(slot.mailtoPref, mEl("src-mailto").value);
+    window.close();
+  };
 }
 
 function startManage() {

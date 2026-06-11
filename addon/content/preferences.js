@@ -450,6 +450,8 @@ function init() {
   if (tOcr) tOcr.addEventListener("command", function () { openManage("ocr"); });
   if (tEmb) tEmb.addEventListener("command", function () { openManage("embedding"); });
   if (tRr) tRr.addEventListener("command", function () { openManage("rerank"); });
+  var tSrc = el("zotron-temp-sources");
+  if (tSrc) tSrc.addEventListener("command", function () { openManage("sources"); });
 }
 
 if (document.getElementById("zotron-ocr-provider")) { init(); }
