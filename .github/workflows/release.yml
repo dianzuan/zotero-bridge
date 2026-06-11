@@ -119,12 +119,22 @@ jobs:
       - name: Collect release assets
         run: |
           mkdir release-assets
+          VER="${GITHUB_REF_NAME#v}"   # v0.2.5 -> 0.2.5
           cp artifacts/zotron-xpi/zotron.xpi release-assets/
+          # Binaries carry the version in their filename:
+          #   zotron-linux-amd64 -> zotron-<VER>-linux-amd64
           for dir in artifacts/zotron-*/; do
-            [ -d "$dir" ] && cp "$dir"* release-assets/ 2>/dev/null || true
+            base=$(basename "$dir")
+            [ "$base" = "zotron-xpi" ] && continue
+            for f in "$dir"*; do
+              [ -f "$f" ] || continue
+              fname=$(basename "$f")
+              cp "$f" "release-assets/zotron-${VER}-${fname#zotron-}"
+            done
           done
 
-          # Stamp update.json with the actual XPI hash
+          # Stamp update.json with the actual XPI hash. The XPI keeps its fixed
+          # name (zotron.xpi) so the auto-update update_link stays valid.
           HASH=$(sha512sum release-assets/zotron.xpi | awk '{print $1}')
           sed "s/sha512:[a-f0-9]*/sha512:${HASH}/" update.json > release-assets/update.json
 
