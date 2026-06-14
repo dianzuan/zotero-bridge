@@ -1,18 +1,188 @@
 <vbox xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
      xmlns:html="http://www.w3.org/1999/xhtml">
-  <groupbox>
+
+<groupbox>
+  <hbox align="center">
+    <label id="zotron-lang-label" value="Language:" style="width: 120px;" />
+    <menulist id="zotron-language">
+      <menupopup>
+        <menuitem id="zotron-lang-en" label="English" value="en-US" />
+        <menuitem id="zotron-lang-zh" label="Chinese" value="zh-CN" />
+      </menupopup>
+    </menulist>
+  </hbox>
+</groupbox>
+
+<groupbox>
+  <label><html:h2 id="zotron-ocr-title">OCR Settings</html:h2></label>
+  <hbox align="center">
+    <label id="zotron-ocr-provider-label" value="OCR Provider:" style="width: 120px;" />
+    <menulist id="zotron-ocr-provider">
+      <menupopup>
+        <menuitem label="GLM-OCR" value="glm" />
+        <menuitem label="PaddleOCR-VL" value="paddle" />
+        <menuitem label="MinerU" value="mineru" />
+        <menuitem label="Custom OCR" value="custom" />
+      </menupopup>
+    </menulist>
+  </hbox>
+  <hbox align="center">
+    <label id="zotron-ocr-key-label" value="API Key:" style="width: 120px;" />
+    <html:input id="zotron-ocr-apikey" type="password"
+                placeholder="Leave empty until you configure a provider token"
+                style="flex: 1;"></html:input>
+    <button id="zotron-ocr-test" label="Test" />
+  </hbox>
+  <html:p id="zotron-ocr-status" style="font-size: 11px; color: #888; margin: 2px 0 0 124px;"></html:p>
+  <hbox align="center">
+    <label id="zotron-ocr-model-label" value="Model:" style="width: 120px;" />
+    <html:input id="zotron-ocr-model" type="text"
+                style="flex: 1;"></html:input>
+  </hbox>
+  <hbox align="center">
+    <label id="zotron-ocr-url-label" value="API URL:" style="width: 120px;" />
+    <html:input id="zotron-ocr-apiurl" type="text"
+                style="flex: 1;"></html:input>
+  </hbox>
+</groupbox>
+
+<groupbox>
+  <label><html:h2 id="zotron-emb-title">Embedding Settings</html:h2></label>
+  <hbox align="center">
+    <label id="zotron-emb-provider-label" value="Provider:" style="width: 120px;" />
+    <menulist id="zotron-emb-provider">
+      <menupopup>
+        <menuitem label="Ollama (本地)" value="ollama" />
+        <menuitem label="OpenAI" value="openai" />
+        <menuitem label="Volcengine" value="volcengine" />
+        <menuitem label="DashScope" value="dashscope" />
+        <menuitem label="Zhipu" value="zhipu" />
+        <menuitem label="Jina" value="jina" />
+        <menuitem label="SiliconFlow" value="siliconflow" />
+        <menuitem label="Voyage" value="voyage" />
+        <menuitem label="Cohere" value="cohere" />
+        <menuitem label="Custom" value="custom" />
+      </menupopup>
+    </menulist>
+  </hbox>
+  <hbox id="zotron-emb-key-row" align="center">
+    <label id="zotron-emb-key-label" value="API Key:" style="width: 120px;" />
+    <html:input id="zotron-emb-apikey" type="password"
+                placeholder="Leave empty until you configure a provider token"
+                style="flex: 1;"></html:input>
+    <button id="zotron-emb-test" label="Test" />
+  </hbox>
+  <html:p id="zotron-emb-status" style="font-size: 11px; color: #888; margin: 2px 0 0 124px;"></html:p>
+  <hbox align="center">
+    <label id="zotron-emb-model-label" value="Model:" style="width: 120px;" />
+    <html:input id="zotron-emb-model" type="text"
+                style="flex: 1;"></html:input>
+  </hbox>
+  <hbox align="center">
+    <label id="zotron-emb-url-label" value="API URL:" style="width: 120px;" />
+    <html:input id="zotron-emb-apiurl" type="text"
+                style="flex: 1;"></html:input>
+  </hbox>
+</groupbox>
+
+<groupbox>
+  <label><html:h2 id="zotron-rerank-title">Reranker Settings</html:h2></label>
+  <hbox align="center">
+    <label id="zotron-rerank-provider-label" value="Provider:" style="width: 120px;" />
+    <menulist id="zotron-rerank-provider">
+      <menupopup>
+        <menuitem label="Jina" value="jina" />
+        <menuitem label="Cohere" value="cohere" />
+        <menuitem label="Voyage" value="voyage" />
+        <menuitem label="DashScope" value="dashscope" />
+        <menuitem label="SiliconFlow" value="siliconflow" />
+        <menuitem label="Custom" value="openai-compatible" />
+      </menupopup>
+    </menulist>
+  </hbox>
+  <hbox align="center">
+    <label id="zotron-rerank-key-label" value="API Key:" style="width: 120px;" />
+    <html:input id="zotron-rerank-apikey" type="password"
+                placeholder="Leave empty to disable reranking"
+                style="flex: 1;"></html:input>
+    <button id="zotron-rerank-test" label="Test" />
+  </hbox>
+  <html:p id="zotron-rerank-status" style="font-size: 11px; color: #888; margin: 2px 0 0 124px;"></html:p>
+  <hbox align="center">
+    <label id="zotron-rerank-model-label" value="Model:" style="width: 120px;" />
+    <html:input id="zotron-rerank-model" type="text"
+                style="flex: 1;"></html:input>
+  </hbox>
+  <hbox align="center">
+    <label id="zotron-rerank-url-label" value="API URL:" style="width: 120px;" />
+    <html:input id="zotron-rerank-url" type="text"
+                style="flex: 1;"></html:input>
+  </hbox>
+</groupbox>
+
+<groupbox>
+  <hbox align="center" style="cursor: pointer;" id="zotron-rag-toggle">
+    <label id="zotron-rag-toggle-label" value="▶ Advanced RAG Settings" style="cursor: pointer;" />
+  </hbox>
+  <vbox id="zotron-rag-panel" style="display: none; margin-left: 16px; border-left: 2px solid #555; padding-left: 12px;">
     <hbox align="center">
-      <label id="zotron-lang-label" value="Language:" style="width: 120px;" />
-      <menulist id="zotron-language">
+      <label id="zotron-rag-chunk-label" value="Chunk Size:" style="width: 140px;" />
+      <html:input id="zotron-rag-chunksize" type="number" style="width: 80px;" />
+      <label value="chars" style="color: #888; margin-left: 4px;" />
+    </hbox>
+    <hbox align="center">
+      <label id="zotron-rag-overlap-label" value="Chunk Overlap:" style="width: 140px;" />
+      <html:input id="zotron-rag-overlap" type="number" style="width: 80px;" />
+      <label value="chars" style="color: #888; margin-left: 4px;" />
+    </hbox>
+    <hbox align="center">
+      <label id="zotron-rag-topk-label" value="Top-K:" style="width: 140px;" />
+      <html:input id="zotron-rag-topk" type="number" style="width: 80px;" />
+    </hbox>
+    <hbox align="center">
+      <label id="zotron-rag-mode-label" value="Retrieval Mode:" style="width: 140px;" />
+      <menulist id="zotron-rag-mode">
         <menupopup>
-          <menuitem id="zotron-lang-en" label="English" value="en-US" />
-          <menuitem id="zotron-lang-zh" label="Chinese" value="zh-CN" />
+          <menuitem label="Hybrid (BM25 + Vector)" value="hybrid" />
+          <menuitem label="Dense (Vector Only)" value="dense" />
+          <menuitem label="Lexical (Keyword Only)" value="lexical" />
         </menupopup>
       </menulist>
     </hbox>
-  </groupbox>
-  <groupbox>
-    <label><html:h2 id="zotron-slots-title">Capabilities</html:h2></label>
-    <vbox id="zotron-slots"></vbox>
-  </groupbox>
+  </vbox>
+</groupbox>
+
+<groupbox>
+  <label><html:h2 id="zotron-src-title">Data Sources</html:h2></label>
+  <hbox align="center">
+    <checkbox id="zotron-src-openalex" label="OpenAlex" style="width: 150px;" />
+    <label id="zotron-src-openalex-note" value="no key needed" style="color: #888;" />
+  </hbox>
+  <hbox align="center">
+    <checkbox id="zotron-src-crossref" label="CrossRef" style="width: 150px;" />
+    <label id="zotron-src-crossref-note" value="no key needed" style="color: #888;" />
+  </hbox>
+  <hbox align="center">
+    <checkbox id="zotron-src-core" label="CORE" style="width: 150px;" />
+    <html:input id="zotron-src-core-key" type="password" placeholder="API Key"
+                style="flex: 1;"></html:input>
+  </hbox>
+  <hbox align="center">
+    <checkbox id="zotron-src-ads" label="NASA ADS" style="width: 150px;" />
+    <html:input id="zotron-src-ads-key" type="password" placeholder="Token"
+                style="flex: 1;"></html:input>
+  </hbox>
+  <hbox align="center">
+    <checkbox id="zotron-src-aminer" label="AMiner" style="width: 150px;" />
+    <html:input id="zotron-src-aminer-key" type="password" placeholder="API Key"
+                style="flex: 1;"></html:input>
+  </hbox>
+  <hbox align="center">
+    <label id="zotron-src-mailto-label" value="Contact email:" style="width: 120px;" />
+    <html:input id="zotron-src-mailto" type="text" placeholder="you@example.org"
+                style="flex: 1;"></html:input>
+  </hbox>
+  <html:p id="zotron-src-mailto-hint" style="font-size: 11px; color: #888; margin: 2px 0 0 124px;"></html:p>
+</groupbox>
+
 </vbox>
