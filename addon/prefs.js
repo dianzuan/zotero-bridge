@@ -10,3 +10,8 @@ pref("extensions.zotero.zotron.embedding.apiUrl", "");
 pref("extensions.zotero.zotron.rag.chunkSize", 512);
 pref("extensions.zotero.zotron.rag.chunkOverlap", 64);
 pref("extensions.zotero.zotron.rag.topK", 5);
+pref("extensions.zotero.zotron.sources.enabled", "openalex, crossref");
+pref("extensions.zotero.zotron.source.mailto", "");
+pref("extensions.zotero.zotron.source.core.apiKey", "");
+pref("extensions.zotero.zotron.source.ads.token", "");
+pref("extensions.zotero.zotron.source.aminer.apiKey", "");
