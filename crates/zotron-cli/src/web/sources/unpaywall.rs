@@ -5,17 +5,15 @@ pub struct Unpaywall {
 }
 
 impl Unpaywall {
-    pub fn new() -> Self {
-        Self {
-            email: std::env::var("ZOTRON_SCHOLAR_EMAIL").ok(),
-        }
+    pub fn new(email: Option<String>) -> Self {
+        Self { email }
     }
 
     pub fn find_pdf(&self, doi: &str) -> Result<Option<String>, String> {
         let email = self
             .email
             .as_deref()
-            .unwrap_or("zotron-scholar@users.noreply.github.com");
+            .unwrap_or("zotron@users.noreply.github.com");
 
         let url = format!(
             "https://api.unpaywall.org/v2/{}?email={}",

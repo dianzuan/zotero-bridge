@@ -14,11 +14,8 @@ export const PREF_DEFAULTS: Record<string, string | number> = {
   "rag.chunkOverlap": 64,
   "rag.topK": 5,
   "rag.retrievalMode": "hybrid",
-  "sources.enabled": "openalex, crossref",
   "source.mailto": "",
   "source.core.apiKey": "",
-  "source.ads.token": "",
-  "source.aminer.apiKey": "",
 };
 
 function prefKey(key: string): string {

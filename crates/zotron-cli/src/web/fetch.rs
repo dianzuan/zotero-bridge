@@ -2,17 +2,19 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
-use crate::sources::arxiv::ArXiv;
-use crate::sources::core::Core;
-use crate::sources::crossref::CrossRef;
-use crate::sources::doaj::Doaj;
-use crate::sources::fatcat::Fatcat;
-use crate::sources::publisher::PublisherDirect;
-use crate::sources::unpaywall::Unpaywall;
-use crate::types::Paper;
+use crate::web::http;
+use crate::web::sources::arxiv::ArXiv;
+use crate::web::sources::core::Core;
+use crate::web::sources::crossref::CrossRef;
+use crate::web::sources::doaj::Doaj;
+use crate::web::sources::fatcat::Fatcat;
+use crate::web::sources::publisher::PublisherDirect;
+use crate::web::sources::unpaywall::Unpaywall;
+use crate::web::types::Paper;
+use crate::web::WebConfig;
 
-pub fn fetch_doi(doi: &str) -> Result<(Paper, Option<PathBuf>), String> {
-    let crossref = CrossRef::new();
+pub fn fetch_doi(doi: &str, config: &WebConfig) -> Result<(Paper, Option<PathBuf>), String> {
+    let crossref = CrossRef::new(config.mailto.clone());
 
     let paper = crossref.fetch_doi(doi)?;
 
@@ -28,9 +30,9 @@ pub fn fetch_doi(doi: &str) -> Result<(Paper, Option<PathBuf>), String> {
     // The free open-access sources come first; Publisher-direct is the last
     // resort — it follows the publisher's own advertised `citation_pdf_url` and
     // only succeeds when the caller's IP has institutional access.
-    let unpaywall = Unpaywall::new();
+    let unpaywall = Unpaywall::new(config.mailto.clone());
     let doaj = Doaj::new();
-    let core = Core::new();
+    let core = Core::new(config.core_api_key.clone());
     let fatcat = Fatcat::new();
     let publisher = PublisherDirect::new();
     let openalex_url = paper.pdf_url.clone();
@@ -99,7 +101,7 @@ pub fn fetch_arxiv(arxiv_id: &str) -> Result<(Paper, Option<PathBuf>), String> {
 }
 
 fn download_pdf(url: &str, id: &str) -> Result<PathBuf, String> {
-    let dir = std::env::temp_dir().join("zotron-scholar");
+    let dir = std::env::temp_dir().join("zotron-web");
     fs::create_dir_all(&dir).map_err(|e| format!("create temp dir: {e}"))?;
 
     let safe_name: String = id
@@ -111,11 +113,7 @@ fn download_pdf(url: &str, id: &str) -> Result<PathBuf, String> {
     // Many publishers (PeerJ, Wiley, etc.) 403 a request with no User-Agent.
     // Send a browser-like UA so direct-PDF links actually download.
     let resp = ureq::get(url)
-        .set(
-            "User-Agent",
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
-             (KHTML, like Gecko) Chrome/124.0 Safari/537.36 zotron-scholar",
-        )
+        .set("User-Agent", http::BROWSER_UA)
         .set("Accept", "application/pdf,*/*")
         .call()
         .map_err(|e| format!("pdf download failed: {e}"))?;

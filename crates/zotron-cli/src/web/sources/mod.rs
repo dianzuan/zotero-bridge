@@ -12,7 +12,7 @@ pub use arxiv::ArXiv;
 pub use crossref::CrossRef;
 pub use openalex::OpenAlex;
 pub use s2::SemanticScholar;
-use crate::types::Paper;
+use crate::web::types::Paper;
 
 pub trait Source {
     #[allow(dead_code)]

@@ -45,7 +45,7 @@ The product currently exposes these command groups:
 - `zotron annotations ...`
 - `zotron ocr ...`
 - `zotron rag ...`
-- `zotron sources ...`
+- `zotron web ...` — Search and fetch academic papers from public web APIs
 
 Attachment operations (`fulltext`, `path`, `attachments`, `find-pdfs`) are
 subcommands of `zotron items`.

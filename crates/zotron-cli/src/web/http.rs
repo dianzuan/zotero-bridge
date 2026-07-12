@@ -5,7 +5,7 @@ use std::time::Duration;
 /// Browser-like User-Agent. Many scholarly publishers 403 requests with no (or
 /// a non-browser) User-Agent, so reuse this for outbound GETs.
 pub const BROWSER_UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
-     (KHTML, like Gecko) Chrome/124.0 Safari/537.36 zotron-scholar";
+     (KHTML, like Gecko) Chrome/124.0 Safari/537.36 zotron";
 
 /// GET a URL, retrying a few times on TRANSIENT transport errors (TLS handshake
 /// failures, dropped connections, timeouts) — these flake intermittently and

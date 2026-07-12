@@ -363,17 +363,19 @@ Retrieval pipeline settings (Zotero → Settings → Zotron panel):
 - `rerank.scoreFloor` (default 0.1) — drop reranked hits below this score
 - `rerank.gapThreshold` (default 0.15) — trim the tail at the largest score gap
 
-## zotron sources
+## zotron web
 ```
-Discover and manage source plugins (`zotron-*` on PATH)
+Search and fetch academic papers from public web APIs
 
-Usage: zotron sources <COMMAND>
+Usage: zotron web <COMMAND>
 
 Commands:
-  list  List all discovered source plugins on PATH (the default action)
-  sync  Symlink plugin skills into the Claude Code plugin's skills directory
+  search  Search academic papers
+  fetch   Fetch paper metadata + open-access PDF by identifier; pipe to `zotron push`
 ```
 
-External academic sources are standalone `zotron-*` binaries on PATH. Core
-discovers them via `zotron sources list`; each implements a `manifest`
-subcommand. Plugins emit Zotero JSON to stdout, piped to `zotron push`.
+`web search` queries one source (`-s openalex|crossref|s2|arxiv`, default
+openalex; `--limit` default 10). `web fetch --doi`/`--arxiv` emits Zotero JSON with an optional
+`_pdf` sidecar path — pipe to `zotron push` to import. Credentials
+(`source.mailto`, `source.core.apiKey`) are read from Zotero settings;
+with Zotero closed, commands still run keyless.

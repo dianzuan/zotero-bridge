@@ -1,17 +1,15 @@
 use serde_json::Value;
 
-use crate::sources::Source;
-use crate::types::{Author, Paper};
+use crate::web::sources::Source;
+use crate::web::types::{Author, Paper};
 
 pub struct OpenAlex {
     pub email: Option<String>,
 }
 
 impl OpenAlex {
-    pub fn new() -> Self {
-        Self {
-            email: std::env::var("ZOTRON_SCHOLAR_EMAIL").ok(),
-        }
+    pub fn new(email: Option<String>) -> Self {
+        Self { email }
     }
 }
 

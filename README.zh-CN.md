@@ -94,13 +94,16 @@ Agent 直接调用 `zotron` CLI 命令。
 
 典型的 agent 工作流：搜论文 → 读全文 → 用 `--quote` 标注关键段落 → 导出引用。每一步是一次 CLI 调用，agent 根据上一步的 JSON 输出决定下一步操作。
 
-### 数据源插件
+### 学术搜索
 
-外部数据源通过插件接入——`PATH` 上以 `zotron-*` 命名的独立二进制：
+内置公开学术 API 搜索——OpenAlex、CrossRef、Semantic Scholar、Unpaywall、arXiv：
 
-- **[zotron-scholar](https://github.com/dianzuan/zotron-scholar)** — OpenAlex、CrossRef、Semantic Scholar、Unpaywall、arXiv
+```bash
+zotron web search "graph neural networks" --limit 5
+zotron web fetch --doi 10.1038/nature14539 | zotron push --collection "AI"
+```
 
-插件输出 JSON 到 stdout，通过管道传给 `zotron push` 写入 Zotero。
+任何外部工具都可以用同一方式写入 Zotero：把 Zotero JSON 输出到 stdout，管道给 `zotron push`。
 
 ## CLI 参考
 

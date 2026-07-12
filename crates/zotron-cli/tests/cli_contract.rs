@@ -2577,223 +2577,35 @@ fn fetch_rerank_settings_returns_defaults_for_jina() {
     assert_eq!(rs.candidate_count, 30);
 }
 
-// ----- Source plugin system: discovery, sync, transparent proxy -----
+// ----- zotron web: built-in academic search -----
 
-/// Create a unique temp dir holding fake `zotron-*` plugin scripts.
-fn make_plugin_dir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "zotron-sources-{tag}-{}-{:?}",
-        std::process::id(),
-        std::thread::current().id()
-    ));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).expect("create plugin dir");
-    dir
-}
-
-#[cfg(unix)]
-fn write_exec(path: &Path, body: &str) {
-    use std::os::unix::fs::PermissionsExt;
-    fs::write(path, body).expect("write plugin script");
-    let mut perms = fs::metadata(path).expect("stat").permissions();
-    perms.set_mode(0o755);
-    fs::set_permissions(path, perms).expect("chmod plugin script");
-}
-
-#[cfg(unix)]
 #[test]
-fn sources_list_aggregates_manifests_and_reports_failures() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let dir = make_plugin_dir("list");
-
-    // Good plugin: emits a full manifest. Absolute `/bin/sh` shebang resolves
-    // via the kernel regardless of PATH, so PATH can stay empty-but-our-dir.
-    write_exec(
-        &dir.join("zotron-good"),
-        "#!/bin/sh\n\
-         [ \"$1\" = manifest ] && echo '{\"name\":\"good\",\"version\":\"1.2.3\",\
-         \"description\":\"good source\",\"capabilities\":[\"search\",\"fetch\"],\
-         \"skill_dir\":\"/tmp/x\"}'\n",
-    );
-    // Broken plugin: emits non-JSON on manifest -> error status, not dropped.
-    write_exec(
-        &dir.join("zotron-broken"),
-        "#!/bin/sh\n[ \"$1\" = manifest ] && echo 'not json'\n",
-    );
-
-    let prev_path = std::env::var_os("PATH");
-    std::env::set_var("PATH", dir.as_os_str());
+fn web_fetch_requires_doi_or_arxiv() {
     let mut client = FakeClient::default();
-    let out = run_with_client(["zotron", "sources", "list"], &mut client)
-        .expect("sources list succeeds");
-    match prev_path {
-        Some(p) => std::env::set_var("PATH", p),
-        None => std::env::remove_var("PATH"),
-    }
-    let _ = fs::remove_dir_all(&dir);
+    let err = run_with_client(["zotron", "web", "fetch"], &mut client)
+        .expect_err("fetch without identifier errors");
+    assert!(err.contains("provide --doi or --arxiv"), "got {err}");
+}
 
-    let value: Value = serde_json::from_str(out.trim()).expect("valid JSON");
-    let sources = value["sources"].as_array().expect("sources array");
-    assert_eq!(sources.len(), 2, "both plugins listed: {value}");
+#[test]
+fn web_search_rejects_unknown_source() {
+    let mut client = FakeClient::default();
+    let err = run_with_client(["zotron", "web", "search", "q", "-s", "nope"], &mut client)
+        .expect_err("unknown source errors");
+    assert!(err.contains("unknown source: nope"), "got {err}");
+}
 
-    let good = sources
+#[test]
+fn web_commands_read_source_settings_and_degrade() {
+    let mut client = FakeClient::default(); // 无响应排队 → getRaw 全部 Err
+    let err = run_with_client(["zotron", "web", "fetch"], &mut client)
+        .expect_err("fetch without identifier still errors");
+    assert!(err.contains("provide --doi or --arxiv"), "got {err}");
+    let getraw_keys: Vec<&str> = client
+        .calls
         .iter()
-        .find(|s| s["name"] == "good")
-        .expect("good present");
-    assert_eq!(good["version"], "1.2.3");
-    assert_eq!(good["capabilities"], json!(["search", "fetch"]));
-    assert!(good["binary"].as_str().unwrap().ends_with("zotron-good"));
-
-    let broken = sources
-        .iter()
-        .find(|s| s["name"] == "broken")
-        .expect("broken present, not silently dropped");
-    assert_eq!(broken["status"], "error");
-    assert!(broken["error"].as_str().unwrap().contains("invalid manifest JSON"));
-}
-
-#[cfg(unix)]
-#[test]
-fn sources_bare_defaults_to_list() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let dir = make_plugin_dir("bare");
-    let prev_path = std::env::var_os("PATH");
-    // Empty dir only: this test runs no plugin scripts, so no shebang resolution
-    // is needed and discovery must see exactly zero sources.
-    std::env::set_var("PATH", dir.as_os_str());
-    let mut client = FakeClient::default();
-    let out = run_with_client(["zotron", "sources"], &mut client).expect("bare sources succeeds");
-    match prev_path {
-        Some(p) => std::env::set_var("PATH", p),
-        None => std::env::remove_var("PATH"),
-    }
-    let _ = fs::remove_dir_all(&dir);
-
-    let value: Value = serde_json::from_str(out.trim()).expect("valid JSON");
-    assert_eq!(value["sources"], json!([]));
-}
-
-#[cfg(unix)]
-#[test]
-fn sources_sync_links_and_cleans_skill_dirs() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let root = make_plugin_dir("sync");
-    let bin_dir = root.join("bin");
-    let skill_src = root.join("share").join("skills");
-    let skills_dir = root.join("plugin").join("skills");
-    fs::create_dir_all(&bin_dir).unwrap();
-    fs::create_dir_all(&skill_src).unwrap();
-    fs::create_dir_all(skills_dir.join("zotero")).unwrap(); // core dir must survive
-    fs::write(skill_src.join("SKILL.md"), "demo").unwrap();
-
-    write_exec(
-        &bin_dir.join("zotron-demo"),
-        &format!(
-            "#!/bin/sh\n[ \"$1\" = manifest ] && echo '{{\"name\":\"demo\",\
-             \"version\":\"1.0.0\",\"description\":\"d\",\"capabilities\":[\"search\"],\
-             \"skill_dir\":\"{}\"}}'\n",
-            skill_src.display()
-        ),
-    );
-
-    // Stale plugin symlink (points outside skills dir, no plugin on PATH).
-    std::os::unix::fs::symlink("/tmp", skills_dir.join("ghost")).unwrap();
-
-    let prev_path = std::env::var_os("PATH");
-    std::env::set_var("PATH", bin_dir.as_os_str());
-    let mut client = FakeClient::default();
-    let out = run_with_client(
-        [
-            "zotron",
-            "sources",
-            "sync",
-            "--skills-dir",
-            skills_dir.to_str().unwrap(),
-        ],
-        &mut client,
-    )
-    .expect("sources sync succeeds");
-    match prev_path {
-        Some(p) => std::env::set_var("PATH", p),
-        None => std::env::remove_var("PATH"),
-    }
-
-    let value: Value = serde_json::from_str(out.trim()).expect("valid JSON");
-    assert_eq!(value["ok"], true);
-    assert_eq!(value["linked"], 1);
-    assert_eq!(value["cleaned"], 1);
-
-    // demo symlink created, ghost removed, core zotero/ untouched.
-    assert_eq!(
-        fs::read_link(skills_dir.join("demo")).unwrap(),
-        skill_src,
-        "demo symlink points at plugin skill_dir"
-    );
-    assert!(!skills_dir.join("ghost").exists(), "stale ghost removed");
-    assert!(skills_dir.join("zotero").is_dir(), "core zotero/ preserved");
-
-    let _ = fs::remove_dir_all(&root);
-}
-
-#[cfg(unix)]
-#[test]
-fn external_proxy_runs_plugin_and_passes_through() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let dir = make_plugin_dir("proxy");
-    // Plugin succeeds via exit-code 0; we just assert the proxy execs it.
-    write_exec(&dir.join("zotron-echo"), "#!/bin/sh\nexit 0\n");
-    let prev_path = std::env::var_os("PATH");
-    std::env::set_var("PATH", dir.as_os_str());
-    let mut client = FakeClient::default();
-    let out = run_with_client(["zotron", "echo", "hello"], &mut client)
-        .expect("external proxy execs plugin");
-    match prev_path {
-        Some(p) => std::env::set_var("PATH", p),
-        None => std::env::remove_var("PATH"),
-    }
-    let _ = fs::remove_dir_all(&dir);
-    // The plugin owns stdout; the proxy contributes no extra output.
-    assert_eq!(out, "");
-}
-
-#[test]
-fn external_proxy_unknown_command_yields_fuzzy_suggestion() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    // Point PATH at an empty dir so no zotron-serch exists.
-    let dir = make_plugin_dir("unknown");
-    let prev_path = std::env::var_os("PATH");
-    std::env::set_var("PATH", dir.as_os_str());
-    let mut client = FakeClient::default();
-    let err = run_with_client(["zotron", "serch", "foo"], &mut client)
-        .expect_err("unknown command errors");
-    match prev_path {
-        Some(p) => std::env::set_var("PATH", p),
-        None => std::env::remove_var("PATH"),
-    }
-    let _ = fs::remove_dir_all(&dir);
-
-    assert!(err.starts_with("UNKNOWN_COMMAND:"), "got {err}");
-    assert!(err.contains("zotron-serch"), "got {err}");
-    assert!(err.contains("Did you mean"), "got {err}");
-    assert!(err.contains("search"), "got {err}");
-}
-
-#[test]
-fn external_proxy_plugin_name_far_from_builtins_has_no_suggestion() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let dir = make_plugin_dir("noplugin");
-    let prev_path = std::env::var_os("PATH");
-    std::env::set_var("PATH", dir.as_os_str());
-    let mut client = FakeClient::default();
-    let err = run_with_client(["zotron", "scholar", "search"], &mut client)
-        .expect_err("missing plugin errors");
-    match prev_path {
-        Some(p) => std::env::set_var("PATH", p),
-        None => std::env::remove_var("PATH"),
-    }
-    let _ = fs::remove_dir_all(&dir);
-
-    assert!(err.starts_with("UNKNOWN_COMMAND:"), "got {err}");
-    assert!(err.contains("zotron-scholar"), "got {err}");
-    assert!(!err.contains("Did you mean"), "got {err}");
+        .filter(|(m, _)| m == "settings.getRaw")
+        .filter_map(|(_, p)| p.as_ref().and_then(|p| p["key"].as_str()))
+        .collect();
+    assert_eq!(getraw_keys, vec!["source.mailto", "source.core.apiKey"]);
 }

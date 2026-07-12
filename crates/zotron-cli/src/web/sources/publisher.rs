@@ -1,4 +1,4 @@
-use crate::http::get_with_retry;
+use crate::web::http::get_with_retry;
 
 /// Resolve a DOI to the publisher's full-text PDF via the `citation_pdf_url`
 /// HTML meta tag on the article landing page.

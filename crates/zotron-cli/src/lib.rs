@@ -1,7 +1,5 @@
 //! Minimal typed CLI surface for the Rust migration scaffold.
 
-use std::ffi::OsString;
-
 use clap::{error::ErrorKind, Parser, Subcommand};
 use serde_json::Value;
 use zotron_rpc::ZoteroRpc;
@@ -12,7 +10,7 @@ mod ocr;
 mod output;
 mod rag;
 mod rpc;
-mod sources;
+mod web;
 
 use crate::commands::*;
 use crate::ocr::*;
@@ -22,7 +20,6 @@ use crate::rag::*;
 pub use crate::rag::{fetch_rerank_settings, RerankSettings};
 use crate::rpc::*;
 pub use crate::rpc::RpcCaller;
-use crate::sources::{run_external_command, run_sources_list, run_sources_sync};
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct CliOcrProviderSpec {
@@ -302,7 +299,6 @@ pub(crate) enum OcrCommand {
 }
 
 #[derive(Debug, Subcommand)]
-#[command(allow_external_subcommands = true)]
 pub(crate) enum Command {
     /// Check that Zotero is running with the Zotron XPI enabled.
     Ping,
@@ -382,25 +378,34 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: RagCommand,
     },
-    /// Discover and manage source plugins (`zotron-*` on PATH).
-    Sources {
+    /// Search and fetch academic papers from public web APIs.
+    Web {
         #[command(subcommand)]
-        command: Option<SourcesCommand>,
+        command: WebCommand,
     },
-    /// Transparent proxy: forward `zotron <name> [args]` to `zotron-<name>`.
-    #[command(external_subcommand)]
-    External(Vec<OsString>),
 }
 
 #[derive(Debug, Subcommand)]
-pub(crate) enum SourcesCommand {
-    /// List all discovered source plugins on PATH (the default action).
-    List,
-    /// Symlink plugin skills into the Claude Code plugin's `plugin/skills/`.
-    Sync {
-        /// Path to the repo's `plugin/skills/` directory (auto-discovered when omitted).
-        #[arg(long, default_value = "")]
-        skills_dir: String,
+pub(crate) enum WebCommand {
+    /// Search academic papers.
+    Search {
+        /// Search query.
+        query: String,
+        /// Maximum results to return.
+        #[arg(short, long, default_value_t = 10)]
+        limit: usize,
+        /// Source to search (openalex, crossref, s2, arxiv).
+        #[arg(short, long, default_value = "openalex")]
+        source: String,
+    },
+    /// Fetch paper metadata + open-access PDF by identifier; pipe to `zotron push`.
+    Fetch {
+        /// DOI to fetch.
+        #[arg(long)]
+        doi: Option<String>,
+        /// arXiv ID to fetch.
+        #[arg(long)]
+        arxiv: Option<String>,
     },
 }
 
@@ -1071,13 +1076,7 @@ fn run_command(command: Command, client: &mut impl RpcCaller) -> Result<String, 
         Command::Rag { command } => {
             return run_rag_command(command, client);
         }
-        Command::Sources { command } => {
-            return match command.unwrap_or(SourcesCommand::List) {
-                SourcesCommand::List => run_sources_list(),
-                SourcesCommand::Sync { skills_dir } => run_sources_sync(&skills_dir),
-            };
-        }
-        Command::External(args) => return run_external_command(args),
+        Command::Web { command } => return crate::web::run_web_command(command, client),
         Command::Export(_) => unreachable!("export commands return raw output above"),
     };
 
