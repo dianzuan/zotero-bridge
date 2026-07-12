@@ -94,13 +94,18 @@ The agent calls `zotron` CLI commands directly.
 
 A typical agent workflow looks like this: search for papers → read fulltext → highlight relevant passages with `--quote` → export citations. Each step is one CLI call, and the agent chains them based on the JSON output of the previous step.
 
-### Source plugins
+### Web search
 
-External sources are added through plugins — standalone binaries on `PATH` named `zotron-*`:
+Built-in academic search over public APIs — OpenAlex, CrossRef, Semantic
+Scholar, Unpaywall, arXiv:
 
-- **[zotron-scholar](https://github.com/dianzuan/zotron-scholar)** — OpenAlex, CrossRef, Semantic Scholar, Unpaywall, arXiv
+```bash
+zotron web search "graph neural networks" --limit 5
+zotron web fetch --doi 10.1038/nature14539 | zotron push --collection "AI"
+```
 
-Plugins output JSON to stdout, piped to `zotron push` to write into Zotero.
+Any external tool can write to Zotero the same way: emit Zotero JSON on
+stdout and pipe it to `zotron push`.
 
 ## CLI reference
 

@@ -7,7 +7,7 @@
 | `zotron ping` | 检查 Zotero 是否运行且 XPI 已加载 |
 | `zotron rpc <方法> [JSON参数]` | 通用 RPC 逃生舱，可调用任意 XPI 方法 |
 | `zotron push <JSON文件>` | 推送准备好的 JSON 数据到 Zotero |
-| `zotron sources` | 发现并管理 PATH 上的 `zotron-*` 源插件 |
+| `zotron web` | 从公开学术 API 搜索与抓取论文 |
 
 ---
 
@@ -107,14 +107,15 @@ zotron search "就业" --collection "数字经济" --author "张三" --after 202
 
 ---
 
-## sources — 源插件
-
-外部学术源是 PATH 上独立的 `zotron-*` 二进制，核心通过 `zotron sources list` 发现，每个实现 `manifest` 子命令。插件把 Zotero JSON 输出到 stdout，管道给 `zotron push`。
+## web — 学术搜索
 
 | 命令 | 说明 |
 |------|------|
-| `sources list` | 列出 PATH 上发现的所有源插件（默认动作） |
-| `sources sync` | 把插件 skill 软链接进 Claude Code 插件的 skills 目录 |
+| `web search <关键词>` | 搜索学术论文（`-s openalex|crossref|s2|arxiv`，默认 openalex） |
+| `web fetch --doi <DOI>` | 按 DOI 抓取元数据 + 开放获取 PDF |
+| `web fetch --arxiv <ID>` | 按 arXiv ID 抓取 |
+
+`web fetch` 输出 Zotero JSON（含 `_pdf` 路径），管道给 `zotron push` 即可入库。凭据（联系邮箱、CORE key）读取自 Zotero 设置；Zotero 未运行时无 key 照常可用。
 
 > 附件操作是 `items` 的子命令：`items attachments <key>`、`items path <key>`、`items fulltext <key>`、`items find-pdfs`。
 

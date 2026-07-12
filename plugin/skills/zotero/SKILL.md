@@ -82,6 +82,17 @@ The CLI does not have built-in `--jq`; use external `jq`.
 - `zotron system methods` — list all RPC methods
 - `zotron system methods items.get` — describe a specific method's parameters
 
-## Academic paper sources
+## Web academic search
 
-To find and import papers from external academic databases, run `zotron sources` to list the available academic sources. Each source ships its own skill with detailed usage — check what is installed before searching.
+Search public academic databases and import papers:
+
+```bash
+zotron web search "query" [--limit N] [-s openalex|crossref|s2|arxiv]
+zotron web fetch --doi 10.1038/xxx | zotron push       # DOI -> metadata + PDF
+zotron web fetch --arxiv 2301.00001 | zotron push      # arXiv -> metadata + PDF
+```
+
+Default source is OpenAlex (250M records). `fetch` cascades open-access PDF
+resolvers (Unpaywall, DOAJ, CORE, fatcat, publisher-direct) and attaches the
+PDF when one downloads. Optional keys live in Zotero Settings -> Zotron ->
+Data Sources; everything works keyless.
