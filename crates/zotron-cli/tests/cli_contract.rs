@@ -2797,3 +2797,21 @@ fn external_proxy_plugin_name_far_from_builtins_has_no_suggestion() {
     assert!(err.contains("zotron-scholar"), "got {err}");
     assert!(!err.contains("Did you mean"), "got {err}");
 }
+
+// ----- zotron web: built-in academic search -----
+
+#[test]
+fn web_fetch_requires_doi_or_arxiv() {
+    let mut client = FakeClient::default();
+    let err = run_with_client(["zotron", "web", "fetch"], &mut client)
+        .expect_err("fetch without identifier errors");
+    assert!(err.contains("provide --doi or --arxiv"), "got {err}");
+}
+
+#[test]
+fn web_search_rejects_unknown_source() {
+    let mut client = FakeClient::default();
+    let err = run_with_client(["zotron", "web", "search", "q", "-s", "nope"], &mut client)
+        .expect_err("unknown source errors");
+    assert!(err.contains("unknown source: nope"), "got {err}");
+}

@@ -2,7 +2,6 @@
 members = [
     "crates/zotron-cli",
     "crates/zotron-rpc",
-    "crates/zotron-scholar",
     "crates/zotron-types",
 ]
 resolver = "2"

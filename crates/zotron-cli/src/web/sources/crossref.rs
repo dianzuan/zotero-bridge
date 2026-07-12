@@ -1,7 +1,7 @@
 use serde_json::Value;
 
-use crate::sources::Source;
-use crate::types::{Author, Paper};
+use crate::web::sources::Source;
+use crate::web::types::{Author, Paper};
 
 pub struct CrossRef {
     pub email: Option<String>,
@@ -23,7 +23,7 @@ impl CrossRef {
             url.push_str(&format!("?mailto={}", urlenc(email)));
         }
 
-        let resp: Value = crate::http::get_with_retry(&url)
+        let resp: Value = crate::web::http::get_with_retry(&url)
             .map_err(|e| format!("CrossRef request failed: {e}"))?
             .into_json()
             .map_err(|e| format!("CrossRef JSON parse failed: {e}"))?;

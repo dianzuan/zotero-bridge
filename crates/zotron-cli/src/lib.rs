@@ -13,6 +13,7 @@ mod output;
 mod rag;
 mod rpc;
 mod sources;
+mod web;
 
 use crate::commands::*;
 use crate::ocr::*;
@@ -382,6 +383,11 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: RagCommand,
     },
+    /// Search and fetch academic papers from public web APIs.
+    Web {
+        #[command(subcommand)]
+        command: WebCommand,
+    },
     /// Discover and manage source plugins (`zotron-*` on PATH).
     Sources {
         #[command(subcommand)]
@@ -401,6 +407,30 @@ pub(crate) enum SourcesCommand {
         /// Path to the repo's `plugin/skills/` directory (auto-discovered when omitted).
         #[arg(long, default_value = "")]
         skills_dir: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum WebCommand {
+    /// Search academic papers.
+    Search {
+        /// Search query.
+        query: String,
+        /// Maximum results to return.
+        #[arg(short, long, default_value_t = 10)]
+        limit: usize,
+        /// Source to search (openalex, crossref, s2, arxiv).
+        #[arg(short, long, default_value = "openalex")]
+        source: String,
+    },
+    /// Fetch paper metadata + open-access PDF by identifier; pipe to `zotron push`.
+    Fetch {
+        /// DOI to fetch.
+        #[arg(long)]
+        doi: Option<String>,
+        /// arXiv ID to fetch.
+        #[arg(long)]
+        arxiv: Option<String>,
     },
 }
 
@@ -1071,6 +1101,7 @@ fn run_command(command: Command, client: &mut impl RpcCaller) -> Result<String, 
         Command::Rag { command } => {
             return run_rag_command(command, client);
         }
+        Command::Web { command } => return crate::web::run_web_command(command),
         Command::Sources { command } => {
             return match command.unwrap_or(SourcesCommand::List) {
                 SourcesCommand::List => run_sources_list(),

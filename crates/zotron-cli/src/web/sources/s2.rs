@@ -1,7 +1,7 @@
 use serde_json::Value;
 
-use crate::sources::Source;
-use crate::types::{Author, Paper};
+use crate::web::sources::Source;
+use crate::web::types::{Author, Paper};
 
 pub struct SemanticScholar;
 

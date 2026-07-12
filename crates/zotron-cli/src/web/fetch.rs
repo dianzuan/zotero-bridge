@@ -2,14 +2,14 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
-use crate::sources::arxiv::ArXiv;
-use crate::sources::core::Core;
-use crate::sources::crossref::CrossRef;
-use crate::sources::doaj::Doaj;
-use crate::sources::fatcat::Fatcat;
-use crate::sources::publisher::PublisherDirect;
-use crate::sources::unpaywall::Unpaywall;
-use crate::types::Paper;
+use crate::web::sources::arxiv::ArXiv;
+use crate::web::sources::core::Core;
+use crate::web::sources::crossref::CrossRef;
+use crate::web::sources::doaj::Doaj;
+use crate::web::sources::fatcat::Fatcat;
+use crate::web::sources::publisher::PublisherDirect;
+use crate::web::sources::unpaywall::Unpaywall;
+use crate::web::types::Paper;
 
 pub fn fetch_doi(doi: &str) -> Result<(Paper, Option<PathBuf>), String> {
     let crossref = CrossRef::new();
