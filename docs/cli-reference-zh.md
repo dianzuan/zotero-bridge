@@ -111,11 +111,11 @@ zotron search "就业" --collection "数字经济" --author "张三" --after 202
 
 | 命令 | 说明 |
 |------|------|
-| `web search <关键词>` | 搜索学术论文（`-s openalex|crossref|s2|arxiv`，默认 openalex） |
+| `web search <关键词>` | 搜索学术论文（`-s openalex/crossref/s2/arxiv`，默认 openalex，`--limit` 默认 10） |
 | `web fetch --doi <DOI>` | 按 DOI 抓取元数据 + 开放获取 PDF |
 | `web fetch --arxiv <ID>` | 按 arXiv ID 抓取 |
 
-`web fetch` 输出 Zotero JSON（含 `_pdf` 路径），管道给 `zotron push` 即可入库。凭据（联系邮箱、CORE key）读取自 Zotero 设置；Zotero 未运行时无 key 照常可用。
+`web fetch` 输出 Zotero JSON（含 `_pdf` 路径），管道给 `zotron push` 即可入库。凭据（`source.mailto`、`source.core.apiKey`）读取自 Zotero 设置；Zotero 未运行时无 key 照常可用。
 
 > 附件操作是 `items` 的子命令：`items attachments <key>`、`items path <key>`、`items fulltext <key>`、`items find-pdfs`。
 

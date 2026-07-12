@@ -13,7 +13,7 @@ impl Unpaywall {
         let email = self
             .email
             .as_deref()
-            .unwrap_or("zotron-scholar@users.noreply.github.com");
+            .unwrap_or("zotron@users.noreply.github.com");
 
         let url = format!(
             "https://api.unpaywall.org/v2/{}?email={}",

@@ -2,6 +2,7 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
+use crate::web::http;
 use crate::web::sources::arxiv::ArXiv;
 use crate::web::sources::core::Core;
 use crate::web::sources::crossref::CrossRef;
@@ -112,11 +113,7 @@ fn download_pdf(url: &str, id: &str) -> Result<PathBuf, String> {
     // Many publishers (PeerJ, Wiley, etc.) 403 a request with no User-Agent.
     // Send a browser-like UA so direct-PDF links actually download.
     let resp = ureq::get(url)
-        .set(
-            "User-Agent",
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
-             (KHTML, like Gecko) Chrome/124.0 Safari/537.36 zotron-scholar",
-        )
+        .set("User-Agent", http::BROWSER_UA)
         .set("Accept", "application/pdf,*/*")
         .call()
         .map_err(|e| format!("pdf download failed: {e}"))?;

@@ -375,7 +375,7 @@ Commands:
 ```
 
 `web search` queries one source (`-s openalex|crossref|s2|arxiv`, default
-openalex). `web fetch --doi`/`--arxiv` emits Zotero JSON with an optional
+openalex; `--limit` default 10). `web fetch --doi`/`--arxiv` emits Zotero JSON with an optional
 `_pdf` sidecar path — pipe to `zotron push` to import. Credentials
 (`source.mailto`, `source.core.apiKey`) are read from Zotero settings;
 with Zotero closed, commands still run keyless.
