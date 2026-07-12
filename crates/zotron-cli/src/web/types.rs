@@ -6,6 +6,7 @@ pub struct Author {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Paper {
     pub title: String,
     pub authors: Vec<Author>,
@@ -94,5 +95,37 @@ impl Paper {
         }
 
         item
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn paper_serializes_agent_facing_keys_as_camel_case() {
+        let paper = Paper {
+            title: "T".into(),
+            authors: vec![Author { name: "Jane Doe".into() }],
+            doi: Some("10.1/x".into()),
+            abstract_text: Some("A".into()),
+            date: Some("2026".into()),
+            publication: Some("J".into()),
+            volume: Some("1".into()),
+            pages: Some("1-2".into()),
+            url: Some("https://example.org".into()),
+            pdf_url: Some("https://example.org/x.pdf".into()),
+            arxiv_id: Some("2301.00001".into()),
+            source: Some("openalex".into()),
+            cited_by_count: Some(3),
+        };
+        let value = serde_json::to_value(&paper).unwrap();
+        let obj = value.as_object().unwrap();
+        for key in ["pdfUrl", "arxivId", "citedByCount", "abstract"] {
+            assert!(obj.contains_key(key), "missing {key}: {value}");
+        }
+        for key in ["pdf_url", "arxiv_id", "cited_by_count", "abstract_text"] {
+            assert!(!obj.contains_key(key), "snake_case leaked {key}: {value}");
+        }
     }
 }
