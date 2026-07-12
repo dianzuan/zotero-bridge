@@ -66,6 +66,10 @@ var I18N = {
     ragOverlap: "Chunk Overlap:",
     ragTopK: "Top-K:",
     ragMode: "Retrieval Mode:",
+    sourcesTitle: "Data Sources",
+    politeEmail: "Contact email:",
+    politeEmailHint: "For CrossRef / OpenAlex polite pool — optional, not a credential",
+    noKeyNeeded: "no key needed",
   },
   "zh-CN": {
     language: "语言:",
@@ -96,6 +100,10 @@ var I18N = {
     ragOverlap: "Chunk 重叠:",
     ragTopK: "检索数量 (Top-K):",
     ragMode: "检索模式:",
+    sourcesTitle: "数据源",
+    politeEmail: "联系邮箱:",
+    politeEmailHint: "用于 CrossRef / OpenAlex 礼貌池，选填，非登录凭证",
+    noKeyNeeded: "无需密钥",
   },
 };
 
@@ -234,6 +242,12 @@ function applyI18n() {
   setAttr("zotron-rag-overlap-label", "value", t("ragOverlap"));
   setAttr("zotron-rag-topk-label", "value", t("ragTopK"));
   setAttr("zotron-rag-mode-label", "value", t("ragMode"));
+
+  setText("zotron-src-title", t("sourcesTitle"));
+  setAttr("zotron-src-mailto-label", "value", t("politeEmail"));
+  setText("zotron-src-mailto-hint", t("politeEmailHint"));
+  setAttr("zotron-src-openalex-note", "value", t("noKeyNeeded"));
+  setAttr("zotron-src-crossref-note", "value", t("noKeyNeeded"));
 }
 
 function testOCR() {
@@ -332,6 +346,67 @@ function testRerank() {
   }).catch(function(e) {
     setStatus("zotron-rerank-status", t("failed") + ": " + (e.message || e), "#e74c3c");
   });
+}
+
+// Data Sources — academic source plugins (zotron-scholar et al.). Catalog and
+// pref keys mirror the source.* keys registered in addon/prefs.js / settings.ts.
+var SOURCE_CATALOG = [
+  { id: "openalex", secret: false },
+  { id: "crossref", secret: false },
+  { id: "core",   secret: true, pref: "source.core.apiKey" },
+  { id: "ads",    secret: true, pref: "source.ads.token" },
+  { id: "aminer", secret: true, pref: "source.aminer.apiKey" },
+];
+var DEFAULT_SOURCES_ENABLED = "openalex, crossref";
+
+function parseEnabledSources(csv) {
+  return String(csv || "").split(",").map(function(s) { return s.trim(); }).filter(Boolean);
+}
+
+function saveEnabledSources() {
+  var on = [];
+  for (var i = 0; i < SOURCE_CATALOG.length; i++) {
+    var cb = el("zotron-src-" + SOURCE_CATALOG[i].id);
+    if (cb && cb.checked) on.push(SOURCE_CATALOG[i].id);
+  }
+  sp("sources.enabled", on.join(", "));
+}
+
+function initSources() {
+  var enabled = parseEnabledSources(gp("sources.enabled") || DEFAULT_SOURCES_ENABLED);
+  var isOn = {};
+  enabled.forEach(function(id) { isOn[id] = true; });
+
+  SOURCE_CATALOG.forEach(function(src) {
+    var cb = el("zotron-src-" + src.id);
+    if (cb) {
+      cb.checked = !!isOn[src.id];
+      cb.addEventListener("command", saveEnabledSources);
+    }
+    if (src.secret) {
+      var ki = el("zotron-src-" + src.id + "-key");
+      if (ki) {
+        var saved = gp(src.pref);
+        if (saved) ki.value = saved;
+        var save = (function(prefKey, node) {
+          return function() { sp(prefKey, node.value); };
+        })(src.pref, ki);
+        ki.addEventListener("input", save);
+        ki.addEventListener("change", save);
+        ki.addEventListener("blur", save);
+      }
+    }
+  });
+
+  var mailto = el("zotron-src-mailto");
+  if (mailto) {
+    var savedM = gp("source.mailto");
+    if (savedM) mailto.value = savedM;
+    var saveM = function() { sp("source.mailto", mailto.value); };
+    mailto.addEventListener("input", saveM);
+    mailto.addEventListener("change", saveM);
+    mailto.addEventListener("blur", saveM);
+  }
 }
 
 function init() {
@@ -438,6 +513,8 @@ function init() {
     ragMode.value = gp("rag.retrievalMode") || "hybrid";
     ragMode.addEventListener("command", function() { sp("rag.retrievalMode", ragMode.value); });
   }
+
+  initSources();
 }
 
 if (document.getElementById("zotron-ocr-provider")) { init(); }
