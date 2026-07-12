@@ -152,8 +152,8 @@ describe("settings handler", () => {
     });
   });
 
-  describe("source keys (SP1)", () => {
-    it("round-trips non-secret source keys and redacts secret ones", async () => {
+  describe("source keys", () => {
+    it("round-trips mailto and redacts the CORE key", async () => {
       const store = new Map<string, any>();
       installZotero({
         Prefs: {
@@ -165,36 +165,42 @@ describe("settings handler", () => {
       const { settingsHandlers } = await import("../../src/handlers/settings");
 
       await settingsHandlers.setAll({
-        "sources.enabled": "openalex, crossref, core",
         "source.mailto": "me@example.org",
         "source.core.apiKey": "core-secret",
-        "source.ads.token": "ads-secret",
-        "source.aminer.apiKey": "aminer-secret",
       });
 
-      expect(await settingsHandlers.getRaw({ key: "sources.enabled" }))
-        .to.deep.equal({ "sources.enabled": "openalex, crossref, core" });
       expect(await settingsHandlers.get({ key: "source.mailto" }))
         .to.deep.equal({ "source.mailto": "me@example.org" });
-
       expect(await settingsHandlers.get({ key: "source.core.apiKey" }))
         .to.deep.equal({ "source.core.apiKey": "REDACTED" });
       expect(await settingsHandlers.getRaw({ key: "source.core.apiKey" }))
         .to.deep.equal({ "source.core.apiKey": "core-secret" });
-      expect(await settingsHandlers.get({ key: "source.ads.token" }))
-        .to.deep.equal({ "source.ads.token": "REDACTED" });
-      expect(await settingsHandlers.get({ key: "source.aminer.apiKey" }))
-        .to.deep.equal({ "source.aminer.apiKey": "REDACTED" });
     });
 
-    it("exposes source defaults in getAll when prefs are unset", async () => {
+    it("rejects retired source keys as unknown", async () => {
+      installZotero({ Prefs: { get: sinon.stub().returns(undefined) } });
+      delete require.cache[require.resolve("../../src/handlers/settings")];
+      const { settingsHandlers } = await import("../../src/handlers/settings");
+      for (const key of ["sources.enabled", "source.ads.token", "source.aminer.apiKey"]) {
+        try {
+          await settingsHandlers.set({ key, value: "x" });
+          expect.fail(`set(${key}) should have thrown`);
+        } catch (e: any) {
+          expect(String(e.message ?? e)).to.match(/unknown/i);
+        }
+      }
+    });
+
+    it("exposes surviving source defaults in getAll", async () => {
       installZotero({ Prefs: { get: sinon.stub().returns(undefined) } });
       delete require.cache[require.resolve("../../src/handlers/settings")];
       const { settingsHandlers } = await import("../../src/handlers/settings");
       const all = await settingsHandlers.getAll();
-      expect(all["sources.enabled"]).to.equal("openalex, crossref");
       expect(all["source.mailto"]).to.equal("");
       expect(all["source.core.apiKey"]).to.equal("");
+      expect(all).to.not.have.property("sources.enabled");
+      expect(all).to.not.have.property("source.ads.token");
+      expect(all).to.not.have.property("source.aminer.apiKey");
     });
   });
 });

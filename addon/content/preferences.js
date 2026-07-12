@@ -348,55 +348,19 @@ function testRerank() {
   });
 }
 
-// Data Sources — academic source plugins (zotron-scholar et al.). Catalog and
-// pref keys mirror the source.* keys registered in addon/prefs.js / settings.ts.
-var SOURCE_CATALOG = [
-  { id: "openalex", secret: false },
-  { id: "crossref", secret: false },
-  { id: "core",   secret: true, pref: "source.core.apiKey" },
-  { id: "ads",    secret: true, pref: "source.ads.token" },
-  { id: "aminer", secret: true, pref: "source.aminer.apiKey" },
-];
-var DEFAULT_SOURCES_ENABLED = "openalex, crossref";
-
-function parseEnabledSources(csv) {
-  return String(csv || "").split(",").map(function(s) { return s.trim(); }).filter(Boolean);
-}
-
-function saveEnabledSources() {
-  var on = [];
-  for (var i = 0; i < SOURCE_CATALOG.length; i++) {
-    var cb = el("zotron-src-" + SOURCE_CATALOG[i].id);
-    if (cb && cb.checked) on.push(SOURCE_CATALOG[i].id);
-  }
-  sp("sources.enabled", on.join(", "));
-}
-
+// Data Sources — credentials consumed by `zotron web` (settings-only).
+// openalex/crossref need no configuration; only CORE key + polite-pool
+// mailto are wired.
 function initSources() {
-  var enabled = parseEnabledSources(gp("sources.enabled") || DEFAULT_SOURCES_ENABLED);
-  var isOn = {};
-  enabled.forEach(function(id) { isOn[id] = true; });
-
-  SOURCE_CATALOG.forEach(function(src) {
-    var cb = el("zotron-src-" + src.id);
-    if (cb) {
-      cb.checked = !!isOn[src.id];
-      cb.addEventListener("command", saveEnabledSources);
-    }
-    if (src.secret) {
-      var ki = el("zotron-src-" + src.id + "-key");
-      if (ki) {
-        var saved = gp(src.pref);
-        if (saved) ki.value = saved;
-        var save = (function(prefKey, node) {
-          return function() { sp(prefKey, node.value); };
-        })(src.pref, ki);
-        ki.addEventListener("input", save);
-        ki.addEventListener("change", save);
-        ki.addEventListener("blur", save);
-      }
-    }
-  });
+  var coreKey = el("zotron-src-core-key");
+  if (coreKey) {
+    var savedK = gp("source.core.apiKey");
+    if (savedK) coreKey.value = savedK;
+    var saveK = function() { sp("source.core.apiKey", coreKey.value); };
+    coreKey.addEventListener("input", saveK);
+    coreKey.addEventListener("change", saveK);
+    coreKey.addEventListener("blur", saveK);
+  }
 
   var mailto = el("zotron-src-mailto");
   if (mailto) {

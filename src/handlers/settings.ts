@@ -29,11 +29,8 @@ const SETTINGS_KEYS = [
   "rerank.candidateCount",
   "rerank.scoreFloor",
   "rerank.gapThreshold",
-  "sources.enabled",
   "source.mailto",
   "source.core.apiKey",
-  "source.ads.token",
-  "source.aminer.apiKey",
 ];
 
 // ReadonlySet derived from SETTINGS_KEYS — shared by set (includes-check) and
@@ -44,8 +41,6 @@ const SECRET_KEYS: ReadonlySet<string> = new Set([
   "embedding.apiKey",
   "rerank.apiKey",
   "source.core.apiKey",
-  "source.ads.token",
-  "source.aminer.apiKey",
 ]);
 
 function getSetting(key: string): any {
