@@ -1101,7 +1101,7 @@ fn run_command(command: Command, client: &mut impl RpcCaller) -> Result<String, 
         Command::Rag { command } => {
             return run_rag_command(command, client);
         }
-        Command::Web { command } => return crate::web::run_web_command(command),
+        Command::Web { command } => return crate::web::run_web_command(command, client),
         Command::Sources { command } => {
             return match command.unwrap_or(SourcesCommand::List) {
                 SourcesCommand::List => run_sources_list(),

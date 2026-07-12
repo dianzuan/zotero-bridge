@@ -7,10 +7,10 @@ use serde_json::Value;
 /// excellent green-OA source (author/institutional repository deposits),
 /// complementing Unpaywall.
 ///
-/// The CORE API v3 requires a free API key, read from the
-/// `ZOTRON_SCHOLAR_CORE_KEY` environment variable and sent as
-/// `Authorization: Bearer {key}`. When the key is absent the resolver
-/// returns `Ok(None)` immediately — it is silently skipped, never an error.
+/// The CORE API v3 requires a free API key, read from Zotero settings
+/// (`source.core.apiKey`) and sent as `Authorization: Bearer {key}`. When
+/// the key is absent the resolver returns `Ok(None)` immediately — it is
+/// silently skipped, never an error.
 ///
 /// API shape (CORE API v3, https://api.core.ac.uk/v3/):
 ///   GET /v3/search/works?q=doi:"{DOI}"&limit=5   (Authorization: Bearer KEY)
@@ -21,11 +21,9 @@ pub struct Core {
 }
 
 impl Core {
-    pub fn new() -> Self {
+    pub fn new(api_key: Option<String>) -> Self {
         Self {
-            api_key: std::env::var("ZOTRON_SCHOLAR_CORE_KEY")
-                .ok()
-                .filter(|k| !k.trim().is_empty()),
+            api_key: api_key.filter(|k| !k.trim().is_empty()),
         }
     }
 
@@ -118,11 +116,21 @@ mod tests {
 
     #[test]
     fn test_blank_key_treated_as_absent() {
-        // new() filters whitespace-only keys; simulate via direct field.
-        let core = Core {
-            api_key: Some("   ".to_string()).filter(|k| !k.trim().is_empty()),
-        };
+        // new() filters whitespace-only keys.
+        let core = Core::new(Some("   ".to_string()));
         assert!(core.api_key.is_none());
+    }
+
+    #[test]
+    fn test_empty_key_treated_as_absent() {
+        let core = Core::new(Some(String::new()));
+        assert!(core.api_key.is_none());
+    }
+
+    #[test]
+    fn test_present_key_kept() {
+        let core = Core::new(Some("core-secret".to_string()));
+        assert_eq!(core.api_key.as_deref(), Some("core-secret"));
     }
 
     #[test]

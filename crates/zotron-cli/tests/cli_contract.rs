@@ -2815,3 +2815,18 @@ fn web_search_rejects_unknown_source() {
         .expect_err("unknown source errors");
     assert!(err.contains("unknown source: nope"), "got {err}");
 }
+
+#[test]
+fn web_commands_read_source_settings_and_degrade() {
+    let mut client = FakeClient::default(); // 无响应排队 → getRaw 全部 Err
+    let err = run_with_client(["zotron", "web", "fetch"], &mut client)
+        .expect_err("fetch without identifier still errors");
+    assert!(err.contains("provide --doi or --arxiv"), "got {err}");
+    let getraw_keys: Vec<&str> = client
+        .calls
+        .iter()
+        .filter(|(m, _)| m == "settings.getRaw")
+        .filter_map(|(_, p)| p.as_ref().and_then(|p| p["key"].as_str()))
+        .collect();
+    assert_eq!(getraw_keys, vec!["source.mailto", "source.core.apiKey"]);
+}

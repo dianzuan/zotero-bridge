@@ -8,10 +8,8 @@ pub struct OpenAlex {
 }
 
 impl OpenAlex {
-    pub fn new() -> Self {
-        Self {
-            email: std::env::var("ZOTRON_SCHOLAR_EMAIL").ok(),
-        }
+    pub fn new(email: Option<String>) -> Self {
+        Self { email }
     }
 }
 

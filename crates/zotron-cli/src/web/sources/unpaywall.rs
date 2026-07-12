@@ -5,10 +5,8 @@ pub struct Unpaywall {
 }
 
 impl Unpaywall {
-    pub fn new() -> Self {
-        Self {
-            email: std::env::var("ZOTRON_SCHOLAR_EMAIL").ok(),
-        }
+    pub fn new(email: Option<String>) -> Self {
+        Self { email }
     }
 
     pub fn find_pdf(&self, doi: &str) -> Result<Option<String>, String> {

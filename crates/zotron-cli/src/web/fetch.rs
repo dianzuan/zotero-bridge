@@ -10,9 +10,10 @@ use crate::web::sources::fatcat::Fatcat;
 use crate::web::sources::publisher::PublisherDirect;
 use crate::web::sources::unpaywall::Unpaywall;
 use crate::web::types::Paper;
+use crate::web::WebConfig;
 
-pub fn fetch_doi(doi: &str) -> Result<(Paper, Option<PathBuf>), String> {
-    let crossref = CrossRef::new();
+pub fn fetch_doi(doi: &str, config: &WebConfig) -> Result<(Paper, Option<PathBuf>), String> {
+    let crossref = CrossRef::new(config.mailto.clone());
 
     let paper = crossref.fetch_doi(doi)?;
 
@@ -28,9 +29,9 @@ pub fn fetch_doi(doi: &str) -> Result<(Paper, Option<PathBuf>), String> {
     // The free open-access sources come first; Publisher-direct is the last
     // resort — it follows the publisher's own advertised `citation_pdf_url` and
     // only succeeds when the caller's IP has institutional access.
-    let unpaywall = Unpaywall::new();
+    let unpaywall = Unpaywall::new(config.mailto.clone());
     let doaj = Doaj::new();
-    let core = Core::new();
+    let core = Core::new(config.core_api_key.clone());
     let fatcat = Fatcat::new();
     let publisher = PublisherDirect::new();
     let openalex_url = paper.pdf_url.clone();
@@ -99,7 +100,7 @@ pub fn fetch_arxiv(arxiv_id: &str) -> Result<(Paper, Option<PathBuf>), String> {
 }
 
 fn download_pdf(url: &str, id: &str) -> Result<PathBuf, String> {
-    let dir = std::env::temp_dir().join("zotron-scholar");
+    let dir = std::env::temp_dir().join("zotron-web");
     fs::create_dir_all(&dir).map_err(|e| format!("create temp dir: {e}"))?;
 
     let safe_name: String = id
