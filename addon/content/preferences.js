@@ -38,72 +38,74 @@ var RERANK_CONFIGS = {
 
 var I18N = {
   "en-US": {
-    language: "Language:",
+    generalTitle: "General",
+    language: "Language",
     english: "English",
     chinese: "Chinese",
-    ocrTitle: "OCR Settings",
-    ocrProvider: "OCR Provider:",
-    embTitle: "Embedding Settings",
-    embProvider: "Provider:",
-    apiKey: "API Key:",
+    ocrTitle: "OCR",
+    ocrProvider: "Provider",
+    embTitle: "Embedding",
+    embProvider: "Provider",
+    apiKey: "API Key",
     apiKeyPlaceholder: "Leave empty until you configure a provider token",
-    model: "Model:",
-    apiUrl: "API URL:",
+    model: "Model",
+    apiUrl: "API URL",
     test: "Test",
-    ready: "Ready",
     missingKey: "Enter an API Key first",
-    testing: "Testing...",
-    invalidKey: "Invalid API Key",
+    missingUrl: "No API URL configured",
+    testing: "Testing…",
     okHttp: "Connection OK",
-    okDim: "Connection OK - vector dimension",
-    failedHttp: "Request failed",
-    failed: "Connection failed",
-    rerankTitle: "Reranker Settings",
-    rerankProvider: "Provider:",
+    okDim: "vector dimension",
+    rerankTitle: "Reranker",
+    rerankProvider: "Provider",
     rerankKeyPlaceholder: "Leave empty to disable reranking",
-    ragTitle: "Advanced RAG Settings",
-    ragChunkSize: "Chunk Size:",
-    ragOverlap: "Chunk Overlap:",
-    ragTopK: "Top-K:",
-    ragMode: "Retrieval Mode:",
+    ragTitle: "Advanced RAG",
+    ragChunkSize: "Chunk Size",
+    ragOverlap: "Chunk Overlap",
+    ragTopK: "Top-K",
+    ragMode: "Retrieval Mode",
+    ragUnitChars: "chars",
     sourcesTitle: "Data Sources",
-    politeEmail: "Contact email:",
+    coreKey: "CORE Key",
+    coreKeyPlaceholder: "Optional — OA PDF fallback source",
+    politeEmail: "Contact email",
     politeEmailHint: "For CrossRef / OpenAlex polite pool — optional, not a credential",
     noKeyNeeded: "no key needed",
   },
   "zh-CN": {
-    language: "语言:",
+    generalTitle: "常规",
+    language: "界面语言",
     english: "英文",
     chinese: "中文",
-    ocrTitle: "OCR 设置",
-    ocrProvider: "OCR Provider:",
-    embTitle: "Embedding 设置",
-    embProvider: "Provider:",
-    apiKey: "API Key:",
+    ocrTitle: "OCR",
+    ocrProvider: "Provider",
+    embTitle: "Embedding",
+    embProvider: "Provider",
+    apiKey: "API Key",
     apiKeyPlaceholder: "Token 默认留空，配置 provider 后再填写",
-    model: "Model:",
-    apiUrl: "API URL:",
+    model: "Model",
+    apiUrl: "API URL",
     test: "测试",
-    ready: "就绪",
     missingKey: "请先填写 API Key",
-    testing: "测试中...",
-    invalidKey: "API Key 无效",
-    okHttp: "连接成功",
-    okDim: "连接成功 - 向量维度",
-    failedHttp: "请求失败",
-    failed: "连接失败",
-    rerankTitle: "Reranker 设置",
-    rerankProvider: "Provider:",
+    missingUrl: "未配置 API URL",
+    testing: "测试中…",
+    okHttp: "连接正常",
+    okDim: "向量维度",
+    rerankTitle: "Reranker",
+    rerankProvider: "Provider",
     rerankKeyPlaceholder: "留空则不启用 Reranking",
-    ragTitle: "高级 RAG 设置",
-    ragChunkSize: "Chunk 大小:",
-    ragOverlap: "Chunk 重叠:",
-    ragTopK: "检索数量 (Top-K):",
-    ragMode: "检索模式:",
+    ragTitle: "高级 RAG 参数",
+    ragChunkSize: "Chunk 大小",
+    ragOverlap: "Chunk 重叠",
+    ragTopK: "检索数量 (Top-K)",
+    ragMode: "检索模式",
+    ragUnitChars: "字符",
     sourcesTitle: "数据源",
-    politeEmail: "联系邮箱:",
+    coreKey: "CORE Key",
+    coreKeyPlaceholder: "选填，OA PDF 兜底源",
+    politeEmail: "联系邮箱",
     politeEmailHint: "用于 CrossRef / OpenAlex 礼貌池，选填，非登录凭证",
-    noKeyNeeded: "无需密钥",
+    noKeyNeeded: "无需配置",
   },
 };
 
@@ -124,12 +126,34 @@ function el(id) { return document.getElementById(id); }
 function se(id, val) { var node = el(id); if (node) node.value = val || ""; }
 function setAttr(id, attr, val) { var node = el(id); if (node) node.setAttribute(attr, val); }
 function setText(id, val) { var node = el(id); if (node) node.textContent = val; }
-function setStatus(id, msg, color) {
+function setStatus(id, msg, kind, fullText) {
   var node = el(id);
-  if (node) {
-    node.textContent = msg;
-    node.style.color = color;
-  }
+  if (!node) return;
+  node.textContent = msg || "";
+  node.className = "zotron-status" + (kind ? " zotron-status-" + kind : "");
+  if (fullText || msg) node.setAttribute("title", fullText || msg);
+  else node.removeAttribute("title");
+}
+
+// Verbatim provider-error pass-through. Returns true when the caller should
+// treat the response as success. strict=true: any non-2xx is an error
+// (embedding/rerank semantics); strict=false: only 401/403 (OCR probe
+// semantics, where e.g. 400 still proves the key works).
+function reportHttpError(id, xhr, strict) {
+  var authFail = xhr.status === 401 || xhr.status === 403;
+  var non2xx = !(xhr.status >= 200 && xhr.status < 300);
+  if (!authFail && !(strict && non2xx)) return true;
+  var body = String(xhr.responseText || "").trim().replace(/\s+/g, " ");
+  var msg = "✗ HTTP " + xhr.status + (body ? " — " + body : "");
+  setStatus(id, msg, "err", msg);
+  return false;
+}
+
+function reportSuccess(id, xhr, extra) {
+  var msg = "✓ " + t("okHttp");
+  if (!(xhr.status >= 200 && xhr.status < 300)) msg += " (HTTP " + xhr.status + ")";
+  if (extra) msg += " · " + extra;
+  setStatus(id, msg, "ok");
 }
 
 function currentLanguage() {
@@ -181,8 +205,14 @@ function applyProvider(kind, forceDefaults) {
   setReadonly(modelId, false);
 
   if (!isOCR) {
-    var keyRow = el("zotron-emb-key-row");
-    if (keyRow) keyRow.style.display = (provider === "ollama") ? "none" : "";
+    var keyless = provider === "ollama";
+    ["zotron-emb-key-label", "zotron-emb-apikey", "zotron-emb-test", "zotron-emb-hintrow"]
+      .forEach(function(id) {
+        var node = el(id);
+        if (!node) return;
+        if (keyless) node.setAttribute("hidden", "hidden");
+        else node.removeAttribute("hidden");
+      });
   }
 }
 
@@ -203,14 +233,31 @@ function applyRerank(forceDefaults) {
   setReadonly("zotron-rerank-model", false);
 }
 
+function updateRagPreview() {
+  var node = el("zotron-rag-preview");
+  if (!node) return;
+  var val = function(key, dflt) {
+    var v = gp(key);
+    return (v === "" || v === undefined || v === null) ? dflt : v;
+  };
+  var chunk = val("rag.chunkSize", 512);
+  var overlap = val("rag.chunkOverlap", 64);
+  var topk = val("rag.topK", 5);
+  var mode = val("rag.retrievalMode", "hybrid");
+  node.textContent = "chunk " + chunk + " · overlap " + overlap
+    + " · top-k " + topk + " · " + mode;
+}
+
 function applyI18n() {
   var lang = currentLanguage();
   var selector = el("zotron-language");
   if (selector) selector.value = lang;
 
+  setText("zotron-general-title", t("generalTitle"));
   setAttr("zotron-lang-label", "value", t("language"));
   setAttr("zotron-lang-en", "label", t("english"));
   setAttr("zotron-lang-zh", "label", t("chinese"));
+
   setText("zotron-ocr-title", t("ocrTitle"));
   setAttr("zotron-ocr-provider-label", "value", t("ocrProvider"));
   setText("zotron-emb-title", t("embTitle"));
@@ -225,8 +272,6 @@ function applyI18n() {
   setAttr("zotron-emb-test", "label", t("test"));
   setAttr("zotron-ocr-apikey", "placeholder", t("apiKeyPlaceholder"));
   setAttr("zotron-emb-apikey", "placeholder", t("apiKeyPlaceholder"));
-  setStatus("zotron-ocr-status", t("ready"), "#888");
-  setStatus("zotron-emb-status", t("ready"), "#888");
 
   setText("zotron-rerank-title", t("rerankTitle"));
   setAttr("zotron-rerank-provider-label", "value", t("rerankProvider"));
@@ -235,19 +280,24 @@ function applyI18n() {
   setAttr("zotron-rerank-url-label", "value", t("apiUrl"));
   setAttr("zotron-rerank-test", "label", t("test"));
   setAttr("zotron-rerank-apikey", "placeholder", t("rerankKeyPlaceholder"));
-  setStatus("zotron-rerank-status", t("ready"), "#888");
 
-  setAttr("zotron-rag-toggle-label", "value", "▶ " + t("ragTitle"));
+  setText("zotron-rag-title", t("ragTitle"));
   setAttr("zotron-rag-chunk-label", "value", t("ragChunkSize"));
   setAttr("zotron-rag-overlap-label", "value", t("ragOverlap"));
   setAttr("zotron-rag-topk-label", "value", t("ragTopK"));
   setAttr("zotron-rag-mode-label", "value", t("ragMode"));
+  setText("zotron-rag-chunk-unit", t("ragUnitChars"));
+  setText("zotron-rag-overlap-unit", t("ragUnitChars"));
 
   setText("zotron-src-title", t("sourcesTitle"));
+  setAttr("zotron-src-core-label", "value", t("coreKey"));
+  setAttr("zotron-src-core-key", "placeholder", t("coreKeyPlaceholder"));
   setAttr("zotron-src-mailto-label", "value", t("politeEmail"));
   setText("zotron-src-mailto-hint", t("politeEmailHint"));
-  setAttr("zotron-src-openalex-note", "value", t("noKeyNeeded"));
-  setAttr("zotron-src-crossref-note", "value", t("noKeyNeeded"));
+  setAttr("zotron-src-openalex-note", "value", "✓ " + t("noKeyNeeded"));
+  setAttr("zotron-src-crossref-note", "value", "✓ " + t("noKeyNeeded"));
+
+  updateRagPreview();
 }
 
 function testOCR() {
@@ -255,8 +305,8 @@ function testOCR() {
   var keyNode = el("zotron-ocr-apikey");
   var key = keyNode ? keyNode.value : gp("ocr.apiKey");
   if (keyNode) sp("ocr.apiKey", key);
-  if (!key) { setStatus("zotron-ocr-status", t("missingKey"), "#e74c3c"); return; }
-  setStatus("zotron-ocr-status", t("testing"), "#f39c12");
+  if (!key) { setStatus("zotron-ocr-status", "✗ " + t("missingKey"), "err"); return; }
+  setStatus("zotron-ocr-status", t("testing"), "busy");
   var model = gp("ocr.model") || OCR_CONFIGS[DEFAULT_OCR_PROVIDER].model;
   Zotero.HTTP.request("POST", url, {
     headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
@@ -264,13 +314,12 @@ function testOCR() {
     timeout: 10000,
     successCodes: false,
   }).then(function(xhr) {
-    if (xhr.status === 401 || xhr.status === 403) {
-      setStatus("zotron-ocr-status", t("invalidKey") + " (" + xhr.status + ")", "#e74c3c");
-    } else {
-      setStatus("zotron-ocr-status", t("okHttp") + " (HTTP " + xhr.status + ")", "#27ae60");
+    if (reportHttpError("zotron-ocr-status", xhr, false)) {
+      reportSuccess("zotron-ocr-status", xhr);
     }
   }).catch(function(e) {
-    setStatus("zotron-ocr-status", t("failed") + ": " + (e.message || e), "#e74c3c");
+    var raw = String((e && e.message) || e);
+    setStatus("zotron-ocr-status", "✗ " + raw, "err", raw);
   });
 }
 
@@ -281,8 +330,8 @@ function testEmb() {
   var key = keyNode ? keyNode.value : gp("embedding.apiKey");
   if (keyNode) sp("embedding.apiKey", key);
   var model = gp("embedding.model") || EMB_CONFIGS[provider].model;
-  if (provider !== "ollama" && !key) { setStatus("zotron-emb-status", t("missingKey"), "#e74c3c"); return; }
-  setStatus("zotron-emb-status", t("testing"), "#f39c12");
+  if (provider !== "ollama" && !key) { setStatus("zotron-emb-status", "✗ " + t("missingKey"), "err"); return; }
+  setStatus("zotron-emb-status", t("testing"), "busy");
 
   var reqUrl, body, headers;
   if (provider === "ollama") {
@@ -301,23 +350,19 @@ function testEmb() {
     timeout: 10000,
     successCodes: false,
   }).then(function(xhr) {
-    if (xhr.status === 401 || xhr.status === 403) {
-      setStatus("zotron-emb-status", t("invalidKey") + " (" + xhr.status + ")", "#e74c3c");
-    } else if (xhr.status >= 200 && xhr.status < 300) {
-      try {
-        var data = JSON.parse(xhr.responseText);
-        var dim = provider === "ollama"
-          ? (data.embedding ? data.embedding.length : "?")
-          : (data.data && data.data[0] ? data.data[0].embedding.length : "?");
-        setStatus("zotron-emb-status", t("okDim") + ": " + dim, "#27ae60");
-      } catch(e) {
-        setStatus("zotron-emb-status", t("okHttp") + " (HTTP " + xhr.status + ")", "#27ae60");
-      }
-    } else {
-      setStatus("zotron-emb-status", t("failedHttp") + " (HTTP " + xhr.status + ")", "#e74c3c");
-    }
+    if (!reportHttpError("zotron-emb-status", xhr, true)) return;
+    var extra = "";
+    try {
+      var data = JSON.parse(xhr.responseText);
+      var dim = provider === "ollama"
+        ? (data.embedding ? data.embedding.length : "")
+        : (data.data && data.data[0] ? data.data[0].embedding.length : "");
+      if (dim) extra = t("okDim") + " " + dim;
+    } catch (e) { /* body was not JSON; success line stands on its own */ }
+    reportSuccess("zotron-emb-status", xhr, extra);
   }).catch(function(e) {
-    setStatus("zotron-emb-status", t("failed") + ": " + (e.message || e), "#e74c3c");
+    var raw = String((e && e.message) || e);
+    setStatus("zotron-emb-status", "✗ " + raw, "err", raw);
   });
 }
 
@@ -326,9 +371,9 @@ function testRerank() {
   var keyNode = el("zotron-rerank-apikey");
   var key = keyNode ? keyNode.value : gp("rerank.apiKey");
   if (keyNode) sp("rerank.apiKey", key);
-  if (!key) { setStatus("zotron-rerank-status", t("missingKey"), "#e74c3c"); return; }
-  if (!url) { setStatus("zotron-rerank-status", "No API URL configured", "#e74c3c"); return; }
-  setStatus("zotron-rerank-status", t("testing"), "#f39c12");
+  if (!key) { setStatus("zotron-rerank-status", "✗ " + t("missingKey"), "err"); return; }
+  if (!url) { setStatus("zotron-rerank-status", "✗ " + t("missingUrl"), "err"); return; }
+  setStatus("zotron-rerank-status", t("testing"), "busy");
   var model = gp("rerank.model") || RERANK_CONFIGS[DEFAULT_RERANK_PROVIDER].model;
   Zotero.HTTP.request("POST", url, {
     headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
@@ -336,15 +381,12 @@ function testRerank() {
     timeout: 10000,
     successCodes: false,
   }).then(function(xhr) {
-    if (xhr.status === 401 || xhr.status === 403) {
-      setStatus("zotron-rerank-status", t("invalidKey") + " (" + xhr.status + ")", "#e74c3c");
-    } else if (xhr.status >= 200 && xhr.status < 300) {
-      setStatus("zotron-rerank-status", t("okHttp") + " (HTTP " + xhr.status + ")", "#27ae60");
-    } else {
-      setStatus("zotron-rerank-status", t("failedHttp") + " (HTTP " + xhr.status + ")", "#e74c3c");
+    if (reportHttpError("zotron-rerank-status", xhr, true)) {
+      reportSuccess("zotron-rerank-status", xhr);
     }
   }).catch(function(e) {
-    setStatus("zotron-rerank-status", t("failed") + ": " + (e.message || e), "#e74c3c");
+    var raw = String((e && e.message) || e);
+    setStatus("zotron-rerank-status", "✗ " + raw, "err", raw);
   });
 }
 
@@ -441,18 +483,6 @@ function init() {
   if (embBtn) embBtn.addEventListener("click", testEmb);
   if (rerankBtn) rerankBtn.addEventListener("click", testRerank);
 
-  // RAG toggle
-  var ragToggle = el("zotron-rag-toggle");
-  var ragPanel = el("zotron-rag-panel");
-  if (ragToggle && ragPanel) {
-    ragToggle.addEventListener("click", function() {
-      var hidden = ragPanel.style.display === "none";
-      ragPanel.style.display = hidden ? "" : "none";
-      var label = el("zotron-rag-toggle-label");
-      if (label) label.setAttribute("value", (hidden ? "▼ " : "▶ ") + t("ragTitle"));
-    });
-  }
-
   // RAG bindings
   var ragBindings = [
     ["zotron-rag-chunksize", "rag.chunkSize"],
@@ -465,7 +495,7 @@ function init() {
       if (node) {
         var saved = gp(prefKey);
         if (saved !== "" && saved !== undefined) node.value = saved;
-        var save = function() { sp(prefKey, Number(node.value) || 0); };
+        var save = function() { sp(prefKey, Number(node.value) || 0); updateRagPreview(); };
         node.addEventListener("input", save);
         node.addEventListener("change", save);
       }
@@ -475,7 +505,7 @@ function init() {
   var ragMode = el("zotron-rag-mode");
   if (ragMode) {
     ragMode.value = gp("rag.retrievalMode") || "hybrid";
-    ragMode.addEventListener("command", function() { sp("rag.retrievalMode", ragMode.value); });
+    ragMode.addEventListener("command", function() { sp("rag.retrievalMode", ragMode.value); updateRagPreview(); });
   }
 
   initSources();

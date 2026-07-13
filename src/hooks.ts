@@ -98,6 +98,7 @@ export async function onStartup() {
       pluginID: "zotron@diamondrill",
       src: rootURI + "content/preferences.xhtml",
       scripts: [rootURI + "content/preferences.js"],
+      stylesheets: [rootURI + "content/preferences.css"],
       label: "Zotron",
       image: rootURI + "content/icons/icon.png",
     });

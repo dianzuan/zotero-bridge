@@ -1,0 +1,71 @@
+/* Zotron preference pane. All styling lives here — the XHTML carries only
+   classes. Alignment is driven by one variable; status colors adapt to the
+   OS theme via prefers-color-scheme. */
+
+:root {
+  --zotron-label-col: 110px;
+}
+
+.zotron-grid {
+  display: grid;
+  grid-template-columns: var(--zotron-label-col) minmax(0, 1fr) auto;
+  gap: 6px 10px;
+  align-items: center;
+}
+.zotron-grid > .z1 { grid-column: 1; justify-self: end; text-align: right; }
+.zotron-grid > .z2 { grid-column: 2; min-width: 0; }
+.zotron-grid > .z3 { grid-column: 3; }
+.zotron-grid > .zspan { grid-column: 2 / 4; min-width: 0; }
+.zotron-grid > menulist.z2 { justify-self: start; }
+
+.z-input { width: 100%; box-sizing: border-box; }
+.zotron-numrow { display: flex; align-items: center; gap: 6px; }
+.z-num { width: 80px; }
+
+.zotron-hintrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85em;
+  margin-top: -2px;
+}
+.zotron-hint { opacity: 0.7; }
+.zotron-unit { opacity: 0.7; font-size: 0.85em; }
+
+.zotron-status {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.85;
+}
+.zotron-status-ok   { color: #1a7f37; opacity: 1; }
+.zotron-status-err  { color: #c0392b; opacity: 1; }
+.zotron-status-busy { color: #9a6700; opacity: 1; }
+@media (prefers-color-scheme: dark) {
+  .zotron-status-ok   { color: #3fb950; }
+  .zotron-status-err  { color: #f85149; }
+  .zotron-status-busy { color: #d29922; }
+}
+
+.zotron-ok-note { color: #1a7f37; font-size: 0.9em; }
+@media (prefers-color-scheme: dark) {
+  .zotron-ok-note { color: #3fb950; }
+}
+
+#zotron-rag-details > summary {
+  cursor: pointer;
+  font-weight: 600;
+  list-style-position: outside;
+}
+.zotron-summary-title { font-size: 1.05em; }
+.zotron-summary-preview {
+  font-weight: 400;
+  font-size: 0.85em;
+  opacity: 0.7;
+  margin-left: 8px;
+}
+.zotron-details-body { margin-top: 10px; }
+
+.zotron-grid > [hidden] { display: none; }
