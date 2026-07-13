@@ -175,6 +175,16 @@ function applyConsoleLink(spanId, url) {
   node.onclick = function() { Zotero.launchURL(url); };
 }
 
+function refreshConsoleLinks() {
+  var ocr = ensureProvider("ocr.provider", OCR_CONFIGS, DEFAULT_OCR_PROVIDER);
+  var emb = ensureProvider("embedding.provider", EMB_CONFIGS, DEFAULT_EMB_PROVIDER);
+  var rerank = ensureProvider("rerank.provider", RERANK_CONFIGS, DEFAULT_RERANK_PROVIDER);
+  applyConsoleLink("zotron-ocr-console", OCR_CONFIGS[ocr].console);
+  applyConsoleLink("zotron-emb-console", EMB_CONFIGS[emb].console);
+  applyConsoleLink("zotron-rerank-console", RERANK_CONFIGS[rerank].console);
+  applyConsoleLink("zotron-core-console", CORE_CONSOLE);
+}
+
 function currentLanguage() {
   var saved = gp("ui.language");
   if (I18N[saved]) return saved;
@@ -320,6 +330,7 @@ function applyI18n() {
   setAttr("zotron-src-crossref-note", "value", "✓ " + t("noKeyNeeded"));
 
   updateRagPreview();
+  refreshConsoleLinks();
 }
 
 function testOCR() {
@@ -328,7 +339,7 @@ function testOCR() {
   var key = keyNode ? keyNode.value : gp("ocr.apiKey");
   if (keyNode) sp("ocr.apiKey", key);
   if (!key) { setStatus("zotron-ocr-status", "✗ " + t("missingKey"), "err"); return; }
-  setStatus("zotron-ocr-status", "… " + t("testing"), "busy");
+  setStatus("zotron-ocr-status", t("testing"), "busy");
   var model = gp("ocr.model") || OCR_CONFIGS[DEFAULT_OCR_PROVIDER].model;
   Zotero.HTTP.request("POST", url, {
     headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
@@ -353,7 +364,7 @@ function testEmb() {
   if (keyNode) sp("embedding.apiKey", key);
   var model = gp("embedding.model") || EMB_CONFIGS[provider].model;
   if (provider !== "ollama" && !key) { setStatus("zotron-emb-status", "✗ " + t("missingKey"), "err"); return; }
-  setStatus("zotron-emb-status", "… " + t("testing"), "busy");
+  setStatus("zotron-emb-status", t("testing"), "busy");
 
   var reqUrl, body, headers;
   if (provider === "ollama") {
@@ -395,7 +406,7 @@ function testRerank() {
   if (keyNode) sp("rerank.apiKey", key);
   if (!key) { setStatus("zotron-rerank-status", "✗ " + t("missingKey"), "err"); return; }
   if (!url) { setStatus("zotron-rerank-status", "✗ " + t("missingUrl"), "err"); return; }
-  setStatus("zotron-rerank-status", "… " + t("testing"), "busy");
+  setStatus("zotron-rerank-status", t("testing"), "busy");
   var model = gp("rerank.model") || RERANK_CONFIGS[DEFAULT_RERANK_PROVIDER].model;
   Zotero.HTTP.request("POST", url, {
     headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
