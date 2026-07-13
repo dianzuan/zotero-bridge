@@ -8,33 +8,35 @@ var DEFAULT_EMB_PROVIDER = "ollama";
 var DEFAULT_RERANK_PROVIDER = "jina";
 
 var OCR_CONFIGS = {
-  glm:    { label: "GLM-OCR",      url: "https://open.bigmodel.cn/api/paas/v4/layout_parsing", model: "glm-ocr" },
-  paddle: { label: "PaddleOCR-VL", url: "", model: "PaddleOCR-VL-1.5" },
-  mineru: { label: "MinerU",       url: "https://mineru.net/api/v4/extract/task", model: "vlm" },
-  custom: { label: "Custom OCR",   url: "", model: "custom-ocr-model" },
+  glm:    { label: "GLM-OCR",      url: "https://open.bigmodel.cn/api/paas/v4/layout_parsing", model: "glm-ocr", console: "https://open.bigmodel.cn" },
+  paddle: { label: "PaddleOCR-VL", url: "", model: "PaddleOCR-VL-1.5", console: "https://aistudio.baidu.com" },
+  mineru: { label: "MinerU",       url: "https://mineru.net/api/v4/extract/task", model: "vlm", console: "https://mineru.net" },
+  custom: { label: "Custom OCR",   url: "", model: "custom-ocr-model", console: "" },
 };
 
 var EMB_CONFIGS = {
-  ollama:     { label: "Ollama (本地)", url: "http://localhost:11434/v1/embeddings", model: "nomic-embed-text" },
-  openai:     { label: "OpenAI",       url: "https://api.openai.com/v1/embeddings", model: "text-embedding-3-small" },
-  volcengine: { label: "Volcengine",   url: "https://ark.cn-beijing.volces.com/api/v3/embeddings", model: "doubao-embedding-text-240715" },
-  dashscope:  { label: "DashScope",    url: "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings", model: "text-embedding-v4" },
-  zhipu:      { label: "Zhipu",        url: "https://open.bigmodel.cn/api/paas/v4/embeddings", model: "embedding-3" },
-  jina:       { label: "Jina",         url: "https://api.jina.ai/v1/embeddings", model: "jina-embeddings-v3" },
-  siliconflow:{ label: "SiliconFlow",  url: "https://api.siliconflow.cn/v1/embeddings", model: "BAAI/bge-m3" },
-  voyage:     { label: "Voyage",       url: "https://api.voyageai.com/v1/embeddings", model: "voyage-4" },
-  cohere:     { label: "Cohere",       url: "https://api.cohere.com/v2/embed", model: "embed-multilingual-v3.0" },
-  custom:     { label: "Custom",       url: "", model: "" },
+  ollama:     { label: "Ollama (本地)", url: "http://localhost:11434/v1/embeddings", model: "nomic-embed-text", console: "" },
+  openai:     { label: "OpenAI",       url: "https://api.openai.com/v1/embeddings", model: "text-embedding-3-small", console: "https://platform.openai.com/api-keys" },
+  volcengine: { label: "Volcengine",   url: "https://ark.cn-beijing.volces.com/api/v3/embeddings", model: "doubao-embedding-text-240715", console: "https://console.volcengine.com/ark" },
+  dashscope:  { label: "DashScope",    url: "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings", model: "text-embedding-v4", console: "https://dashscope.console.aliyun.com" },
+  zhipu:      { label: "Zhipu",        url: "https://open.bigmodel.cn/api/paas/v4/embeddings", model: "embedding-3", console: "https://open.bigmodel.cn" },
+  jina:       { label: "Jina",         url: "https://api.jina.ai/v1/embeddings", model: "jina-embeddings-v3", console: "https://jina.ai" },
+  siliconflow:{ label: "SiliconFlow",  url: "https://api.siliconflow.cn/v1/embeddings", model: "BAAI/bge-m3", console: "https://cloud.siliconflow.cn" },
+  voyage:     { label: "Voyage",       url: "https://api.voyageai.com/v1/embeddings", model: "voyage-4", console: "https://dash.voyageai.com" },
+  cohere:     { label: "Cohere",       url: "https://api.cohere.com/v2/embed", model: "embed-multilingual-v3.0", console: "https://dashboard.cohere.com" },
+  custom:     { label: "Custom",       url: "", model: "", console: "" },
 };
 
 var RERANK_CONFIGS = {
-  jina:       { label: "Jina",       url: "https://api.jina.ai/v1/rerank",       model: "jina-reranker-v2-base-multilingual" },
-  cohere:     { label: "Cohere",     url: "https://api.cohere.com/v2/rerank",     model: "rerank-v3.5" },
-  voyage:     { label: "Voyage",     url: "https://api.voyageai.com/v1/rerank",   model: "rerank-2" },
-  dashscope:  { label: "DashScope",  url: "https://dashscope.aliyuncs.com/compatible-api/v1/reranks", model: "qwen3-rerank" },
-  siliconflow:{ label: "SiliconFlow",url: "https://api.siliconflow.cn/v1/rerank", model: "BAAI/bge-reranker-v2-m3" },
-  "openai-compatible": { label: "Custom", url: "", model: "" },
+  jina:       { label: "Jina",       url: "https://api.jina.ai/v1/rerank",       model: "jina-reranker-v2-base-multilingual", console: "https://jina.ai" },
+  cohere:     { label: "Cohere",     url: "https://api.cohere.com/v2/rerank",     model: "rerank-v3.5", console: "https://dashboard.cohere.com" },
+  voyage:     { label: "Voyage",     url: "https://api.voyageai.com/v1/rerank",   model: "rerank-2", console: "https://dash.voyageai.com" },
+  dashscope:  { label: "DashScope",  url: "https://dashscope.aliyuncs.com/compatible-api/v1/reranks", model: "qwen3-rerank", console: "https://dashscope.console.aliyun.com" },
+  siliconflow:{ label: "SiliconFlow",url: "https://api.siliconflow.cn/v1/rerank", model: "BAAI/bge-reranker-v2-m3", console: "https://cloud.siliconflow.cn" },
+  "openai-compatible": { label: "Custom", url: "", model: "", console: "" },
 };
+
+var CORE_CONSOLE = "https://core.ac.uk/services/api";
 
 var I18N = {
   "en-US": {
@@ -128,12 +130,49 @@ function el(id) { return document.getElementById(id); }
 function se(id, val) { var node = el(id); if (node) node.value = val || ""; }
 function setAttr(id, attr, val) { var node = el(id); if (node) node.setAttribute(attr, val); }
 function setText(id, val) { var node = el(id); if (node) node.textContent = val; }
-function setStatus(id, msg, color) {
+function setStatus(id, msg, kind, fullText) {
   var node = el(id);
-  if (node) {
-    node.textContent = msg;
-    node.style.color = color;
+  if (!node) return;
+  node.textContent = msg || "";
+  node.className = "zotron-status" + (kind ? " zotron-status-" + kind : "");
+  if (fullText || msg) node.setAttribute("title", fullText || msg);
+  else node.removeAttribute("title");
+}
+
+// Verbatim provider-error pass-through. Returns true when the caller should
+// treat the response as success. strict=true: any non-2xx is an error
+// (embedding/rerank semantics); strict=false: only 401/403 (OCR probe
+// semantics, where e.g. 400 still proves the key works).
+function reportHttpError(id, xhr, strict) {
+  var authFail = xhr.status === 401 || xhr.status === 403;
+  var non2xx = !(xhr.status >= 200 && xhr.status < 300);
+  if (!authFail && !(strict && non2xx)) return true;
+  var body = String(xhr.responseText || "").trim().replace(/\s+/g, " ");
+  var msg = "✗ HTTP " + xhr.status + (body ? " — " + body : "");
+  setStatus(id, msg, "err", msg);
+  return false;
+}
+
+function reportSuccess(id, xhr, extra) {
+  var msg = "✓ " + t("okHttp");
+  if (!(xhr.status >= 200 && xhr.status < 300)) msg += " (HTTP " + xhr.status + ")";
+  if (extra) msg += " · " + extra;
+  setStatus(id, msg, "ok");
+}
+
+function applyConsoleLink(spanId, url) {
+  var node = el(spanId);
+  if (!node) return;
+  if (!url) {
+    node.setAttribute("hidden", "hidden");
+    node.textContent = "";
+    node.onclick = null;
+    return;
   }
+  var host = url.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  node.removeAttribute("hidden");
+  node.textContent = t("consoleHint") + " " + host;
+  node.onclick = function() { Zotero.launchURL(url); };
 }
 
 function currentLanguage() {
@@ -184,6 +223,8 @@ function applyProvider(kind, forceDefaults) {
   setReadonly(urlId, false);
   setReadonly(modelId, false);
 
+  applyConsoleLink(isOCR ? "zotron-ocr-console" : "zotron-emb-console", config.console);
+
   if (!isOCR) {
     var keyless = provider === "ollama";
     ["zotron-emb-key-label", "zotron-emb-apikey", "zotron-emb-test", "zotron-emb-hintrow"]
@@ -209,6 +250,7 @@ function applyRerank(forceDefaults) {
   if (forceDefaults || !editable || !gp("rerank.model")) sp("rerank.model", config.model);
   se("zotron-rerank-url", gp("rerank.apiUrl"));
   se("zotron-rerank-model", gp("rerank.model"));
+  applyConsoleLink("zotron-rerank-console", config.console);
   setReadonly("zotron-rerank-url", false);
   setReadonly("zotron-rerank-model", false);
 }
@@ -285,8 +327,8 @@ function testOCR() {
   var keyNode = el("zotron-ocr-apikey");
   var key = keyNode ? keyNode.value : gp("ocr.apiKey");
   if (keyNode) sp("ocr.apiKey", key);
-  if (!key) { setStatus("zotron-ocr-status", t("missingKey"), "#e74c3c"); return; }
-  setStatus("zotron-ocr-status", t("testing"), "#f39c12");
+  if (!key) { setStatus("zotron-ocr-status", "✗ " + t("missingKey"), "err"); return; }
+  setStatus("zotron-ocr-status", "… " + t("testing"), "busy");
   var model = gp("ocr.model") || OCR_CONFIGS[DEFAULT_OCR_PROVIDER].model;
   Zotero.HTTP.request("POST", url, {
     headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
@@ -294,13 +336,12 @@ function testOCR() {
     timeout: 10000,
     successCodes: false,
   }).then(function(xhr) {
-    if (xhr.status === 401 || xhr.status === 403) {
-      setStatus("zotron-ocr-status", t("invalidKey") + " (" + xhr.status + ")", "#e74c3c");
-    } else {
-      setStatus("zotron-ocr-status", t("okHttp") + " (HTTP " + xhr.status + ")", "#27ae60");
+    if (reportHttpError("zotron-ocr-status", xhr, false)) {
+      reportSuccess("zotron-ocr-status", xhr);
     }
   }).catch(function(e) {
-    setStatus("zotron-ocr-status", t("failed") + ": " + (e.message || e), "#e74c3c");
+    var raw = String((e && e.message) || e);
+    setStatus("zotron-ocr-status", "✗ " + raw, "err", raw);
   });
 }
 
@@ -311,8 +352,8 @@ function testEmb() {
   var key = keyNode ? keyNode.value : gp("embedding.apiKey");
   if (keyNode) sp("embedding.apiKey", key);
   var model = gp("embedding.model") || EMB_CONFIGS[provider].model;
-  if (provider !== "ollama" && !key) { setStatus("zotron-emb-status", t("missingKey"), "#e74c3c"); return; }
-  setStatus("zotron-emb-status", t("testing"), "#f39c12");
+  if (provider !== "ollama" && !key) { setStatus("zotron-emb-status", "✗ " + t("missingKey"), "err"); return; }
+  setStatus("zotron-emb-status", "… " + t("testing"), "busy");
 
   var reqUrl, body, headers;
   if (provider === "ollama") {
@@ -331,23 +372,19 @@ function testEmb() {
     timeout: 10000,
     successCodes: false,
   }).then(function(xhr) {
-    if (xhr.status === 401 || xhr.status === 403) {
-      setStatus("zotron-emb-status", t("invalidKey") + " (" + xhr.status + ")", "#e74c3c");
-    } else if (xhr.status >= 200 && xhr.status < 300) {
-      try {
-        var data = JSON.parse(xhr.responseText);
-        var dim = provider === "ollama"
-          ? (data.embedding ? data.embedding.length : "?")
-          : (data.data && data.data[0] ? data.data[0].embedding.length : "?");
-        setStatus("zotron-emb-status", t("okDim") + ": " + dim, "#27ae60");
-      } catch(e) {
-        setStatus("zotron-emb-status", t("okHttp") + " (HTTP " + xhr.status + ")", "#27ae60");
-      }
-    } else {
-      setStatus("zotron-emb-status", t("failedHttp") + " (HTTP " + xhr.status + ")", "#e74c3c");
-    }
+    if (!reportHttpError("zotron-emb-status", xhr, true)) return;
+    var extra = "";
+    try {
+      var data = JSON.parse(xhr.responseText);
+      var dim = provider === "ollama"
+        ? (data.embedding ? data.embedding.length : "")
+        : (data.data && data.data[0] ? data.data[0].embedding.length : "");
+      if (dim) extra = t("okDim") + " " + dim;
+    } catch (e) { /* body was not JSON; success line stands on its own */ }
+    reportSuccess("zotron-emb-status", xhr, extra);
   }).catch(function(e) {
-    setStatus("zotron-emb-status", t("failed") + ": " + (e.message || e), "#e74c3c");
+    var raw = String((e && e.message) || e);
+    setStatus("zotron-emb-status", "✗ " + raw, "err", raw);
   });
 }
 
@@ -356,9 +393,9 @@ function testRerank() {
   var keyNode = el("zotron-rerank-apikey");
   var key = keyNode ? keyNode.value : gp("rerank.apiKey");
   if (keyNode) sp("rerank.apiKey", key);
-  if (!key) { setStatus("zotron-rerank-status", t("missingKey"), "#e74c3c"); return; }
-  if (!url) { setStatus("zotron-rerank-status", "No API URL configured", "#e74c3c"); return; }
-  setStatus("zotron-rerank-status", t("testing"), "#f39c12");
+  if (!key) { setStatus("zotron-rerank-status", "✗ " + t("missingKey"), "err"); return; }
+  if (!url) { setStatus("zotron-rerank-status", "✗ " + t("missingUrl"), "err"); return; }
+  setStatus("zotron-rerank-status", "… " + t("testing"), "busy");
   var model = gp("rerank.model") || RERANK_CONFIGS[DEFAULT_RERANK_PROVIDER].model;
   Zotero.HTTP.request("POST", url, {
     headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
@@ -366,15 +403,12 @@ function testRerank() {
     timeout: 10000,
     successCodes: false,
   }).then(function(xhr) {
-    if (xhr.status === 401 || xhr.status === 403) {
-      setStatus("zotron-rerank-status", t("invalidKey") + " (" + xhr.status + ")", "#e74c3c");
-    } else if (xhr.status >= 200 && xhr.status < 300) {
-      setStatus("zotron-rerank-status", t("okHttp") + " (HTTP " + xhr.status + ")", "#27ae60");
-    } else {
-      setStatus("zotron-rerank-status", t("failedHttp") + " (HTTP " + xhr.status + ")", "#e74c3c");
+    if (reportHttpError("zotron-rerank-status", xhr, true)) {
+      reportSuccess("zotron-rerank-status", xhr);
     }
   }).catch(function(e) {
-    setStatus("zotron-rerank-status", t("failed") + ": " + (e.message || e), "#e74c3c");
+    var raw = String((e && e.message) || e);
+    setStatus("zotron-rerank-status", "✗ " + raw, "err", raw);
   });
 }
 
@@ -401,6 +435,8 @@ function initSources() {
     mailto.addEventListener("change", saveM);
     mailto.addEventListener("blur", saveM);
   }
+
+  applyConsoleLink("zotron-core-console", CORE_CONSOLE);
 }
 
 function init() {
