@@ -32,14 +32,6 @@
 .zotron-hint { opacity: 0.7; }
 .zotron-unit { opacity: 0.7; font-size: 0.85em; }
 
-.zotron-link {
-  color: -moz-nativehyperlinktext;
-  text-decoration: underline;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.zotron-link[hidden] { display: none; }
-
 .zotron-status {
   flex: 1;
   min-width: 0;

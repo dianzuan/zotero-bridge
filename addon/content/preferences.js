@@ -8,35 +8,33 @@ var DEFAULT_EMB_PROVIDER = "ollama";
 var DEFAULT_RERANK_PROVIDER = "jina";
 
 var OCR_CONFIGS = {
-  glm:    { label: "GLM-OCR",      url: "https://open.bigmodel.cn/api/paas/v4/layout_parsing", model: "glm-ocr", console: "https://open.bigmodel.cn" },
-  paddle: { label: "PaddleOCR-VL", url: "", model: "PaddleOCR-VL-1.5", console: "https://aistudio.baidu.com" },
-  mineru: { label: "MinerU",       url: "https://mineru.net/api/v4/extract/task", model: "vlm", console: "https://mineru.net" },
-  custom: { label: "Custom OCR",   url: "", model: "custom-ocr-model", console: "" },
+  glm:    { label: "GLM-OCR",      url: "https://open.bigmodel.cn/api/paas/v4/layout_parsing", model: "glm-ocr" },
+  paddle: { label: "PaddleOCR-VL", url: "", model: "PaddleOCR-VL-1.5" },
+  mineru: { label: "MinerU",       url: "https://mineru.net/api/v4/extract/task", model: "vlm" },
+  custom: { label: "Custom OCR",   url: "", model: "custom-ocr-model" },
 };
 
 var EMB_CONFIGS = {
-  ollama:     { label: "Ollama (本地)", url: "http://localhost:11434/v1/embeddings", model: "nomic-embed-text", console: "" },
-  openai:     { label: "OpenAI",       url: "https://api.openai.com/v1/embeddings", model: "text-embedding-3-small", console: "https://platform.openai.com/api-keys" },
-  volcengine: { label: "Volcengine",   url: "https://ark.cn-beijing.volces.com/api/v3/embeddings", model: "doubao-embedding-text-240715", console: "https://console.volcengine.com/ark" },
-  dashscope:  { label: "DashScope",    url: "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings", model: "text-embedding-v4", console: "https://dashscope.console.aliyun.com" },
-  zhipu:      { label: "Zhipu",        url: "https://open.bigmodel.cn/api/paas/v4/embeddings", model: "embedding-3", console: "https://open.bigmodel.cn" },
-  jina:       { label: "Jina",         url: "https://api.jina.ai/v1/embeddings", model: "jina-embeddings-v3", console: "https://jina.ai" },
-  siliconflow:{ label: "SiliconFlow",  url: "https://api.siliconflow.cn/v1/embeddings", model: "BAAI/bge-m3", console: "https://cloud.siliconflow.cn" },
-  voyage:     { label: "Voyage",       url: "https://api.voyageai.com/v1/embeddings", model: "voyage-4", console: "https://dash.voyageai.com" },
-  cohere:     { label: "Cohere",       url: "https://api.cohere.com/v2/embed", model: "embed-multilingual-v3.0", console: "https://dashboard.cohere.com" },
-  custom:     { label: "Custom",       url: "", model: "", console: "" },
+  ollama:     { label: "Ollama (本地)", url: "http://localhost:11434/v1/embeddings", model: "nomic-embed-text" },
+  openai:     { label: "OpenAI",       url: "https://api.openai.com/v1/embeddings", model: "text-embedding-3-small" },
+  volcengine: { label: "Volcengine",   url: "https://ark.cn-beijing.volces.com/api/v3/embeddings", model: "doubao-embedding-text-240715" },
+  dashscope:  { label: "DashScope",    url: "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings", model: "text-embedding-v4" },
+  zhipu:      { label: "Zhipu",        url: "https://open.bigmodel.cn/api/paas/v4/embeddings", model: "embedding-3" },
+  jina:       { label: "Jina",         url: "https://api.jina.ai/v1/embeddings", model: "jina-embeddings-v3" },
+  siliconflow:{ label: "SiliconFlow",  url: "https://api.siliconflow.cn/v1/embeddings", model: "BAAI/bge-m3" },
+  voyage:     { label: "Voyage",       url: "https://api.voyageai.com/v1/embeddings", model: "voyage-4" },
+  cohere:     { label: "Cohere",       url: "https://api.cohere.com/v2/embed", model: "embed-multilingual-v3.0" },
+  custom:     { label: "Custom",       url: "", model: "" },
 };
 
 var RERANK_CONFIGS = {
-  jina:       { label: "Jina",       url: "https://api.jina.ai/v1/rerank",       model: "jina-reranker-v2-base-multilingual", console: "https://jina.ai" },
-  cohere:     { label: "Cohere",     url: "https://api.cohere.com/v2/rerank",     model: "rerank-v3.5", console: "https://dashboard.cohere.com" },
-  voyage:     { label: "Voyage",     url: "https://api.voyageai.com/v1/rerank",   model: "rerank-2", console: "https://dash.voyageai.com" },
-  dashscope:  { label: "DashScope",  url: "https://dashscope.aliyuncs.com/compatible-api/v1/reranks", model: "qwen3-rerank", console: "https://dashscope.console.aliyun.com" },
-  siliconflow:{ label: "SiliconFlow",url: "https://api.siliconflow.cn/v1/rerank", model: "BAAI/bge-reranker-v2-m3", console: "https://cloud.siliconflow.cn" },
-  "openai-compatible": { label: "Custom", url: "", model: "", console: "" },
+  jina:       { label: "Jina",       url: "https://api.jina.ai/v1/rerank",       model: "jina-reranker-v2-base-multilingual" },
+  cohere:     { label: "Cohere",     url: "https://api.cohere.com/v2/rerank",     model: "rerank-v3.5" },
+  voyage:     { label: "Voyage",     url: "https://api.voyageai.com/v1/rerank",   model: "rerank-2" },
+  dashscope:  { label: "DashScope",  url: "https://dashscope.aliyuncs.com/compatible-api/v1/reranks", model: "qwen3-rerank" },
+  siliconflow:{ label: "SiliconFlow",url: "https://api.siliconflow.cn/v1/rerank", model: "BAAI/bge-reranker-v2-m3" },
+  "openai-compatible": { label: "Custom", url: "", model: "" },
 };
-
-var CORE_CONSOLE = "https://core.ac.uk/services/api";
 
 var I18N = {
   "en-US": {
@@ -73,7 +71,6 @@ var I18N = {
     politeEmail: "Contact email",
     politeEmailHint: "For CrossRef / OpenAlex polite pool — optional, not a credential",
     noKeyNeeded: "no key needed",
-    consoleHint: "Get a key:",
   },
   "zh-CN": {
     generalTitle: "常规",
@@ -109,7 +106,6 @@ var I18N = {
     politeEmail: "联系邮箱",
     politeEmailHint: "用于 CrossRef / OpenAlex 礼貌池，选填，非登录凭证",
     noKeyNeeded: "无需配置",
-    consoleHint: "申请 key：",
   },
 };
 
@@ -160,31 +156,6 @@ function reportSuccess(id, xhr, extra) {
   setStatus(id, msg, "ok");
 }
 
-function applyConsoleLink(spanId, url) {
-  var node = el(spanId);
-  if (!node) return;
-  if (!url) {
-    node.setAttribute("hidden", "hidden");
-    node.textContent = "";
-    node.onclick = null;
-    return;
-  }
-  var host = url.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
-  node.removeAttribute("hidden");
-  node.textContent = t("consoleHint") + " " + host;
-  node.onclick = function() { Zotero.launchURL(url); };
-}
-
-function refreshConsoleLinks() {
-  var ocr = ensureProvider("ocr.provider", OCR_CONFIGS, DEFAULT_OCR_PROVIDER);
-  var emb = ensureProvider("embedding.provider", EMB_CONFIGS, DEFAULT_EMB_PROVIDER);
-  var rerank = ensureProvider("rerank.provider", RERANK_CONFIGS, DEFAULT_RERANK_PROVIDER);
-  applyConsoleLink("zotron-ocr-console", OCR_CONFIGS[ocr].console);
-  applyConsoleLink("zotron-emb-console", EMB_CONFIGS[emb].console);
-  applyConsoleLink("zotron-rerank-console", RERANK_CONFIGS[rerank].console);
-  applyConsoleLink("zotron-core-console", CORE_CONSOLE);
-}
-
 function currentLanguage() {
   var saved = gp("ui.language");
   if (I18N[saved]) return saved;
@@ -233,8 +204,6 @@ function applyProvider(kind, forceDefaults) {
   setReadonly(urlId, false);
   setReadonly(modelId, false);
 
-  applyConsoleLink(isOCR ? "zotron-ocr-console" : "zotron-emb-console", config.console);
-
   if (!isOCR) {
     var keyless = provider === "ollama";
     ["zotron-emb-key-label", "zotron-emb-apikey", "zotron-emb-test", "zotron-emb-hintrow"]
@@ -260,7 +229,6 @@ function applyRerank(forceDefaults) {
   if (forceDefaults || !editable || !gp("rerank.model")) sp("rerank.model", config.model);
   se("zotron-rerank-url", gp("rerank.apiUrl"));
   se("zotron-rerank-model", gp("rerank.model"));
-  applyConsoleLink("zotron-rerank-console", config.console);
   setReadonly("zotron-rerank-url", false);
   setReadonly("zotron-rerank-model", false);
 }
@@ -330,7 +298,6 @@ function applyI18n() {
   setAttr("zotron-src-crossref-note", "value", "✓ " + t("noKeyNeeded"));
 
   updateRagPreview();
-  refreshConsoleLinks();
 }
 
 function testOCR() {
@@ -446,8 +413,6 @@ function initSources() {
     mailto.addEventListener("change", saveM);
     mailto.addEventListener("blur", saveM);
   }
-
-  applyConsoleLink("zotron-core-console", CORE_CONSOLE);
 }
 
 function init() {
