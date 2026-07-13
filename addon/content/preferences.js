@@ -216,10 +216,14 @@ function applyRerank(forceDefaults) {
 function updateRagPreview() {
   var node = el("zotron-rag-preview");
   if (!node) return;
-  var chunk = gp("rag.chunkSize") || 512;
-  var overlap = gp("rag.chunkOverlap") || 64;
-  var topk = gp("rag.topK") || 5;
-  var mode = gp("rag.retrievalMode") || "hybrid";
+  var val = function(key, dflt) {
+    var v = gp(key);
+    return (v === "" || v === undefined || v === null) ? dflt : v;
+  };
+  var chunk = val("rag.chunkSize", 512);
+  var overlap = val("rag.chunkOverlap", 64);
+  var topk = val("rag.topK", 5);
+  var mode = val("rag.retrievalMode", "hybrid");
   node.textContent = "chunk " + chunk + " · overlap " + overlap
     + " · top-k " + topk + " · " + mode;
 }
